@@ -67,6 +67,8 @@ export interface Membership extends AuditFields {
   userId: string;
   companyId: string;
   companyRoles: CompanyRole[];
+  /** Denormalized assigned branch IDs used by Firestore Security Rules. */
+  branchIds: string[];
   branchAssignments: BranchAssignment[];
   status: "invited" | "active" | "disabled";
 }

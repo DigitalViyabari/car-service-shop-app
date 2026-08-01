@@ -7,6 +7,7 @@ dist/
 .turbo/
 .firebase/
 firebase-debug.log
+firestore-debug.log
 *.local
 .env
 .env.*
