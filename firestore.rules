@@ -39,7 +39,14 @@ service cloud.firestore {
       allow write: if false;
     }
     match /branchSubscriptions/{branchId} {
-      allow read: if branchMember(resource.data.companyId, branchId);
+      allow get: if signedIn() &&
+        exists(/databases/$(database)/documents/branches/$(branchId)) &&
+        branchMember(
+          get(/databases/$(database)/documents/branches/$(branchId)).data.companyId,
+          branchId
+        );
+      allow list: if resource.data.companyId is string &&
+        branchMember(resource.data.companyId, branchId);
       allow write: if false;
     }
     match /{collection}/{documentId} {
