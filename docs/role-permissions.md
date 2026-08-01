@@ -1,0 +1,7 @@
+# Roles and permissions
+
+Platform roles are `platform_super_admin` and `platform_support_admin`. Company roles are `company_owner`, `company_admin`, `company_accountant`, and `company_auditor`. Branch roles are `branch_manager`, `service_advisor`, `cashier`, `inventory_manager`, `technician`, `receptionist`, and `viewer`.
+
+The canonical initial mapping is in `packages/permissions`. Company roles can operate across the company according to their permission set. Branch roles apply only to matching `branchAssignments`. A technician receives only assigned-task read/update permissions by default and no financial permission. Platform support may request audited access but has no casual business-data entitlement.
+
+Authorization is evaluated in four layers: rules for direct Firebase access, Functions for privileged operations, server-side Zod validation plus membership/subscription checks, and UI visibility. The UI is never the source of truth. Custom claims may accelerate platform checks, but Firestore membership remains authoritative for company/branch access and must be revalidated for sensitive changes.

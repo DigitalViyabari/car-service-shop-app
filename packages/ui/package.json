@@ -1,0 +1,22 @@
+{
+  "name": "@dvcs/ui",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.tsx"
+  },
+  "scripts": {
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "react": ">=19"
+  },
+  "devDependencies": {
+    "@dvcs/config": "workspace:*",
+    "@types/react": "^19.2.7",
+    "react": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}

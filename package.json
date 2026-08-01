@@ -1,0 +1,25 @@
+{
+  "name": "digital-viyabari-car-service",
+  "private": true,
+  "packageManager": "pnpm@11.9.0",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "emulators": "firebase emulators:start"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "firebase-tools": "^15.25.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.7.4",
+    "turbo": "^2.7.2",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.1"
+  }
+}

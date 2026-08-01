@@ -1,0 +1,29 @@
+{
+  "name": "@dvcs/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dvcs/firebase": "workspace:*",
+    "@dvcs/ui": "workspace:*",
+    "firebase": "^12.7.0",
+    "next": "^16.1.1",
+    "react": "^19.2.3",
+    "react-dom": "^19.2.3"
+  },
+  "devDependencies": {
+    "@dvcs/config": "workspace:*",
+    "@tailwindcss/postcss": "^4.1.18",
+    "@types/node": "^24.10.4",
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.9.3"
+  }
+}

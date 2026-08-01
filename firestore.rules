@@ -1,0 +1,46 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function membership(companyId) {
+      return get(/databases/$(database)/documents/memberships/$(request.auth.uid + "_" + companyId));
+    }
+    function companyMember(companyId) {
+      return signedIn() && membership(companyId).data.status == "active";
+    }
+    function branchMember(companyId, branchId) {
+      return companyMember(companyId) &&
+        (membership(companyId).data.companyRole in ["company_owner", "company_admin", "company_accountant", "company_auditor"] ||
+         branchId in membership(companyId).data.branchIds);
+    }
+    function tenantFieldsValid() {
+      return request.resource.data.companyId is string && request.resource.data.branchId is string;
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+    match /memberships/{membershipId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow write: if false;
+    }
+    match /branches/{branchId} {
+      allow read: if branchMember(resource.data.companyId, branchId);
+      allow write: if false;
+    }
+    match /branchSubscriptions/{branchId} {
+      allow read: if branchMember(resource.data.companyId, branchId);
+      allow write: if false;
+    }
+    match /{collection}/{documentId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create, update: if tenantFieldsValid() &&
+        branchMember(request.resource.data.companyId, request.resource.data.branchId) &&
+        (!exists(/databases/$(database)/documents/$(collection)/$(documentId)) ||
+         (request.resource.data.companyId == resource.data.companyId && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if false;
+    }
+  }
+}
