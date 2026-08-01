@@ -1,5 +1,3 @@
 {
-  "projects": {
-    "default": "dv-car-service-shop-app"
-  }
+  "projects": { "default": "dv-car-service-india" }
 }

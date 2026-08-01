@@ -10,11 +10,11 @@
     "experiments": { "typedRoutes": true },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.digitalviyabari.carserviceshop",
+      "bundleIdentifier": "com.digitalviyabari.carserviceshopapp",
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "package": "com.digitalviyabari.carserviceshop",
+      "package": "com.digitalviyabari.carserviceshopapp",
       "googleServicesFile": "./google-services.json"
     }
   }

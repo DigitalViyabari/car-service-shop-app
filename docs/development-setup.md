@@ -14,6 +14,6 @@ Requirements: Node 22 LTS (the Functions production runtime), pnpm 11, Java for 
 
 Create separate Firebase projects, register web/iOS/Android apps, enable approved Authentication providers, create Firestore and Storage, configure App Check providers/enforcement, configure FCM/APNs credentials, set Functions region/billing/Secret Manager values, and create production indexes as features require them. Download native Firebase files only when the chosen Expo build strategy requires them; keep them out of Git.
 
-The configured development project is `dv-car-service-shop-app`; its selected Firestore location is India (`asia-south1`, Mumbai). Functions are deployed to the same region.
+The configured project is `dv-car-service-india`; its selected Firestore location is India (`asia-south1`, Mumbai). Functions are deployed to the same region. The earlier US `nam5` project is retained only until migration verification is complete.
 
 For production, point a dedicated app subdomain such as `app.example.com` at the web host. Keep WordPress on the marketing domain. The VPS may host Next.js or auxiliary trusted services, but Firebase Admin credentials must be injected as secrets and never copied to clients.
