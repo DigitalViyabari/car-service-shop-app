@@ -225,6 +225,9 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .vehicle-card strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
 .vehicle-card span { color:#7d858f; font-size:10px; text-transform:capitalize; }
 .registration-plate { padding:7px 9px; border:1px solid #1f252c; border-radius:6px; background:#fff; color:#11161c; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; font-weight:900; letter-spacing:.06em; box-shadow:inset 0 0 0 2px #e9ebed; }
+.vehicle-card-actions { display:grid; justify-items:end; gap:7px; }
+.vehicle-card-actions button { padding:0; border:0; background:transparent; color:#b5262d; cursor:pointer; font-size:9px; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+.vehicle-card-actions button:hover { color:#e23131; text-decoration:underline; text-underline-offset:3px; }
 .vehicle-card dl { grid-column:2/-1; display:flex; gap:24px; margin:4px 0 0; }
 .vehicle-card dl div { display:grid; gap:3px; }
 .vehicle-card dt { color:#949ba4; font-size:8px; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
@@ -243,6 +246,7 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .modal-header { position:sticky; top:0; z-index:2; display:flex; align-items:center; justify-content:space-between; padding:22px 24px 18px; border-bottom:1px solid #e0e2e5; background:rgba(248,248,249,.94); backdrop-filter:blur(10px); }
 .modal-header h2 { margin:5px 0 0; font-size:22px; }
 .modal-header button { width:36px; height:36px; border:1px solid #d7dade; border-radius:10px; background:#fff; color:#4e5660; cursor:pointer; font-size:20px; }
+.modal-alert { margin:16px 24px 0; }
 .form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:0 16px; padding:3px 24px 24px; }
 .form-grid label { min-width:0; }
 .form-grid .span-2 { grid-column:1/-1; }
@@ -308,7 +312,7 @@ form .dv-button { width: 100%; margin-top: 24px; }
   .customer-detail { margin-top:14px; padding:20px 16px; border:1px solid #dadddf; border-radius:16px; box-shadow:var(--shadow); }
   .contact-grid { grid-template-columns:1fr; }
   .vehicle-card { grid-template-columns:38px minmax(0,1fr); }
-  .vehicle-card .registration-plate { grid-column:2; width:max-content; }
+  .vehicle-card .vehicle-card-actions { grid-column:2; justify-items:start; }
   .vehicle-card dl { grid-column:1/-1; }
   .detail-footer { align-items:flex-end; }
   .module-modal { max-height:calc(100vh - 20px); border-radius:17px; }

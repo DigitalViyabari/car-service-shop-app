@@ -91,6 +91,7 @@ export default function CustomersPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCustomerForm, setShowCustomerForm] = useState(false);
   const [showVehicleForm, setShowVehicleForm] = useState(false);
+  const [editingVehicleId, setEditingVehicleId] = useState<string | null>(null);
   const [customerDraft, setCustomerDraft] = useState<CustomerDraft>(emptyCustomer);
   const [vehicleDraft, setVehicleDraft] = useState<VehicleDraft>(emptyVehicle);
   const [submitting, setSubmitting] = useState(false);
@@ -152,29 +153,74 @@ export default function CustomersPage() {
     finally { setSubmitting(false); }
   }
 
-  async function createVehicle(event: FormEvent) {
+  function openNewVehicleForm() {
+    setError(null);
+    setEditingVehicleId(null);
+    setVehicleDraft(emptyVehicle);
+    setShowVehicleForm(true);
+  }
+
+  function openEditVehicleForm(vehicle: Vehicle) {
+    setError(null);
+    setEditingVehicleId(vehicle.id);
+    setVehicleDraft({
+      registrationNumber: vehicle.registrationNumber,
+      make: vehicle.make,
+      model: vehicle.model,
+      variant: vehicle.variant ?? "",
+      colour: vehicle.colour ?? "",
+      year: vehicle.year ? String(vehicle.year) : "",
+      fuelType: vehicle.fuelType,
+      transmission: vehicle.transmission ?? "manual",
+      vin: vehicle.vin ?? "",
+      odometer: vehicle.odometer != null ? String(vehicle.odometer) : "",
+      notes: vehicle.notes ?? "",
+    });
+    setShowVehicleForm(true);
+  }
+
+  function closeVehicleForm() {
+    if (submitting) return;
+    setShowVehicleForm(false);
+    setEditingVehicleId(null);
+    setVehicleDraft(emptyVehicle);
+  }
+
+  async function saveVehicle(event: FormEvent) {
     event.preventDefault();
     if (!user || !activeCompanyId || !activeBranchId || !selectedCustomer) return;
     const registrationNumber = normalizeRegistration(vehicleDraft.registrationNumber);
     const make = vehicleDraft.make.trim(); const model = vehicleDraft.model.trim();
     if (registrationNumber.length < 6 || !make || !model) { setError("Enter a valid registration number, make, and model."); return; }
-    if (vehicles.some((vehicle) => vehicle.searchRegistration === registrationNumber)) { setError("This registration number already exists in the branch."); return; }
+    if (vehicles.some((vehicle) => vehicle.id !== editingVehicleId && vehicle.searchRegistration === registrationNumber)) { setError("This registration number already exists in the branch."); return; }
     setSubmitting(true); setError(null);
     try {
-      const vehicleReference = doc(collection(firebaseClient.db, "vehicles"));
-      const customerReference = doc(firebaseClient.db, "customers", selectedCustomer.id);
-      const batch = writeBatch(firebaseClient.db); const now = serverTimestamp();
-      batch.set(vehicleReference, {
-        companyId: activeCompanyId, branchId: activeBranchId, customerId: selectedCustomer.id,
+      const now = serverTimestamp();
+      const vehicleValues = {
         registrationNumber, make, model, variant: vehicleDraft.variant.trim(),
         colour: vehicleDraft.colour.trim(), year: vehicleDraft.year ? Number(vehicleDraft.year) : null, fuelType: vehicleDraft.fuelType,
         transmission: vehicleDraft.transmission, vin: vehicleDraft.vin.trim().toUpperCase(),
         odometer: vehicleDraft.odometer ? Number(vehicleDraft.odometer) : null, notes: vehicleDraft.notes.trim(),
-        searchRegistration: registrationNumber, status: "active", createdAt: now, createdBy: user.uid, updatedAt: now, updatedBy: user.uid,
-      });
-      batch.update(customerReference, { vehicleCount: increment(1), updatedAt: now, updatedBy: user.uid });
-      await batch.commit(); setVehicleDraft(emptyVehicle); setShowVehicleForm(false); await loadRecords();
-    } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to save vehicle."); }
+        searchRegistration: registrationNumber, updatedAt: now, updatedBy: user.uid,
+      };
+      if (editingVehicleId) {
+        await updateDoc(doc(firebaseClient.db, "vehicles", editingVehicleId), vehicleValues);
+      } else {
+        const vehicleReference = doc(collection(firebaseClient.db, "vehicles"));
+        const customerReference = doc(firebaseClient.db, "customers", selectedCustomer.id);
+        const batch = writeBatch(firebaseClient.db);
+        batch.set(vehicleReference, {
+          companyId: activeCompanyId, branchId: activeBranchId, customerId: selectedCustomer.id,
+          ...vehicleValues, status: "active", createdAt: now, createdBy: user.uid,
+        });
+        batch.update(customerReference, { vehicleCount: increment(1), updatedAt: now, updatedBy: user.uid });
+        await batch.commit();
+      }
+      setShowVehicleForm(false);
+      setEditingVehicleId(null);
+      setVehicleDraft(emptyVehicle);
+      await loadRecords();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : "Unable to save vehicle changes."); }
     finally { setSubmitting(false); }
   }
 
@@ -221,9 +267,9 @@ export default function CustomersPage() {
           {selectedCustomer ? <>
             <div className="detail-header"><div className="detail-avatar">{initials(selectedCustomer.name)}</div><div><span className="detail-type">{selectedCustomer.type}</span><h2>{selectedCustomer.name}</h2><p>{selectedCustomer.phone}</p></div></div>
             <div className="contact-grid"><div><span>Phone</span><strong>{selectedCustomer.phone}</strong></div><div><span>Email</span><strong>{selectedCustomer.email || "Not provided"}</strong></div><div><span>GSTIN</span><strong>{selectedCustomer.gstin || "Not provided"}</strong></div><div><span>Address</span><strong>{selectedCustomer.address || "Not provided"}</strong></div></div>
-            <div className="vehicle-section-heading"><div><span className="heading-kicker">Garage</span><h3>Registered vehicles</h3></div><button onClick={() => { setError(null); setShowVehicleForm(true); }}>+ Add vehicle</button></div>
+            <div className="vehicle-section-heading"><div><span className="heading-kicker">Garage</span><h3>Registered vehicles</h3></div><button onClick={openNewVehicleForm}>+ Add Vehicle</button></div>
             <div className="vehicle-list">
-              {selectedVehicles.length === 0 ? <div className="vehicle-empty">No vehicle linked to this customer yet.</div> : selectedVehicles.map((vehicle) => <article className="vehicle-card" key={vehicle.id}><div className="vehicle-silhouette" aria-hidden="true">◆</div><div><strong>{vehicle.make} {vehicle.model}</strong><span>{vehicle.variant || `${fuelLabel(vehicle.fuelType)} · ${transmissionOptions.find(({ value }) => value === vehicle.transmission)?.label || ""}`}</span></div><div className="registration-plate">{vehicle.registrationNumber}</div><dl><div><dt>Fuel</dt><dd>{fuelLabel(vehicle.fuelType)}</dd></div><div><dt>Colour</dt><dd>{vehicle.colour || "—"}</dd></div><div><dt>Year</dt><dd>{vehicle.year || "—"}</dd></div><div><dt>Odometer</dt><dd>{vehicle.odometer ? `${vehicle.odometer.toLocaleString("en-IN")} km` : "—"}</dd></div></dl></article>)}
+              {selectedVehicles.length === 0 ? <div className="vehicle-empty">No vehicle linked to this customer yet.</div> : selectedVehicles.map((vehicle) => <article className="vehicle-card" key={vehicle.id}><div className="vehicle-silhouette" aria-hidden="true">◆</div><div><strong>{vehicle.make} {vehicle.model}</strong><span>{vehicle.variant || `${fuelLabel(vehicle.fuelType)} · ${transmissionOptions.find(({ value }) => value === vehicle.transmission)?.label || ""}`}</span></div><div className="vehicle-card-actions"><div className="registration-plate">{vehicle.registrationNumber}</div><button type="button" onClick={() => openEditVehicleForm(vehicle)} aria-label={`Edit ${vehicle.make} ${vehicle.model}`}>Edit Vehicle</button></div><dl><div><dt>Fuel</dt><dd>{fuelLabel(vehicle.fuelType)}</dd></div><div><dt>Colour</dt><dd>{vehicle.colour || "—"}</dd></div><div><dt>Year</dt><dd>{vehicle.year || "—"}</dd></div><div><dt>Odometer</dt><dd>{vehicle.odometer ? `${vehicle.odometer.toLocaleString("en-IN")} km` : "—"}</dd></div></dl></article>)}
             </div>
             <div className="detail-footer"><button className="text-action" disabled={submitting || selectedVehicles.length > 0} onClick={() => void archiveCustomer()} title={selectedVehicles.length ? "Archive linked vehicles first" : "Archive customer"}>Archive customer</button><button className="job-action" disabled title="Available in the next job-card phase">Create job card <span>→</span></button></div>
           </> : <div className="detail-empty"><span className="empty-wheel" aria-hidden="true"/><h2>Select a customer</h2><p>Customer contact, vehicle, and future service history will appear here.</p></div>}
@@ -232,7 +278,7 @@ export default function CustomersPage() {
 
       {showCustomerForm ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCustomerForm(false); }}><form className="module-modal" onSubmit={createCustomer}><ModalHeader eyebrow="New Record" title="Add Customer" onClose={() => setShowCustomerForm(false)} /><div className="form-grid"><label>Customer Type<select value={customerDraft.type} onChange={(e) => setCustomerDraft({ ...customerDraft, type: e.target.value as CustomerType })}><option value="individual">Individual</option><option value="business">Business</option></select></label><label>Full Name / Business Name *<input value={customerDraft.name} onChange={(e) => setCustomerDraft({ ...customerDraft, name: e.target.value })} autoFocus required /></label><label>Mobile Number *<input inputMode="numeric" value={customerDraft.phone} onChange={(e) => setCustomerDraft({ ...customerDraft, phone: e.target.value })} placeholder="10-digit number" required /></label><label>Alternate Number<input inputMode="numeric" value={customerDraft.alternatePhone} onChange={(e) => setCustomerDraft({ ...customerDraft, alternatePhone: e.target.value })} /></label><label>Email Address<input type="email" value={customerDraft.email} onChange={(e) => setCustomerDraft({ ...customerDraft, email: e.target.value })} /></label><label>GSTIN<input value={customerDraft.gstin} onChange={(e) => setCustomerDraft({ ...customerDraft, gstin: e.target.value })} /></label><label className="span-2">Address<input value={customerDraft.address} onChange={(e) => setCustomerDraft({ ...customerDraft, address: e.target.value })} /></label><label className="span-2">Notes<textarea value={customerDraft.notes} onChange={(e) => setCustomerDraft({ ...customerDraft, notes: e.target.value })} rows={3} /></label></div><ModalFooter submitting={submitting} onCancel={() => setShowCustomerForm(false)} label="Save Customer" /></form></div> : null}
 
-      {showVehicleForm ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowVehicleForm(false); }}><form className="module-modal" onSubmit={createVehicle}><ModalHeader eyebrow={`Vehicle Owner · ${selectedCustomer?.name ?? ""}`} title="Add Vehicle" onClose={() => setShowVehicleForm(false)} /><div className="form-grid"><label>Registration Number *<input value={vehicleDraft.registrationNumber} onChange={(e) => setVehicleDraft({ ...vehicleDraft, registrationNumber: e.target.value.toUpperCase() })} placeholder="MH12AB1234" autoFocus required /></label><label>Make *<input value={vehicleDraft.make} onChange={(e) => setVehicleDraft({ ...vehicleDraft, make: e.target.value })} placeholder="Tata" required /></label><label>Model *<input value={vehicleDraft.model} onChange={(e) => setVehicleDraft({ ...vehicleDraft, model: e.target.value })} placeholder="Nexon" required /></label><label>Variant<input value={vehicleDraft.variant} onChange={(e) => setVehicleDraft({ ...vehicleDraft, variant: e.target.value })} /></label><label>Colour<input value={vehicleDraft.colour} onChange={(e) => setVehicleDraft({ ...vehicleDraft, colour: e.target.value })} placeholder="Pearl White" /></label><label>Fuel Type<select value={vehicleDraft.fuelType} onChange={(e) => setVehicleDraft({ ...vehicleDraft, fuelType: e.target.value as VehicleFuelType })}>{fuelOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Transmission<select value={vehicleDraft.transmission} onChange={(e) => setVehicleDraft({ ...vehicleDraft, transmission: e.target.value as VehicleTransmission })}>{transmissionOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Model Year<input type="number" min="1950" max="2100" value={vehicleDraft.year} onChange={(e) => setVehicleDraft({ ...vehicleDraft, year: e.target.value })} /></label><label>Odometer (km)<input type="number" min="0" value={vehicleDraft.odometer} onChange={(e) => setVehicleDraft({ ...vehicleDraft, odometer: e.target.value })} /></label><label className="span-2">VIN / Chassis Number<input value={vehicleDraft.vin} onChange={(e) => setVehicleDraft({ ...vehicleDraft, vin: e.target.value.toUpperCase() })} /></label><label className="span-2">Vehicle Notes<textarea value={vehicleDraft.notes} onChange={(e) => setVehicleDraft({ ...vehicleDraft, notes: e.target.value })} rows={3} /></label></div><ModalFooter submitting={submitting} onCancel={() => setShowVehicleForm(false)} label="Add Vehicle" /></form></div> : null}
+      {showVehicleForm ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeVehicleForm(); }}><form className="module-modal" onSubmit={saveVehicle}><ModalHeader eyebrow={`Vehicle Owner · ${selectedCustomer?.name ?? ""}`} title={editingVehicleId ? "Edit Vehicle" : "Add Vehicle"} onClose={closeVehicleForm} />{error ? <div className="alert alert--error modal-alert" role="alert">{error}</div> : null}<div className="form-grid"><label>Registration Number *<input value={vehicleDraft.registrationNumber} onChange={(e) => setVehicleDraft({ ...vehicleDraft, registrationNumber: e.target.value.toUpperCase() })} placeholder="MH12AB1234" autoFocus required /></label><label>Make *<input value={vehicleDraft.make} onChange={(e) => setVehicleDraft({ ...vehicleDraft, make: e.target.value })} placeholder="Tata" required /></label><label>Model *<input value={vehicleDraft.model} onChange={(e) => setVehicleDraft({ ...vehicleDraft, model: e.target.value })} placeholder="Nexon" required /></label><label>Variant<input value={vehicleDraft.variant} onChange={(e) => setVehicleDraft({ ...vehicleDraft, variant: e.target.value })} /></label><label>Colour<input value={vehicleDraft.colour} onChange={(e) => setVehicleDraft({ ...vehicleDraft, colour: e.target.value })} placeholder="Pearl White" /></label><label>Fuel Type<select value={vehicleDraft.fuelType} onChange={(e) => setVehicleDraft({ ...vehicleDraft, fuelType: e.target.value as VehicleFuelType })}>{fuelOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Transmission<select value={vehicleDraft.transmission} onChange={(e) => setVehicleDraft({ ...vehicleDraft, transmission: e.target.value as VehicleTransmission })}>{transmissionOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Model Year<input type="number" min="1950" max="2100" value={vehicleDraft.year} onChange={(e) => setVehicleDraft({ ...vehicleDraft, year: e.target.value })} /></label><label>Odometer (km)<input type="number" min="0" value={vehicleDraft.odometer} onChange={(e) => setVehicleDraft({ ...vehicleDraft, odometer: e.target.value })} /></label><label className="span-2">VIN / Chassis Number<input value={vehicleDraft.vin} onChange={(e) => setVehicleDraft({ ...vehicleDraft, vin: e.target.value.toUpperCase() })} /></label><label className="span-2">Vehicle Notes<textarea value={vehicleDraft.notes} onChange={(e) => setVehicleDraft({ ...vehicleDraft, notes: e.target.value })} rows={3} /></label></div><ModalFooter submitting={submitting} onCancel={closeVehicleForm} label={editingVehicleId ? "Save Changes" : "Add Vehicle"} /></form></div> : null}
     </main>
   );
 }
