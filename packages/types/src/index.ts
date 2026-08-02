@@ -127,6 +127,8 @@ export interface Vehicle extends AuditFields {
   transmission?: VehicleTransmission;
   vin?: string;
   odometer?: number;
+  insuranceExpiryDate?: string;
+  insuranceReminderEnabled?: boolean;
   notes?: string;
   searchRegistration: string;
   status: "active" | "archived";

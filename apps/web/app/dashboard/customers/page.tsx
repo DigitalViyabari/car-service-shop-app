@@ -47,6 +47,8 @@ type VehicleDraft = {
   transmission: VehicleTransmission;
   vin: string;
   odometer: string;
+  insuranceExpiryDate: string;
+  insuranceReminderEnabled: boolean;
   notes: string;
 };
 
@@ -71,6 +73,8 @@ const emptyVehicle: VehicleDraft = {
   transmission: "manual",
   vin: "",
   odometer: "",
+  insuranceExpiryDate: "",
+  insuranceReminderEnabled: true,
   notes: "",
 };
 
@@ -358,6 +362,8 @@ export default function CustomersPage() {
       transmission: vehicle.transmission ?? "manual",
       vin: vehicle.vin ?? "",
       odometer: vehicle.odometer != null ? String(vehicle.odometer) : "",
+      insuranceExpiryDate: vehicle.insuranceExpiryDate ?? "",
+      insuranceReminderEnabled: vehicle.insuranceReminderEnabled ?? true,
       notes: vehicle.notes ?? "",
     });
     setSaveToCatalogue(true);
@@ -406,6 +412,10 @@ export default function CustomersPage() {
         transmission: vehicleDraft.transmission,
         vin: vehicleDraft.vin.trim().toUpperCase(),
         odometer: vehicleDraft.odometer ? Number(vehicleDraft.odometer) : null,
+        insuranceExpiryDate: vehicleDraft.insuranceExpiryDate || null,
+        insuranceReminderEnabled: Boolean(
+          vehicleDraft.insuranceExpiryDate && vehicleDraft.insuranceReminderEnabled,
+        ),
         notes: vehicleDraft.notes.trim(),
         searchRegistration: registrationNumber,
         updatedAt: now,
@@ -727,6 +737,14 @@ export default function CustomersPage() {
                           <dd>
                             {vehicle.odometer
                               ? `${vehicle.odometer.toLocaleString("en-IN")} km`
+                              : "—"}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt>Insurance Expiry</dt>
+                          <dd>
+                            {vehicle.insuranceExpiryDate
+                              ? serviceDate(vehicle.insuranceExpiryDate)
                               : "—"}
                           </dd>
                         </div>
@@ -1066,6 +1084,33 @@ export default function CustomersPage() {
                     setVehicleDraft({ ...vehicleDraft, vin: e.target.value.toUpperCase() })
                   }
                 />
+              </label>
+              <label>
+                Insurance Expiry Date
+                <input
+                  type="date"
+                  value={vehicleDraft.insuranceExpiryDate}
+                  onChange={(event) =>
+                    setVehicleDraft({ ...vehicleDraft, insuranceExpiryDate: event.target.value })
+                  }
+                />
+              </label>
+              <label className="insurance-reminder-toggle">
+                <input
+                  type="checkbox"
+                  checked={vehicleDraft.insuranceReminderEnabled}
+                  disabled={!vehicleDraft.insuranceExpiryDate}
+                  onChange={(event) =>
+                    setVehicleDraft({
+                      ...vehicleDraft,
+                      insuranceReminderEnabled: event.target.checked,
+                    })
+                  }
+                />
+                <span>
+                  <strong>Automatic Insurance Reminders</strong>
+                  <small>3 days before, on expiry day, and 3 days after.</small>
+                </span>
               </label>
               <label className="span-2">
                 Vehicle Notes

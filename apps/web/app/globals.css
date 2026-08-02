@@ -762,6 +762,29 @@ form .dv-button {
   color: #285f99;
   font-weight: 700;
 }
+.insurance-reminder-toggle {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 10px 13px;
+  border: 1px solid #d5dce3;
+  border-radius: 10px;
+  background: #f8fafb;
+}
+.insurance-reminder-toggle input {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 auto;
+}
+.insurance-reminder-toggle span {
+  display: grid;
+  gap: 2px;
+}
+.insurance-reminder-toggle small {
+  color: #68737f;
+}
 .admin-header-links {
   display: flex;
   gap: 10px;
