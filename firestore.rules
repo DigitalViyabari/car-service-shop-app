@@ -58,6 +58,9 @@ service cloud.firestore {
         membership(companyId).data.branchRoleKeys is list &&
         membership(companyId).data.branchRoleKeys.hasAny(["technician"]);
     }
+    function customerDataViewer(companyId, branchId) {
+      return operationsManager(companyId, branchId) || jobCreator(companyId, branchId);
+    }
     function companyCatalogManager(companyId) {
       return companyMember(companyId) && (
         (membership(companyId).data.companyRoles is list &&
@@ -150,7 +153,7 @@ service cloud.firestore {
     }
     match /customers/{customerId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        customerDataViewer(resource.data.companyId, resource.data.branchId);
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "type", "name", "phone", "searchName", "searchPhone",
           "vehicleCount", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
@@ -159,18 +162,7 @@ service cloud.firestore {
         request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 160 &&
         request.resource.data.phone is string && request.resource.data.phone.size() >= 10 && request.resource.data.phone.size() <= 15 &&
         request.resource.data.vehicleCount == 0 && request.resource.data.status == "active" && validAuditCreate();
-      allow update: if (operationsManager(resource.data.companyId, resource.data.branchId) ||
-        (branchTechnician(resource.data.companyId, resource.data.branchId) &&
-         resource.data.assignedTechnicianIds is list &&
-         request.auth.uid in resource.data.assignedTechnicianIds &&
-         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-           "status", "deliveredAt", "updatedAt", "updatedBy"
-         ]) &&
-         ((resource.data.status == "check_in" && request.resource.data.status == "inspection") ||
-          (resource.data.status == "inspection" && request.resource.data.status == "estimate_pending") ||
-          (resource.data.status == "approved" && request.resource.data.status == "in_progress") ||
-          (resource.data.status == "in_progress" && request.resource.data.status == "quality_check") ||
-          (resource.data.status == "quality_check" && request.resource.data.status == "ready")))) &&
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.vehicleCount >= 0 && validAuditUpdate();
@@ -178,7 +170,7 @@ service cloud.firestore {
     }
     match /vehicles/{vehicleId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        customerDataViewer(resource.data.companyId, resource.data.branchId);
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "customerId", "registrationNumber", "searchRegistration",
           "make", "model", "fuelType", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
@@ -265,7 +257,12 @@ service cloud.firestore {
     }
     match /jobSheets/{jobId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        (operationsManager(resource.data.companyId, resource.data.branchId) ||
+         jobCreator(resource.data.companyId, resource.data.branchId) ||
+         branchFinanceManager(resource.data.companyId, resource.data.branchId) ||
+         (branchTechnician(resource.data.companyId, resource.data.branchId) &&
+          resource.data.assignedTechnicianIds is list &&
+          request.auth.uid in resource.data.assignedTechnicianIds));
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "jobNumber", "customerId", "vehicleId", "status", "priority",
           "serviceType", "odometer", "fuelLevel", "complaints", "checkedInAt",
@@ -278,7 +275,25 @@ service cloud.firestore {
         (request.resource.data.fuelLevel == null ||
           (request.resource.data.fuelLevel >= 0 && request.resource.data.fuelLevel <= 100)) &&
         request.resource.data.complaints is list && request.resource.data.complaints.size() > 0 && validAuditCreate();
-      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+      allow update: if (operationsManager(resource.data.companyId, resource.data.branchId) ||
+        (branchTechnician(resource.data.companyId, resource.data.branchId) &&
+         resource.data.assignedTechnicianIds is list &&
+         request.auth.uid in resource.data.assignedTechnicianIds &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+           "status", "deliveredAt", "delayReason", "delayReportedAt", "delayReportedBy",
+           "updatedAt", "updatedBy"
+         ]) &&
+         (((request.resource.data.status == resource.data.status) &&
+           request.resource.data.delayReason is string &&
+           request.resource.data.delayReason.size() >= 3 &&
+           request.resource.data.delayReason.size() <= 500 &&
+           request.resource.data.delayReportedAt == request.time &&
+           request.resource.data.delayReportedBy == request.auth.uid) ||
+          (resource.data.status == "check_in" && request.resource.data.status == "inspection") ||
+          (resource.data.status == "inspection" && request.resource.data.status == "estimate_pending") ||
+          (resource.data.status == "approved" && request.resource.data.status == "in_progress") ||
+          (resource.data.status == "in_progress" && request.resource.data.status == "quality_check") ||
+          (resource.data.status == "quality_check" && request.resource.data.status == "ready")))) &&
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.customerId == resource.data.customerId &&
@@ -299,7 +314,9 @@ service cloud.firestore {
     }
     match /jobLineItems/{lineId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        (operationsManager(resource.data.companyId, resource.data.branchId) ||
+         jobCreator(resource.data.companyId, resource.data.branchId) ||
+         branchFinanceManager(resource.data.companyId, resource.data.branchId));
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "jobId", "type", "description", "quantity", "unit",
           "unitPrice", "discount", "gstRate", "taxableAmount", "taxAmount", "totalAmount",

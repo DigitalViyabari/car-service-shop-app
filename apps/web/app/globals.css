@@ -2296,6 +2296,62 @@ form .dv-button {
   background: #fff;
   font-size: 10px;
 }
+.delay-alert {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-left: 4px solid #e6a225;
+  border-radius: 10px;
+  background: #fff8e9;
+}
+.delay-alert span,
+.delay-report label {
+  color: #8a620f;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.delay-alert strong {
+  font-size: 11px;
+}
+.delay-alert small {
+  color: #7d7463;
+  font-size: 9px;
+}
+.delay-report {
+  display: grid;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #e2d5b6;
+  border-radius: 11px;
+  background: #fffaf0;
+}
+.delay-report > div {
+  display: flex;
+  gap: 8px;
+}
+.delay-report input {
+  flex: 1;
+  min-width: 0;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #d8c89f;
+  border-radius: 8px;
+  background: #fff;
+}
+.delay-report button {
+  padding: 0 15px;
+  border: 0;
+  border-radius: 8px;
+  background: #d99116;
+  color: #fff;
+  font-weight: 850;
+}
+.delay-report button:disabled {
+  opacity: 0.45;
+}
 .complaint-panel {
   margin-top: 17px;
   padding: 17px;

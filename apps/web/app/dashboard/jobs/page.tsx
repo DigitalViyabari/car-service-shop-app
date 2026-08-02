@@ -136,6 +136,7 @@ export default function JobsPage() {
     [newServiceName, setNewServiceName] = useState("");
   const [technicians, setTechnicians] = useState<WorkshopMember[]>([]);
   const [handledPrefill, setHandledPrefill] = useState(false);
+  const [delayReason, setDelayReason] = useState("");
   const membership = memberships.find((item) => item.companyId === activeCompanyId),
     branchRoles =
       membership?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
@@ -156,63 +157,75 @@ export default function JobsPage() {
     if (!activeCompanyId || !activeBranchId) return;
     setLoading(true);
     try {
-      const [
-        jobDocs,
-        customerDocs,
-        vehicleDocs,
-        lineDocs,
-        productDocs,
-        inventoryDocs,
-        serviceDocs,
-      ] = await Promise.all([
-        getDocs(
-          query(
-            collection(firebaseClient.db, "jobSheets"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "customers"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "vehicles"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "jobLineItems"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "products"),
-            where("companyId", "==", activeCompanyId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "inventoryItems"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "serviceTypes"),
-            where("companyId", "==", activeCompanyId),
-          ),
-        ),
-      ]);
+      const jobDocs = await getDocs(
+        isTechnician && user
+          ? query(
+              collection(firebaseClient.db, "jobSheets"),
+              where("companyId", "==", activeCompanyId),
+              where("branchId", "==", activeBranchId),
+              where("assignedTechnicianIds", "array-contains", user.uid),
+            )
+          : query(
+              collection(firebaseClient.db, "jobSheets"),
+              where("companyId", "==", activeCompanyId),
+              where("branchId", "==", activeBranchId),
+            ),
+      );
+      const [customerDocs, vehicleDocs, lineDocs, productDocs, inventoryDocs, serviceDocs] =
+        await Promise.all([
+          isTechnician
+            ? Promise.resolve({ docs: [] })
+            : getDocs(
+                query(
+                  collection(firebaseClient.db, "customers"),
+                  where("companyId", "==", activeCompanyId),
+                  where("branchId", "==", activeBranchId),
+                ),
+              ),
+          isTechnician
+            ? Promise.resolve({ docs: [] })
+            : getDocs(
+                query(
+                  collection(firebaseClient.db, "vehicles"),
+                  where("companyId", "==", activeCompanyId),
+                  where("branchId", "==", activeBranchId),
+                ),
+              ),
+          isTechnician
+            ? Promise.resolve({ docs: [] })
+            : getDocs(
+                query(
+                  collection(firebaseClient.db, "jobLineItems"),
+                  where("companyId", "==", activeCompanyId),
+                  where("branchId", "==", activeBranchId),
+                ),
+              ),
+          isTechnician
+            ? Promise.resolve({ docs: [] })
+            : getDocs(
+                query(
+                  collection(firebaseClient.db, "products"),
+                  where("companyId", "==", activeCompanyId),
+                ),
+              ),
+          isTechnician
+            ? Promise.resolve({ docs: [] })
+            : getDocs(
+                query(
+                  collection(firebaseClient.db, "inventoryItems"),
+                  where("companyId", "==", activeCompanyId),
+                  where("branchId", "==", activeBranchId),
+                ),
+              ),
+          isTechnician
+            ? Promise.resolve({ docs: [] })
+            : getDocs(
+                query(
+                  collection(firebaseClient.db, "serviceTypes"),
+                  where("companyId", "==", activeCompanyId),
+                ),
+              ),
+        ]);
       const nextJobs = jobDocs.docs
         .map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
         .sort((a, b) => b.jobNumber.localeCompare(a.jobNumber));
@@ -256,7 +269,7 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeBranchId, activeCompanyId]);
+  }, [activeBranchId, activeCompanyId, isTechnician, user]);
   const loadTechnicians = useCallback(async () => {
     if (!user || !activeCompanyId || !activeBranchId || !canAssignTechnician) return;
     try {
@@ -328,12 +341,12 @@ export default function JobsPage() {
         matchesFilter &&
         matchesTechnician &&
         (!term ||
-          `${job.jobNumber} ${job.customerName} ${job.registrationNumber} ${job.vehicleLabel}`
+          `${job.jobNumber} ${isTechnician ? "" : job.customerName} ${job.registrationNumber} ${job.vehicleLabel}`
             .toLowerCase()
             .includes(term))
       );
     });
-  }, [filter, jobs, search, technicianFilter]);
+  }, [filter, isTechnician, jobs, search, technicianFilter]);
   const selected = jobs.find(({ id }) => id === selectedId) ?? null;
   useEffect(() => {
     if (filtered.some(({ id }) => id === selectedId)) return;
@@ -496,6 +509,26 @@ export default function JobsPage() {
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to assign technician.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function reportDelay() {
+    if (!user || !selected || !assignedToCurrentUser || delayReason.trim().length < 3) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(firebaseClient.db, "jobSheets", selected.id), {
+        delayReason: delayReason.trim(),
+        delayReportedAt: serverTimestamp(),
+        delayReportedBy: user.uid,
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      });
+      setDelayReason("");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to report the delay.");
     } finally {
       setSubmitting(false);
     }
@@ -835,7 +868,9 @@ export default function JobsPage() {
                   <span>
                     <strong>{job.registrationNumber}</strong>
                     <small>
-                      {job.customerName} · {job.vehicleLabel}
+                      {isTechnician
+                        ? job.vehicleLabel
+                        : `${job.customerName} · ${job.vehicleLabel}`}
                     </small>
                     <em>
                       {statusLabel(job.status)} · {job.jobNumber}
@@ -857,7 +892,9 @@ export default function JobsPage() {
                   <span className="heading-kicker">{selected.jobNumber}</span>
                   <h2>{selected.registrationNumber}</h2>
                   <p>
-                    {selected.vehicleLabel} · {selected.customerName}
+                    {isTechnician
+                      ? selected.vehicleLabel
+                      : `${selected.vehicleLabel} · ${selected.customerName}`}
                   </p>
                 </div>
                 <span className={`job-status status-${selected.status}`}>
@@ -917,12 +954,14 @@ export default function JobsPage() {
                       : "Not Set"}
                   </strong>
                 </div>
-                <div>
-                  <span>Estimate</span>
-                  <strong>
-                    {selected.estimateTotal ? currency(selected.estimateTotal) : "Pending"}
-                  </strong>
-                </div>
+                {!isTechnician ? (
+                  <div>
+                    <span>Estimate</span>
+                    <strong>
+                      {selected.estimateTotal ? currency(selected.estimateTotal) : "Pending"}
+                    </strong>
+                  </div>
+                ) : null}
               </div>
               <section className="job-assignment">
                 <div>
@@ -949,81 +988,87 @@ export default function JobsPage() {
                   </select>
                 ) : null}
               </section>
-              <section className="estimate-panel">
-                <div className="estimate-heading">
-                  <div>
-                    <span className="heading-kicker">Parts &amp; Labour</span>
-                    <h3>Estimate Items</h3>
+              {!isTechnician ? (
+                <section className="estimate-panel">
+                  <div className="estimate-heading">
+                    <div>
+                      <span className="heading-kicker">Parts &amp; Labour</span>
+                      <h3>Estimate Items</h3>
+                    </div>
+                    <button
+                      disabled={selected.estimateLocked || !canAssignTechnician}
+                      onClick={() => {
+                        setLineDraft(emptyLine);
+                        setError(null);
+                        setShowLineForm(true);
+                      }}
+                    >
+                      {selected.estimateLocked ? "Estimate Locked" : "+ Add Item"}
+                    </button>
                   </div>
-                  <button
-                    disabled={selected.estimateLocked || !canAssignTechnician}
-                    onClick={() => {
-                      setLineDraft(emptyLine);
-                      setError(null);
-                      setShowLineForm(true);
-                    }}
-                  >
-                    {selected.estimateLocked ? "Estimate Locked" : "+ Add Item"}
-                  </button>
-                </div>
-                {selectedLines.length === 0 ? (
-                  <div className="estimate-empty">No Labour Or Products Added Yet.</div>
-                ) : (
-                  <div className="estimate-lines">
-                    {selectedLines.map((line) => (
-                      <div key={line.id}>
-                        <span className={`line-type line-${line.type}`}>{line.type}</span>
-                        <span>
-                          <strong>{line.description}</strong>
-                          <small>
-                            {line.quantity} {line.unit} × {currency(line.unitPrice)} · GST{" "}
-                            {line.gstRate}%
-                          </small>
-                        </span>
-                        <strong>{currency(line.totalAmount)}</strong>
-                        <button
-                          disabled={selected.estimateLocked || !canAssignTechnician}
-                          onClick={() => void removeLine(line)}
-                        >
-                          ×
+                  {selectedLines.length === 0 ? (
+                    <div className="estimate-empty">No Labour Or Products Added Yet.</div>
+                  ) : (
+                    <div className="estimate-lines">
+                      {selectedLines.map((line) => (
+                        <div key={line.id}>
+                          <span className={`line-type line-${line.type}`}>{line.type}</span>
+                          <span>
+                            <strong>{line.description}</strong>
+                            <small>
+                              {line.quantity} {line.unit} × {currency(line.unitPrice)} · GST{" "}
+                              {line.gstRate}%
+                            </small>
+                          </span>
+                          <strong>{currency(line.totalAmount)}</strong>
+                          <button
+                            disabled={selected.estimateLocked || !canAssignTechnician}
+                            onClick={() => void removeLine(line)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="approval-strip">
+                    <span
+                      className={`approval-state approval-${selected.approvalStatus ?? "draft"}`}
+                    >
+                      Approval: {selected.approvalStatus ?? "draft"} · Revision{" "}
+                      {selected.estimateRevision ?? 1}
+                    </span>
+                    <div>
+                      {canAssignTechnician &&
+                      !selected.estimateLocked &&
+                      selectedLines.length > 0 ? (
+                        <button onClick={() => void markEstimateSent()}>Mark As Sent</button>
+                      ) : null}
+                      {canAssignTechnician &&
+                      (selected.approvalStatus === "sent" ||
+                        selected.approvalStatus === "rejected") ? (
+                        <button onClick={() => setShowApproval(true)}>
+                          Record Customer Decision
                         </button>
-                      </div>
-                    ))}
+                      ) : null}
+                      {canAssignTechnician && selected.estimateLocked ? (
+                        <button onClick={() => void createRevision()}>Create Revision</button>
+                      ) : null}
+                    </div>
                   </div>
-                )}
-                <div className="approval-strip">
-                  <span className={`approval-state approval-${selected.approvalStatus ?? "draft"}`}>
-                    Approval: {selected.approvalStatus ?? "draft"} · Revision{" "}
-                    {selected.estimateRevision ?? 1}
-                  </span>
-                  <div>
-                    {canAssignTechnician && !selected.estimateLocked && selectedLines.length > 0 ? (
-                      <button onClick={() => void markEstimateSent()}>Mark As Sent</button>
-                    ) : null}
-                    {canAssignTechnician &&
-                    (selected.approvalStatus === "sent" ||
-                      selected.approvalStatus === "rejected") ? (
-                      <button onClick={() => setShowApproval(true)}>
-                        Record Customer Decision
-                      </button>
-                    ) : null}
-                    {canAssignTechnician && selected.estimateLocked ? (
-                      <button onClick={() => void createRevision()}>Create Revision</button>
-                    ) : null}
+                  <div className="estimate-totals">
+                    <span>
+                      Taxable <strong>{currency(estimateTaxable)}</strong>
+                    </span>
+                    <span>
+                      GST <strong>{currency(estimateTax)}</strong>
+                    </span>
+                    <span>
+                      Total <strong>{currency(selected.estimateTotal)}</strong>
+                    </span>
                   </div>
-                </div>
-                <div className="estimate-totals">
-                  <span>
-                    Taxable <strong>{currency(estimateTaxable)}</strong>
-                  </span>
-                  <span>
-                    GST <strong>{currency(estimateTax)}</strong>
-                  </span>
-                  <span>
-                    Total <strong>{currency(selected.estimateTotal)}</strong>
-                  </span>
-                </div>
-              </section>
+                </section>
+              ) : null}
               <section className="complaint-panel">
                 <span className="heading-kicker">Customer Complaints</span>
                 <ol>
@@ -1036,6 +1081,34 @@ export default function JobsPage() {
                 <section className="job-note">
                   <span>Internal Notes</span>
                   <p>{selected.internalNotes}</p>
+                </section>
+              ) : null}
+              {selected.delayReason ? (
+                <section className="delay-alert">
+                  <span>Latest Delay</span>
+                  <strong>{selected.delayReason}</strong>
+                  <small>{displayDate(selected.delayReportedAt)}</small>
+                </section>
+              ) : null}
+              {isTechnician && assignedToCurrentUser ? (
+                <section className="delay-report">
+                  <label htmlFor="delay-reason">Report Delay</label>
+                  <div>
+                    <input
+                      id="delay-reason"
+                      value={delayReason}
+                      maxLength={500}
+                      onChange={(event) => setDelayReason(event.target.value)}
+                      placeholder="Reason for delay"
+                    />
+                    <button
+                      type="button"
+                      disabled={submitting || delayReason.trim().length < 3}
+                      onClick={() => void reportDelay()}
+                    >
+                      Send
+                    </button>
+                  </div>
                 </section>
               ) : null}
               <section className={`job-next-step next-${selected.status}`}>

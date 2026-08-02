@@ -109,13 +109,7 @@ export interface Customer extends AuditFields {
 }
 
 export type VehicleFuelType =
-  | "petrol"
-  | "diesel"
-  | "cng"
-  | "petrol_cng"
-  | "electric"
-  | "hybrid"
-  | "other";
+  "petrol" | "diesel" | "cng" | "petrol_cng" | "electric" | "hybrid" | "other";
 export type VehicleTransmission = "manual" | "automatic" | "amt" | "cvt" | "dct" | "other";
 
 export interface Vehicle extends AuditFields {
@@ -154,7 +148,14 @@ export interface VehicleCatalogEntry extends AuditFields {
   status: "active" | "archived";
 }
 
-export type ProductType = "spare_part" | "consumable" | "lubricant" | "tyre" | "battery" | "accessory" | "workshop_material";
+export type ProductType =
+  | "spare_part"
+  | "consumable"
+  | "lubricant"
+  | "tyre"
+  | "battery"
+  | "accessory"
+  | "workshop_material";
 
 export interface Product extends AuditFields {
   id: string;
@@ -240,7 +241,16 @@ export interface BusinessTaxProfile extends AuditFields {
   upiId?: string;
 }
 
-export type JobStatus = "check_in" | "inspection" | "estimate_pending" | "approved" | "in_progress" | "quality_check" | "ready" | "delivered" | "cancelled";
+export type JobStatus =
+  | "check_in"
+  | "inspection"
+  | "estimate_pending"
+  | "approved"
+  | "in_progress"
+  | "quality_check"
+  | "ready"
+  | "delivered"
+  | "cancelled";
 export type JobPriority = "normal" | "urgent" | "breakdown";
 export type EstimateApprovalStatus = "draft" | "sent" | "approved" | "rejected";
 export type EstimateApprovalMethod = "whatsapp" | "phone" | "email" | "signature" | "in_person";
@@ -270,6 +280,9 @@ export interface JobSheet extends AuditFields {
   fuelLevel: number | null;
   complaints: string[];
   internalNotes?: string;
+  delayReason?: string;
+  delayReportedAt?: string;
+  delayReportedBy?: string;
   promisedAt?: string;
   checkedInAt: string;
   deliveredAt?: string;

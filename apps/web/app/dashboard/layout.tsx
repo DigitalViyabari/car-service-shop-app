@@ -176,6 +176,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const subscriptionTone = subscription?.status === "active" ? "positive" : "warning";
   const activeMembership = memberships.find(({ companyId }) => companyId === activeCompanyId);
   const isCompanyOwner = activeMembership?.companyRoles.includes("company_owner") ?? false;
+  const activeBranchRoles =
+    activeMembership?.branchAssignments.find(({ branchId }) => branchId === activeBranchId)
+      ?.roles ?? [];
+  const technicianOnly =
+    activeBranchRoles.includes("technician") &&
+    !(activeMembership?.companyRoles ?? []).length &&
+    activeBranchRoles.every((role) => role === "technician");
   const canAccessFinance =
     (activeMembership?.companyRoles ?? []).some((role) =>
       ["company_owner", "company_admin", "company_accountant"].includes(role),
@@ -212,10 +219,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <div className="nav-label">Workshop control</div>
         <nav className="nav" aria-label="Primary navigation">
-          <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
-            <NavIcon name="overview" />
-            Overview
-          </Link>
+          {!technicianOnly ? (
+            <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
+              <NavIcon name="overview" />
+              Overview
+            </Link>
+          ) : null}
           <Link
             href="/dashboard/jobs"
             className={pathname.startsWith("/dashboard/jobs") ? "is-active" : ""}
@@ -223,13 +232,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <NavIcon name="operations" />
             Job Cards
           </Link>
-          <Link
-            href="/dashboard/customers"
-            className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
-          >
-            <NavIcon name="team" />
-            Customers
-          </Link>
+          {!technicianOnly ? (
+            <Link
+              href="/dashboard/customers"
+              className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
+            >
+              <NavIcon name="team" />
+              Customers
+            </Link>
+          ) : null}
           {canAccessInventory ? (
             <Link
               href="/dashboard/products"
@@ -257,13 +268,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Reports
             </Link>
           ) : null}
-          <Link
-            href="/dashboard/team"
-            className={pathname.startsWith("/dashboard/team") ? "is-active" : ""}
-          >
-            <NavIcon name="team" />
-            Team
-          </Link>
+          {!technicianOnly ? (
+            <Link
+              href="/dashboard/team"
+              className={pathname.startsWith("/dashboard/team") ? "is-active" : ""}
+            >
+              <NavIcon name="team" />
+              Team
+            </Link>
+          ) : null}
           {canAccessFinance ? (
             <Link
               href="/dashboard/settings"
@@ -336,26 +349,49 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
           <div className="topbar-status">
             <span className="current-branch">{activeBranch?.name ?? "No branch selected"}</span>
-            <StatusBadge tone={subscription ? subscriptionTone : "neutral"}>
-              {subscription
-                ? `Subscription ${subscription.status.replaceAll("_", " ")}`
-                : "No subscription"}
-            </StatusBadge>
+            {!technicianOnly ? (
+              <StatusBadge tone={subscription ? subscriptionTone : "neutral"}>
+                {subscription
+                  ? `Subscription ${subscription.status.replaceAll("_", " ")}`
+                  : "No subscription"}
+              </StatusBadge>
+            ) : null}
           </div>
         </header>
-        {children}
+        {technicianOnly && !pathname.startsWith("/dashboard/jobs") ? (
+          <main className="content">
+            <div className="state-card">
+              <h1>My Work Only</h1>
+              <p>Open Job Cards to view your assigned work.</p>
+              <Link className="dv-button" href="/dashboard/jobs">
+                Open My Jobs
+              </Link>
+            </div>
+          </main>
+        ) : (
+          children
+        )}
       </section>
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
-          Home
-        </Link>
+        {!technicianOnly ? (
+          <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
+            Home
+          </Link>
+        ) : null}
+        {!technicianOnly ? (
+          <Link
+            href="/dashboard/customers"
+            className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
+          >
+            Customers
+          </Link>
+        ) : null}
         <Link
-          href="/dashboard/customers"
-          className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
+          href="/dashboard/jobs"
+          className={pathname.startsWith("/dashboard/jobs") ? "is-active" : ""}
         >
-          Customers
+          Jobs
         </Link>
-        <span>Jobs</span>
         <button onClick={() => setShowLogoutConfirmation(true)}>Log Out</button>
       </nav>
       {showLogoutConfirmation ? (
