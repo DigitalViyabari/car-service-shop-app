@@ -27,6 +27,14 @@ service cloud.firestore {
         membership(companyId).data.companyRoles is list &&
         membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin"]);
     }
+    function companyCatalogManager(companyId) {
+      return companyMember(companyId) && (
+        (membership(companyId).data.companyRoles is list &&
+         membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin"])) ||
+        (membership(companyId).data.branchRoleKeys is list &&
+         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "inventory_manager"]))
+      );
+    }
     function validAuditCreate() {
       return request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.updatedBy == request.auth.uid &&
@@ -102,6 +110,21 @@ service cloud.firestore {
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.customerId == resource.data.customerId && validAuditUpdate();
+      allow delete: if false;
+    }
+    match /vehicleCatalog/{catalogId} {
+      allow read: if resource.data.companyId is string && companyMember(resource.data.companyId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "make", "model", "fuelTypes", "transmissions", "searchText",
+          "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && companyCatalogManager(request.resource.data.companyId) &&
+        request.resource.data.make is string && request.resource.data.make.size() >= 1 && request.resource.data.make.size() <= 80 &&
+        request.resource.data.model is string && request.resource.data.model.size() >= 1 && request.resource.data.model.size() <= 80 &&
+        request.resource.data.fuelTypes is list && request.resource.data.fuelTypes.size() > 0 &&
+        request.resource.data.transmissions is list && request.resource.data.transmissions.size() > 0 &&
+        request.resource.data.status == "active" && validAuditCreate();
+      allow update: if companyCatalogManager(resource.data.companyId) &&
+        request.resource.data.companyId == resource.data.companyId && validAuditUpdate();
       allow delete: if false;
     }
     match /{collection}/{documentId} {

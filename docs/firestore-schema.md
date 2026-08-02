@@ -18,4 +18,8 @@ Vehicles reference customers through `customerId`. Future job sheets will refere
 
 Vehicle records include colour as a standard field. Supported fuel choices include Petrol, Diesel, CNG, Petrol + CNG, Electric, Hybrid, and Other. Stored enum values remain normalized while all user-facing labels use title case.
 
+## Vehicle catalogue
+
+The shared Indian default catalogue ships as application reference data and is read-only to tenants. Company-owned additions are stored in `vehicleCatalog`, scoped by `companyId`, and may include make, model, variant, body type, supported fuels/transmissions, year range, and notes. Customer vehicle records copy selected text values rather than depending on a mutable catalogue document, preserving historical accuracy.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.

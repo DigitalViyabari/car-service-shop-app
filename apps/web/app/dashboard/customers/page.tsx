@@ -1,6 +1,6 @@
 "use client";
 
-import type { Customer, CustomerType, Vehicle, VehicleFuelType, VehicleTransmission } from "@dvcs/types";
+import type { Customer, CustomerType, Vehicle, VehicleCatalogEntry, VehicleFuelType, VehicleTransmission } from "@dvcs/types";
 import {
   collection,
   doc,
@@ -15,6 +15,7 @@ import {
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { firebaseClient } from "@/lib/firebase-client";
+import { indianVehicleCatalogue } from "@/lib/indian-vehicle-catalogue";
 
 type CustomerDraft = {
   type: CustomerType;
@@ -85,6 +86,7 @@ export default function CustomersPage() {
   const { user, activeCompanyId, activeBranchId } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [catalogEntries, setCatalogEntries] = useState<VehicleCatalogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -101,14 +103,16 @@ export default function CustomersPage() {
     setLoading(true);
     setError(null);
     try {
-      const [customerSnapshots, vehicleSnapshots] = await Promise.all([
+      const [customerSnapshots, vehicleSnapshots, catalogSnapshots] = await Promise.all([
         getDocs(query(collection(firebaseClient.db, "customers"), where("companyId", "==", activeCompanyId), where("branchId", "==", activeBranchId))),
         getDocs(query(collection(firebaseClient.db, "vehicles"), where("companyId", "==", activeCompanyId), where("branchId", "==", activeBranchId))),
+        getDocs(query(collection(firebaseClient.db, "vehicleCatalog"), where("companyId", "==", activeCompanyId))),
       ]);
       const nextCustomers = customerSnapshots.docs.map(asCustomer).filter(({ status }) => status === "active").sort((a, b) => a.name.localeCompare(b.name));
       const nextVehicles = vehicleSnapshots.docs.map(asVehicle).filter(({ status }) => status === "active");
       setCustomers(nextCustomers);
       setVehicles(nextVehicles);
+      setCatalogEntries(catalogSnapshots.docs.map((item) => ({ ...(item.data() as Omit<VehicleCatalogEntry, "id">), id: item.id })).filter(({ status }) => status === "active"));
       setSelectedId((current) => current && nextCustomers.some(({ id }) => id === current) ? current : (nextCustomers[0]?.id ?? null));
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load customers.");
@@ -130,6 +134,12 @@ export default function CustomersPage() {
 
   const selectedCustomer = customers.find(({ id }) => id === selectedId) ?? null;
   const selectedVehicles = vehicles.filter(({ customerId }) => customerId === selectedId);
+  const catalogueMakes = [...new Set([...indianVehicleCatalogue.map(({ make }) => make), ...catalogEntries.map(({ make }) => make)])].sort();
+  const catalogueModels = [...new Set([
+    ...indianVehicleCatalogue.filter(({ make }) => make.toLowerCase() === vehicleDraft.make.trim().toLowerCase()).map(({ model }) => model),
+    ...catalogEntries.filter(({ make }) => make.toLowerCase() === vehicleDraft.make.trim().toLowerCase()).map(({ model }) => model),
+  ])].sort();
+  const catalogueVariants = [...new Set(catalogEntries.filter(({ make, model }) => make.toLowerCase() === vehicleDraft.make.trim().toLowerCase() && model.toLowerCase() === vehicleDraft.model.trim().toLowerCase()).map(({ variant }) => variant).filter(Boolean))];
 
   async function createCustomer(event: FormEvent) {
     event.preventDefault();
@@ -278,7 +288,7 @@ export default function CustomersPage() {
 
       {showCustomerForm ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowCustomerForm(false); }}><form className="module-modal" onSubmit={createCustomer}><ModalHeader eyebrow="New Record" title="Add Customer" onClose={() => setShowCustomerForm(false)} /><div className="form-grid"><label>Customer Type<select value={customerDraft.type} onChange={(e) => setCustomerDraft({ ...customerDraft, type: e.target.value as CustomerType })}><option value="individual">Individual</option><option value="business">Business</option></select></label><label>Full Name / Business Name *<input value={customerDraft.name} onChange={(e) => setCustomerDraft({ ...customerDraft, name: e.target.value })} autoFocus required /></label><label>Mobile Number *<input inputMode="numeric" value={customerDraft.phone} onChange={(e) => setCustomerDraft({ ...customerDraft, phone: e.target.value })} placeholder="10-digit number" required /></label><label>Alternate Number<input inputMode="numeric" value={customerDraft.alternatePhone} onChange={(e) => setCustomerDraft({ ...customerDraft, alternatePhone: e.target.value })} /></label><label>Email Address<input type="email" value={customerDraft.email} onChange={(e) => setCustomerDraft({ ...customerDraft, email: e.target.value })} /></label><label>GSTIN<input value={customerDraft.gstin} onChange={(e) => setCustomerDraft({ ...customerDraft, gstin: e.target.value })} /></label><label className="span-2">Address<input value={customerDraft.address} onChange={(e) => setCustomerDraft({ ...customerDraft, address: e.target.value })} /></label><label className="span-2">Notes<textarea value={customerDraft.notes} onChange={(e) => setCustomerDraft({ ...customerDraft, notes: e.target.value })} rows={3} /></label></div><ModalFooter submitting={submitting} onCancel={() => setShowCustomerForm(false)} label="Save Customer" /></form></div> : null}
 
-      {showVehicleForm ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeVehicleForm(); }}><form className="module-modal" onSubmit={saveVehicle}><ModalHeader eyebrow={`Vehicle Owner · ${selectedCustomer?.name ?? ""}`} title={editingVehicleId ? "Edit Vehicle" : "Add Vehicle"} onClose={closeVehicleForm} />{error ? <div className="alert alert--error modal-alert" role="alert">{error}</div> : null}<div className="form-grid"><label>Registration Number *<input value={vehicleDraft.registrationNumber} onChange={(e) => setVehicleDraft({ ...vehicleDraft, registrationNumber: e.target.value.toUpperCase() })} placeholder="MH12AB1234" autoFocus required /></label><label>Make *<input value={vehicleDraft.make} onChange={(e) => setVehicleDraft({ ...vehicleDraft, make: e.target.value })} placeholder="Tata" required /></label><label>Model *<input value={vehicleDraft.model} onChange={(e) => setVehicleDraft({ ...vehicleDraft, model: e.target.value })} placeholder="Nexon" required /></label><label>Variant<input value={vehicleDraft.variant} onChange={(e) => setVehicleDraft({ ...vehicleDraft, variant: e.target.value })} /></label><label>Colour<input value={vehicleDraft.colour} onChange={(e) => setVehicleDraft({ ...vehicleDraft, colour: e.target.value })} placeholder="Pearl White" /></label><label>Fuel Type<select value={vehicleDraft.fuelType} onChange={(e) => setVehicleDraft({ ...vehicleDraft, fuelType: e.target.value as VehicleFuelType })}>{fuelOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Transmission<select value={vehicleDraft.transmission} onChange={(e) => setVehicleDraft({ ...vehicleDraft, transmission: e.target.value as VehicleTransmission })}>{transmissionOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Model Year<input type="number" min="1950" max="2100" value={vehicleDraft.year} onChange={(e) => setVehicleDraft({ ...vehicleDraft, year: e.target.value })} /></label><label>Odometer (km)<input type="number" min="0" value={vehicleDraft.odometer} onChange={(e) => setVehicleDraft({ ...vehicleDraft, odometer: e.target.value })} /></label><label className="span-2">VIN / Chassis Number<input value={vehicleDraft.vin} onChange={(e) => setVehicleDraft({ ...vehicleDraft, vin: e.target.value.toUpperCase() })} /></label><label className="span-2">Vehicle Notes<textarea value={vehicleDraft.notes} onChange={(e) => setVehicleDraft({ ...vehicleDraft, notes: e.target.value })} rows={3} /></label></div><ModalFooter submitting={submitting} onCancel={closeVehicleForm} label={editingVehicleId ? "Save Changes" : "Add Vehicle"} /></form></div> : null}
+      {showVehicleForm ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeVehicleForm(); }}><form className="module-modal" onSubmit={saveVehicle}><ModalHeader eyebrow={`Vehicle Owner · ${selectedCustomer?.name ?? ""}`} title={editingVehicleId ? "Edit Vehicle" : "Add Vehicle"} onClose={closeVehicleForm} />{error ? <div className="alert alert--error modal-alert" role="alert">{error}</div> : null}<div className="form-grid"><label>Registration Number *<input value={vehicleDraft.registrationNumber} onChange={(e) => setVehicleDraft({ ...vehicleDraft, registrationNumber: e.target.value.toUpperCase() })} placeholder="MH12AB1234" autoFocus required /></label><label>Make *<input list="vehicle-makes" value={vehicleDraft.make} onChange={(e) => setVehicleDraft({ ...vehicleDraft, make: e.target.value, model: "", variant: "" })} placeholder="Select Or Type Make" required /><datalist id="vehicle-makes">{catalogueMakes.map((value) => <option key={value} value={value} />)}</datalist></label><label>Model *<input list="vehicle-models" value={vehicleDraft.model} onChange={(e) => setVehicleDraft({ ...vehicleDraft, model: e.target.value, variant: "" })} placeholder="Select Or Type Model" required /><datalist id="vehicle-models">{catalogueModels.map((value) => <option key={value} value={value} />)}</datalist></label><label>Variant<input list="vehicle-variants" value={vehicleDraft.variant} onChange={(e) => setVehicleDraft({ ...vehicleDraft, variant: e.target.value })} placeholder="Select Or Type Variant"/><datalist id="vehicle-variants">{catalogueVariants.map((value) => <option key={value} value={value} />)}</datalist></label><label>Colour<input value={vehicleDraft.colour} onChange={(e) => setVehicleDraft({ ...vehicleDraft, colour: e.target.value })} placeholder="Pearl White" /></label><label>Fuel Type<select value={vehicleDraft.fuelType} onChange={(e) => setVehicleDraft({ ...vehicleDraft, fuelType: e.target.value as VehicleFuelType })}>{fuelOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Transmission<select value={vehicleDraft.transmission} onChange={(e) => setVehicleDraft({ ...vehicleDraft, transmission: e.target.value as VehicleTransmission })}>{transmissionOptions.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}</select></label><label>Model Year<input type="number" min="1950" max="2100" value={vehicleDraft.year} onChange={(e) => setVehicleDraft({ ...vehicleDraft, year: e.target.value })} /></label><label>Odometer (km)<input type="number" min="0" value={vehicleDraft.odometer} onChange={(e) => setVehicleDraft({ ...vehicleDraft, odometer: e.target.value })} /></label><label className="span-2">VIN / Chassis Number<input value={vehicleDraft.vin} onChange={(e) => setVehicleDraft({ ...vehicleDraft, vin: e.target.value.toUpperCase() })} /></label><label className="span-2">Vehicle Notes<textarea value={vehicleDraft.notes} onChange={(e) => setVehicleDraft({ ...vehicleDraft, notes: e.target.value })} rows={3} /></label></div><ModalFooter submitting={submitting} onCancel={closeVehicleForm} label={editingVehicleId ? "Save Changes" : "Add Vehicle"} /></form></div> : null}
     </main>
   );
 }

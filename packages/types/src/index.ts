@@ -135,3 +135,19 @@ export interface Vehicle extends AuditFields {
   searchRegistration: string;
   status: "active" | "archived";
 }
+
+export interface VehicleCatalogEntry extends AuditFields {
+  id: string;
+  companyId: string;
+  make: string;
+  model: string;
+  variant?: string;
+  bodyType?: string;
+  fuelTypes: VehicleFuelType[];
+  transmissions: VehicleTransmission[];
+  yearFrom?: number;
+  yearTo?: number;
+  notes?: string;
+  searchText: string;
+  status: "active" | "archived";
+}
