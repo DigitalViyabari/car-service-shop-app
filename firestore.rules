@@ -35,6 +35,11 @@ service cloud.firestore {
          (membership(companyId).data.branchRoleKeys is list &&
           membership(companyId).data.branchRoleKeys.hasAny(["branch_manager"])));
     }
+    function jobCreator(companyId, branchId) {
+      return branchMember(companyId, branchId) &&
+        membership(companyId).data.branchRoleKeys is list &&
+        membership(companyId).data.branchRoleKeys.hasAny(["job_creator"]);
+    }
     function companyCatalogManager(companyId) {
       return companyMember(companyId) && (
         (membership(companyId).data.companyRoles is list &&
@@ -49,7 +54,7 @@ service cloud.firestore {
         (membership(companyId).data.companyRoles is list &&
          membership(companyId).data.companyRoles.hasAny(["company_accountant"])) ||
         (membership(companyId).data.branchRoleKeys is list &&
-         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "finance_manager", "cashier"]))
+         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "finance_manager"]))
       ));
     }
     function validAuditCreate() {
@@ -203,7 +208,8 @@ service cloud.firestore {
           "serviceType", "odometer", "fuelLevel", "complaints", "checkedInAt",
           "assignedTechnicianIds", "estimateTotal", "invoiceTotal",
           "createdAt", "createdBy", "updatedAt", "updatedBy"
-        ]) && operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        ]) && (operationsManager(request.resource.data.companyId, request.resource.data.branchId) ||
+          jobCreator(request.resource.data.companyId, request.resource.data.branchId)) &&
         request.resource.data.status == "check_in" &&
         (request.resource.data.odometer == null || request.resource.data.odometer >= 0) &&
         (request.resource.data.fuelLevel == null ||

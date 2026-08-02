@@ -4,8 +4,8 @@ export type CompanyRole =
 export type BranchRole =
   | "branch_manager"
   | "service_advisor"
-  | "cashier"
   | "finance_manager"
+  | "job_creator"
   | "inventory_manager"
   | "technician"
   | "receptionist"
