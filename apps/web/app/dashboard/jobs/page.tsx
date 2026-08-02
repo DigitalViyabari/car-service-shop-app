@@ -135,6 +135,7 @@ export default function JobsPage() {
     [addingService, setAddingService] = useState(false),
     [newServiceName, setNewServiceName] = useState("");
   const [technicians, setTechnicians] = useState<WorkshopMember[]>([]);
+  const [handledPrefill, setHandledPrefill] = useState(false);
   const membership = memberships.find((item) => item.companyId === activeCompanyId),
     branchRoles =
       membership?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
@@ -289,6 +290,24 @@ export default function JobsPage() {
   useEffect(() => {
     void loadTechnicians();
   }, [loadTechnicians]);
+  useEffect(() => {
+    if (handledPrefill || loading || !canCreateJob) return;
+    const parameters = new URLSearchParams(window.location.search),
+      customerId = parameters.get("customerId") ?? "",
+      vehicleId = parameters.get("vehicleId") ?? "",
+      vehicle = vehicles.find((item) => item.id === vehicleId && item.customerId === customerId);
+    setHandledPrefill(true);
+    if (!customers.some(({ id }) => id === customerId) || !vehicle) return;
+    setDraft({
+      ...emptyDraft,
+      customerId,
+      vehicleId,
+      odometer: vehicle.odometer ? String(vehicle.odometer) : "",
+    });
+    setError(null);
+    setShowForm(true);
+    window.history.replaceState({}, "", "/dashboard/jobs");
+  }, [canCreateJob, customers, handledPrefill, loading, vehicles]);
   useEffect(() => {
     if (isTechnician && !canAssignTechnician && user) setTechnicianFilter(user.uid);
   }, [canAssignTechnician, isTechnician, user]);

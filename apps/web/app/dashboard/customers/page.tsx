@@ -145,6 +145,13 @@ export default function CustomersPage() {
   const [vehicleDraft, setVehicleDraft] = useState<VehicleDraft>(emptyVehicle);
   const [saveToCatalogue, setSaveToCatalogue] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  function createJobForVehicle(vehicle: Vehicle) {
+    const parameters = new URLSearchParams({
+      customerId: vehicle.customerId,
+      vehicleId: vehicle.id,
+    });
+    window.location.assign(`/dashboard/jobs?${parameters.toString()}`);
+  }
 
   const loadRecords = useCallback(async () => {
     if (!activeCompanyId || !activeBranchId) return;
@@ -685,13 +692,22 @@ export default function CustomersPage() {
                       </div>
                       <div className="vehicle-card-actions">
                         <div className="registration-plate">{vehicle.registrationNumber}</div>
-                        <button
-                          type="button"
-                          onClick={() => openEditVehicleForm(vehicle)}
-                          aria-label={`Edit ${vehicle.make} ${vehicle.model}`}
-                        >
-                          Edit Vehicle
-                        </button>
+                        <div>
+                          <button
+                            type="button"
+                            onClick={() => openEditVehicleForm(vehicle)}
+                            aria-label={`Edit ${vehicle.make} ${vehicle.model}`}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="vehicle-create-job"
+                            onClick={() => createJobForVehicle(vehicle)}
+                          >
+                            Create Job →
+                          </button>
+                        </div>
                       </div>
                       <dl>
                         <div>
@@ -769,10 +785,19 @@ export default function CustomersPage() {
                 </button>
                 <button
                   className="job-action"
-                  disabled
-                  title="Available in the next job-card phase"
+                  disabled={selectedVehicles.length !== 1}
+                  onClick={() => {
+                    if (selectedVehicles[0]) createJobForVehicle(selectedVehicles[0]);
+                  }}
+                  title={
+                    selectedVehicles.length > 1
+                      ? "Choose a vehicle above"
+                      : selectedVehicles.length === 0
+                        ? "Add a vehicle first"
+                        : "Create a job for this vehicle"
+                  }
                 >
-                  Create job card <span>→</span>
+                  {selectedVehicles.length > 1 ? "Choose Vehicle" : "Create Job"} <span>→</span>
                 </button>
               </div>
             </>
