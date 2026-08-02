@@ -134,7 +134,7 @@ export default function ProductsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [productDocs, inventoryDocs, movementDocs] = await Promise.all([
+      const [productDocs, movementDocs, inventoryDocs] = await Promise.all([
         getDocs(
           query(
             collection(firebaseClient.db, "products"),
@@ -157,7 +157,19 @@ export default function ProductsPage() {
         ),
       ]);
       const nextProducts = productDocs.docs
-        .map((item) => ({ ...item.data(), id: item.id }) as Product)
+        .map((item) => {
+          const data = item.data();
+          return {
+            ...data,
+            id: item.id,
+            name: String(data.name ?? "Unnamed Product"),
+            sku: String(data.sku ?? item.id),
+            searchText: String(
+              data.searchText ??
+                `${data.name ?? ""} ${data.nickname ?? ""} ${data.sku ?? ""} ${data.barcode ?? ""} ${data.brand ?? ""}`,
+            ).toLowerCase(),
+          } as Product;
+        })
         .filter(({ status }) => status === "active")
         .sort((a, b) => a.name.localeCompare(b.name));
       const nextInventory = inventoryDocs.docs
@@ -192,7 +204,7 @@ export default function ProductsPage() {
       const item = inventory.find(({ productId }) => productId === product.id);
       const matches =
         !term ||
-        product.searchText.includes(term) ||
+        (product.searchText ?? "").includes(term) ||
         product.barcode?.toLowerCase().includes(term) ||
         product.oemPartNumber?.toLowerCase().includes(term);
       const stock = item?.currentStock ?? 0;
@@ -270,7 +282,8 @@ export default function ProductsPage() {
     }
     if (
       products.some(
-        (product) => product.id !== editingId && product.sku.toLowerCase() === sku.toLowerCase(),
+        (product) =>
+          product.id !== editingId && String(product.sku ?? "").toLowerCase() === sku.toLowerCase(),
       )
     ) {
       setError("This SKU already exists in your company catalogue.");
@@ -291,7 +304,8 @@ export default function ProductsPage() {
       const productRef = editingId
         ? doc(firebaseClient.db, "products", editingId)
         : doc(collection(firebaseClient.db, "products"));
-      const inventoryId = `${activeBranchId}_${productRef.id}`;
+      const inventoryId =
+        editingId && selectedStock ? selectedStock.id : `${activeBranchId}_${productRef.id}`;
       const itemRef = doc(firebaseClient.db, "inventoryItems", inventoryId);
       const productValues = {
         name,
