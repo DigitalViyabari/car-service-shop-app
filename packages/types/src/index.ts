@@ -219,3 +219,22 @@ export interface JobSheet extends AuditFields {
   estimateTotal: number;
   invoiceTotal: number;
 }
+
+export interface JobLineItem extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  jobId: string;
+  type: "labour" | "product";
+  productId?: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  discount: number;
+  gstRate: number;
+  taxableAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  status: "active" | "removed";
+}

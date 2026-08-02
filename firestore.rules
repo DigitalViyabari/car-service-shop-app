@@ -182,6 +182,27 @@ service cloud.firestore {
         request.resource.data.jobNumber == resource.data.jobNumber && validAuditUpdate();
       allow delete: if false;
     }
+    match /jobLineItems/{lineId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "jobId", "type", "description", "quantity", "unit",
+          "unitPrice", "discount", "gstRate", "taxableAmount", "taxAmount", "totalAmount",
+          "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        existsAfter(/databases/$(database)/documents/jobSheets/$(request.resource.data.jobId)) &&
+        getAfter(/databases/$(database)/documents/jobSheets/$(request.resource.data.jobId)).data.companyId == request.resource.data.companyId &&
+        getAfter(/databases/$(database)/documents/jobSheets/$(request.resource.data.jobId)).data.branchId == request.resource.data.branchId &&
+        request.resource.data.quantity > 0 && request.resource.data.unitPrice >= 0 &&
+        request.resource.data.discount >= 0 && request.resource.data.taxableAmount >= 0 &&
+        request.resource.data.taxAmount >= 0 && request.resource.data.totalAmount >= 0 &&
+        request.resource.data.status == "active" && validAuditCreate();
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.jobId == resource.data.jobId && validAuditUpdate();
+      allow delete: if false;
+    }
     match /{collection}/{documentId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
         branchMember(resource.data.companyId, resource.data.branchId);

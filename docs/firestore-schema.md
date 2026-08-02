@@ -32,4 +32,6 @@ Products and inventory items use archive status rather than deletion so future j
 
 `jobSheets` stores branch-owned vehicle check-ins and their operational lifecycle. It references customer and vehicle IDs while retaining display snapshots for workshop speed and historical readability. The immutable job number, customer, vehicle and tenant references are protected by rules. Status transitions, complaints, odometer, fuel level, promised delivery, priority, assignments, estimate and invoice totals remain auditable.
 
+`jobLineItems` stores active or removed labour and product estimate lines. Each line snapshots description, quantity, unit price, discount, GST rate, taxable value, tax, and total. Adding or removing a line updates the parent job estimate in the same atomic batch. Removed lines remain available for audit; preparing an estimate does not deduct physical stock.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.
