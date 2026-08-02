@@ -77,6 +77,10 @@ service cloud.firestore {
       // Ledger entries are written by trusted server processes using the Admin SDK.
       allow write: if false;
     }
+    match /communicationCredentials/{credentialId} {
+      // Provider credentials are encrypted and accessible only through trusted backend code.
+      allow read, write: if false;
+    }
     match /branches/{branchId} {
       allow read: if branchMember(resource.data.companyId, branchId);
       allow write: if false;

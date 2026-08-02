@@ -289,5 +289,5 @@ export interface CommunicationLedgerEntry extends AuditFields {
   balanceAfter: number;
   description: string;
   referenceId?: string;
-  status: "completed" | "failed" | "reversed";
+  status: "pending" | "completed" | "failed" | "reversed";
 }
