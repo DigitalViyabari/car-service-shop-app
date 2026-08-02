@@ -39,6 +39,15 @@ export default function PlatformAdminPage() {
     [accessChecked, setAccessChecked] = useState(false),
     [platformRoles, setPlatformRoles] = useState<string[]>([]);
   const [admin, setAdmin] = useState({ displayName: "", email: "", temporaryPassword: "" }),
+    [companyDraft, setCompanyDraft] = useState({
+      companyName: "",
+      branchName: "Main Branch",
+      ownerName: "",
+      ownerEmail: "",
+      temporaryPassword: "",
+      billingCycle: "monthly",
+      trialDays: 30,
+    }),
     [busy, setBusy] = useState(false);
   const allowed = platformRoles.some((role) =>
       ["platform_super_admin", "platform_support_admin"].includes(role),
@@ -85,6 +94,35 @@ export default function PlatformAdminPage() {
       setMessage("Support Admin created successfully.");
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to create admin.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function createCompany() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await api("/api/v1/admin/companies", {
+        method: "POST",
+        body: JSON.stringify({ ...companyDraft, trialDays: Number(companyDraft.trialDays) }),
+      });
+      setCompanyDraft({
+        companyName: "",
+        branchName: "Main Branch",
+        ownerName: "",
+        ownerEmail: "",
+        temporaryPassword: "",
+        billingCycle: "monthly",
+        trialDays: 30,
+      });
+      setMessage(
+        `Company created. Subscription is ${result.subscriptionStatus} until ${new Date(result.currentPeriodEnd).toLocaleDateString("en-IN")}.`,
+      );
+      const overview = await api("/api/v1/admin/overview");
+      setBusinesses(overview.companies ?? []);
+      setAccounts(overview.accounts ?? []);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to create company.");
     } finally {
       setBusy(false);
     }
@@ -173,6 +211,92 @@ export default function PlatformAdminPage() {
           <span>Accounts</span>
           <strong>{accounts.length}</strong>
         </article>
+      </section>
+      <section className="platform-company-create">
+        <header>
+          <div>
+            <span className="heading-kicker">New Subscription</span>
+            <h2>Create Company &amp; Owner</h2>
+            <p>Creates the company, Main Branch, owner login and billing period together.</p>
+          </div>
+        </header>
+        <div className="form-grid">
+          <label>
+            Company Name
+            <input
+              value={companyDraft.companyName}
+              onChange={(e) => setCompanyDraft({ ...companyDraft, companyName: e.target.value })}
+            />
+          </label>
+          <label>
+            Branch Name
+            <input
+              value={companyDraft.branchName}
+              onChange={(e) => setCompanyDraft({ ...companyDraft, branchName: e.target.value })}
+            />
+          </label>
+          <label>
+            Owner Name
+            <input
+              value={companyDraft.ownerName}
+              onChange={(e) => setCompanyDraft({ ...companyDraft, ownerName: e.target.value })}
+            />
+          </label>
+          <label>
+            Owner Email
+            <input
+              type="email"
+              value={companyDraft.ownerEmail}
+              onChange={(e) => setCompanyDraft({ ...companyDraft, ownerEmail: e.target.value })}
+            />
+          </label>
+          <label>
+            Temporary Password
+            <input
+              type="password"
+              value={companyDraft.temporaryPassword}
+              onChange={(e) =>
+                setCompanyDraft({ ...companyDraft, temporaryPassword: e.target.value })
+              }
+            />
+          </label>
+          <label>
+            Billing Cycle
+            <select
+              value={companyDraft.billingCycle}
+              onChange={(e) => setCompanyDraft({ ...companyDraft, billingCycle: e.target.value })}
+            >
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+          <label>
+            Trial Period (Days)
+            <input
+              type="number"
+              min="0"
+              max="365"
+              value={companyDraft.trialDays}
+              onChange={(e) =>
+                setCompanyDraft({ ...companyDraft, trialDays: Number(e.target.value) })
+              }
+            />
+            <small>Enter 0 to activate billing immediately.</small>
+          </label>
+          <button
+            className="dv-button"
+            disabled={
+              busy ||
+              !companyDraft.companyName ||
+              !companyDraft.ownerName ||
+              !companyDraft.ownerEmail ||
+              companyDraft.temporaryPassword.length < 8
+            }
+            onClick={() => void createCompany()}
+          >
+            {busy ? "Creating…" : "Create Company"}
+          </button>
+        </div>
       </section>
       <section className="platform-businesses">
         <header>

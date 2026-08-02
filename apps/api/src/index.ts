@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 
@@ -80,6 +80,15 @@ const issueInvoiceSchema = z.object({
   jobId: z.string().min(2).max(128),
   dueAt: z.string().max(40).nullable().optional(),
   notes: z.string().max(1000).default(""),
+});
+const createCompanySchema = z.object({
+  companyName: z.string().min(2).max(120),
+  branchName: z.string().min(2).max(120).default("Main Branch"),
+  ownerName: z.string().min(2).max(100),
+  ownerEmail: z.email(),
+  temporaryPassword: z.string().min(8).max(128),
+  billingCycle: z.enum(["monthly", "yearly"]),
+  trialDays: z.number().int().min(0).max(365).default(30),
 });
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
@@ -254,6 +263,111 @@ async function createPlatformAdmin(request: IncomingMessage, user: DecodedIdToke
     updatedBy: user.uid,
   });
   return { created: true, userId: created.uid };
+}
+function companySlug(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+async function createCompany(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await platformAdministrator(user.uid)))
+    throw new ApiError(403, "Platform Admin access is required.");
+  const parsed = createCompanySchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid company and owner details.");
+  const input = parsed.data,
+    suffix = randomBytes(3).toString("hex"),
+    companyId = `${companySlug(input.companyName) || "company"}-${suffix}`,
+    branchId = `${companyId}-main`,
+    nowDate = new Date(),
+    periodEnd = new Date(nowDate);
+  periodEnd.setDate(
+    periodEnd.getDate() +
+      (input.trialDays > 0 ? input.trialDays : input.billingCycle === "monthly" ? 30 : 365),
+  );
+  let owner;
+  try {
+    owner = await auth.createUser({
+      displayName: input.ownerName,
+      email: input.ownerEmail.toLowerCase(),
+      password: input.temporaryPassword,
+    });
+  } catch {
+    throw new ApiError(409, "This owner email already exists. Use a different email address.");
+  }
+  const now = FieldValue.serverTimestamp(),
+    batch = db.batch();
+  batch.create(db.doc(`users/${owner.uid}`), {
+    displayName: input.ownerName,
+    email: input.ownerEmail.toLowerCase(),
+    platformRoles: [],
+    status: "active",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.create(db.doc(`companies/${companyId}`), {
+    name: input.companyName,
+    status: "active",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.create(db.doc(`branches/${branchId}`), {
+    companyId,
+    name: input.branchName,
+    code: "MB",
+    status: "active",
+    timezone: "Asia/Kolkata",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.create(db.doc(`memberships/${owner.uid}_${companyId}`), {
+    userId: owner.uid,
+    companyId,
+    companyRoles: ["company_owner"],
+    branchIds: [branchId],
+    branchAssignments: [],
+    branchRoleKeys: [],
+    status: "active",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.create(db.doc(`branchSubscriptions/${branchId}`), {
+    companyId,
+    branchId,
+    planId: input.billingCycle,
+    billingCycle: input.billingCycle,
+    status: input.trialDays > 0 ? "trialing" : "active",
+    trialDays: input.trialDays,
+    currentPeriodStart: Timestamp.fromDate(nowDate),
+    currentPeriodEnd: Timestamp.fromDate(periodEnd),
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  try {
+    await batch.commit();
+  } catch (reason) {
+    await auth.deleteUser(owner.uid).catch(() => undefined);
+    throw reason;
+  }
+  return {
+    created: true,
+    companyId,
+    branchId,
+    ownerUserId: owner.uid,
+    subscriptionStatus: input.trialDays > 0 ? "trialing" : "active",
+    currentPeriodEnd: periodEnd.toISOString(),
+  };
 }
 async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken) {
   if (!(await superAdmin(user.uid))) throw new ApiError(403, "Super Admin access is required.");
@@ -1097,6 +1211,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await platformOverview(user));
     if (request.method === "POST" && url.pathname === "/v1/admin/create")
       return reply(response, 200, await createPlatformAdmin(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/companies")
+      return reply(response, 200, await createCompany(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")
       return reply(response, 200, await impersonateAccount(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/issue")

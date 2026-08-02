@@ -813,11 +813,25 @@ form .dv-button {
 }
 .platform-businesses,
 .platform-accounts,
-.platform-admin-create {
+.platform-admin-create,
+.platform-company-create {
   padding: 24px;
   border: 1px solid #d8dee4;
   border-radius: 18px;
   background: #fff;
+}
+.platform-company-create > header {
+  margin-bottom: 18px;
+}
+.platform-company-create header p {
+  margin: 5px 0 0;
+  color: #68737f;
+}
+.platform-company-create .form-grid {
+  align-items: end;
+}
+.platform-company-create label small {
+  color: #68737f;
 }
 .platform-businesses > header,
 .platform-accounts > header {
