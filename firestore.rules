@@ -162,6 +162,26 @@ service cloud.firestore {
         request.resource.data.reorderLevel >= 0 && validAuditUpdate();
       allow delete: if false;
     }
+    match /jobSheets/{jobId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "jobNumber", "customerId", "vehicleId", "status", "priority",
+          "serviceType", "odometer", "fuelLevel", "complaints", "checkedInAt",
+          "assignedTechnicianIds", "estimateTotal", "invoiceTotal",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.status == "check_in" && request.resource.data.odometer >= 0 &&
+        request.resource.data.fuelLevel >= 0 && request.resource.data.fuelLevel <= 100 &&
+        request.resource.data.complaints is list && request.resource.data.complaints.size() > 0 && validAuditCreate();
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.customerId == resource.data.customerId &&
+        request.resource.data.vehicleId == resource.data.vehicleId &&
+        request.resource.data.jobNumber == resource.data.jobNumber && validAuditUpdate();
+      allow delete: if false;
+    }
     match /{collection}/{documentId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
         branchMember(resource.data.companyId, resource.data.branchId);

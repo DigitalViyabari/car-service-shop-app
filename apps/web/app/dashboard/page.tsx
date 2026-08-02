@@ -1,10 +1,26 @@
 "use client";
 
 import { Card, StatusBadge } from "@dvcs/ui";
+import type { JobSheet, JobStatus } from "@dvcs/types";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { firebaseClient } from "@/lib/firebase-client";
 
 export default function DashboardPage() {
-  const { activeCompany, activeBranch } = useAuth();
+  const { activeCompany, activeBranch, activeCompanyId, activeBranchId } = useAuth();
+  const [openJobs, setOpenJobs] = useState<number | null>(null);
+  const [vehiclesInService, setVehiclesInService] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!activeCompanyId || !activeBranchId) return;
+    void getDocs(query(collection(firebaseClient.db, "jobSheets"), where("companyId", "==", activeCompanyId), where("branchId", "==", activeBranchId))).then((snapshots) => {
+      const inactive: JobStatus[] = ["delivered", "cancelled"];
+      const active = snapshots.docs.map((item) => item.data() as JobSheet).filter(({ status }) => !inactive.includes(status));
+      setOpenJobs(active.length);
+      setVehiclesInService(new Set(active.map(({ vehicleId }) => vehicleId)).size);
+    }).catch(() => { setOpenJobs(null); setVehiclesInService(null); });
+  }, [activeBranchId, activeCompanyId]);
 
   if (!activeBranch) {
     return (
@@ -32,14 +48,14 @@ export default function DashboardPage() {
       </div>
       <div className="cards">
         <Card>
-          <div className="metric-header"><span className="metric-label">Jobs today</span><span className="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M5 4h14v17H5zM8 2h8v4H8zM8 11h8M8 15h5"/></svg></span></div>
-          <div className="metric">—</div>
-          <p className="muted metric-foot">No job cards opened yet</p>
+          <div className="metric-header"><span className="metric-label">Open Job Cards</span><span className="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M5 4h14v17H5zM8 2h8v4H8zM8 11h8M8 15h5"/></svg></span></div>
+          <div className="metric">{openJobs ?? "—"}</div>
+          <p className="muted metric-foot">Across the active service flow</p>
         </Card>
         <Card>
           <div className="metric-header"><span className="metric-label">Vehicles in service</span><span className="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M4 15.5 6.5 9h11l2.5 6.5M3 15.5h18v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3Z"/><circle cx="7" cy="17.5" r="1"/><circle cx="17" cy="17.5" r="1"/></svg></span></div>
-          <div className="metric">—</div>
-          <p className="muted metric-foot">Service bay is ready</p>
+          <div className="metric">{vehiclesInService ?? "—"}</div>
+          <p className="muted metric-foot">Currently checked in</p>
         </Card>
         <Card>
           <div className="metric-header"><span className="metric-label">Branch revenue</span><span className="metric-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h3"/></svg></span></div>

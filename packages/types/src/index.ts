@@ -191,3 +191,31 @@ export interface InventoryItem extends AuditFields {
   preferredSupplier?: string;
   status: "active" | "archived";
 }
+
+export type JobStatus = "check_in" | "inspection" | "estimate_pending" | "approved" | "in_progress" | "quality_check" | "ready" | "delivered" | "cancelled";
+export type JobPriority = "normal" | "urgent" | "breakdown";
+
+export interface JobSheet extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  jobNumber: string;
+  customerId: string;
+  vehicleId: string;
+  customerName: string;
+  vehicleLabel: string;
+  registrationNumber: string;
+  status: JobStatus;
+  priority: JobPriority;
+  serviceType: string;
+  odometer: number;
+  fuelLevel: number;
+  complaints: string[];
+  internalNotes?: string;
+  promisedAt?: string;
+  checkedInAt: string;
+  deliveredAt?: string;
+  assignedTechnicianIds: string[];
+  estimateTotal: number;
+  invoiceTotal: number;
+}

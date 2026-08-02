@@ -28,4 +28,8 @@ The shared Indian default catalogue ships as application reference data and is r
 
 Products and inventory items use archive status rather than deletion so future job cards, invoices, stock movements, and audit records keep stable references.
 
+## Job cards
+
+`jobSheets` stores branch-owned vehicle check-ins and their operational lifecycle. It references customer and vehicle IDs while retaining display snapshots for workshop speed and historical readability. The immutable job number, customer, vehicle and tenant references are protected by rules. Status transitions, complaints, odometer, fuel level, promised delivery, priority, assignments, estimate and invoice totals remain auditable.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.
