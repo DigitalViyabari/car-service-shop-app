@@ -248,10 +248,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Invoices &amp; Payments
             </Link>
           ) : null}
-          <span aria-disabled="true">
-            <NavIcon name="reports" />
-            Reports
-          </span>
+          {canAccessFinance ? (
+            <Link
+              href="/dashboard/reports"
+              className={pathname.startsWith("/dashboard/reports") ? "is-active" : ""}
+            >
+              <NavIcon name="reports" />
+              Reports
+            </Link>
+          ) : null}
           <Link
             href="/dashboard/team"
             className={pathname.startsWith("/dashboard/team") ? "is-active" : ""}
