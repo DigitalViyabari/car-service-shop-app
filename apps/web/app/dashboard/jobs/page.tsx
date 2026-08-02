@@ -119,7 +119,8 @@ export default function JobsPage() {
     [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null),
     [filter, setFilter] = useState<JobStatus | "active" | "all">("active"),
-    [search, setSearch] = useState("");
+    [search, setSearch] = useState(""),
+    [technicianFilter, setTechnicianFilter] = useState("all");
   const [loading, setLoading] = useState(true),
     [showForm, setShowForm] = useState(false),
     [submitting, setSubmitting] = useState(false),
@@ -292,15 +293,21 @@ export default function JobsPage() {
         (filter === "active" &&
           !(["delivered", "cancelled"] as JobStatus[]).includes(job.status)) ||
         job.status === filter;
+      const matchesTechnician =
+        technicianFilter === "all" ||
+        (technicianFilter === "unassigned"
+          ? !job.assignedTechnicianIds?.length
+          : job.assignedTechnicianIds?.includes(technicianFilter));
       return (
         matchesFilter &&
+        matchesTechnician &&
         (!term ||
           `${job.jobNumber} ${job.customerName} ${job.registrationNumber} ${job.vehicleLabel}`
             .toLowerCase()
             .includes(term))
       );
     });
-  }, [filter, jobs, search]);
+  }, [filter, jobs, search, technicianFilter]);
   const selected = jobs.find(({ id }) => id === selectedId) ?? null;
   const customerVehicles = vehicles.filter(({ customerId }) => customerId === draft.customerId);
   const selectedVehicle = vehicles.find(({ id }) => id === draft.vehicleId);
@@ -718,6 +725,42 @@ export default function JobsPage() {
               ))}
               <option value="cancelled">Cancelled</option>
             </select>
+            {canAssignTechnician ? (
+              <select
+                value={technicianFilter}
+                aria-label="Filter by technician"
+                onChange={(event) => setTechnicianFilter(event.target.value)}
+              >
+                <option value="all">All Technicians</option>
+                <option value="unassigned">
+                  Unassigned ({jobs.filter((job) => !job.assignedTechnicianIds?.length).length})
+                </option>
+                {technicians.map((technician) => (
+                  <option key={technician.userId} value={technician.userId}>
+                    {technician.displayName} (
+                    {
+                      jobs.filter(
+                        (job) =>
+                          job.assignedTechnicianIds?.includes(technician.userId) &&
+                          !(["delivered", "cancelled"] as JobStatus[]).includes(job.status),
+                      ).length
+                    }
+                    )
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            {canAssignTechnician ? (
+              <div className="assignment-snapshot">
+                <span>
+                  <b>{jobs.filter((job) => !job.assignedTechnicianIds?.length).length}</b>{" "}
+                  Unassigned
+                </span>
+                <span>
+                  <b>{technicians.length}</b> Technicians
+                </span>
+              </div>
+            ) : null}
           </div>
           <div className="job-list">
             {loading ? (
