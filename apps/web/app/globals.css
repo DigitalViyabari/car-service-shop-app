@@ -3870,6 +3870,25 @@ form .dv-button {
   color: #6e6554;
   font-size: 10px;
 }
+.invoice-payment-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 18px;
+  padding: 14px 20px;
+  border-top: 1px solid #e1e5e8;
+  background: #f7f9fb;
+  color: #596572;
+  font-size: 9px;
+}
+.invoice-payment-details strong {
+  flex-basis: 100%;
+  color: #1d252e;
+  font-size: 10px;
+}
+.invoice-sheet .invoice-terms {
+  border-top: 1px solid #eadcb8;
+  background: #fffaf0;
+}
 .invoice-amount {
   display: grid;
   gap: 4px;

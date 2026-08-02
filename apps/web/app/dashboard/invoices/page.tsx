@@ -1,6 +1,8 @@
 "use client";
 
 import type {
+  BusinessTaxProfile,
+  Customer,
   Invoice,
   InvoiceLine,
   JobLineItem,
@@ -55,7 +57,9 @@ export default function InvoicesPage() {
     [jobs, setJobs] = useState<JobSheet[]>([]),
     [lines, setLines] = useState<JobLineItem[]>([]),
     [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([]),
-    [payments, setPayments] = useState<Payment[]>([]);
+    [payments, setPayments] = useState<Payment[]>([]),
+    [customers, setCustomers] = useState<Customer[]>([]);
+  const [taxProfile, setTaxProfile] = useState<BusinessTaxProfile | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
     [submitting, setSubmitting] = useState(false),
@@ -89,7 +93,15 @@ export default function InvoicesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [invoiceDocs, jobDocs, lineDocs, invoiceLineDocs, paymentDocs] = await Promise.all([
+      const [
+        invoiceDocs,
+        jobDocs,
+        lineDocs,
+        invoiceLineDocs,
+        paymentDocs,
+        customerDocs,
+        taxProfileDoc,
+      ] = await Promise.all([
         getDocs(
           query(
             collection(firebaseClient.db, "invoices"),
@@ -125,6 +137,14 @@ export default function InvoicesPage() {
             where("branchId", "==", activeBranchId),
           ),
         ),
+        getDocs(
+          query(
+            collection(firebaseClient.db, "customers"),
+            where("companyId", "==", activeCompanyId),
+            where("branchId", "==", activeBranchId),
+          ),
+        ),
+        getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
       ]);
       const nextInvoices = invoiceDocs.docs
         .map((item) => ({ ...item.data(), id: item.id }) as Invoice)
@@ -140,6 +160,12 @@ export default function InvoicesPage() {
         invoiceLineDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as InvoiceLine),
       );
       setPayments(paymentDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Payment));
+      setCustomers(customerDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Customer));
+      setTaxProfile(
+        taxProfileDoc.exists()
+          ? ({ ...taxProfileDoc.data(), id: taxProfileDoc.id } as BusinessTaxProfile)
+          : null,
+      );
       setSelectedId((current) =>
         current && nextInvoices.some(({ id }) => id === current)
           ? current
@@ -157,6 +183,7 @@ export default function InvoicesPage() {
 
   const selected = invoices.find(({ id }) => id === selectedId) ?? null;
   const selectedInvoiceLines = invoiceLines.filter(({ invoiceId }) => invoiceId === selectedId);
+  const selectedCustomer = customers.find(({ id }) => id === selected?.customerId);
   const invoiceableJobs = useMemo(
     () =>
       jobs.filter(
@@ -210,7 +237,7 @@ export default function InvoicesPage() {
         total = selectedJobLines.reduce((sum, line) => sum + line.totalAmount, 0),
         now = serverTimestamp(),
         date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
-      const invoiceNumber = `INV-${date}-${invoiceRef.id.slice(0, 5).toUpperCase()}`,
+      const invoiceNumber = `${taxProfile?.invoicePrefix || "INV"}-${date}-${invoiceRef.id.slice(0, 5).toUpperCase()}`,
         batch = writeBatch(firebaseClient.db);
       batch.set(invoiceRef, {
         companyId: activeCompanyId,
@@ -828,8 +855,21 @@ export default function InvoicesPage() {
             <div className="invoice-sheet">
               <header>
                 <div>
-                  <strong>{activeCompany?.name ?? "Digital Viyabari"}</strong>
-                  <span>{activeBranch?.name}</span>
+                  <strong>
+                    {taxProfile?.legalName || activeCompany?.name || "Digital Viyabari"}
+                  </strong>
+                  <span>{taxProfile?.tradeName || activeBranch?.name}</span>
+                  {taxProfile ? (
+                    <small>
+                      {[taxProfile.addressLine1, taxProfile.addressLine2, taxProfile.city]
+                        .filter(Boolean)
+                        .join(", ")}
+                      {taxProfile.postalCode ? ` - ${taxProfile.postalCode}` : ""}
+                    </small>
+                  ) : null}
+                  {taxProfile?.gstRegistered && taxProfile.gstin ? (
+                    <small>GSTIN: {taxProfile.gstin}</small>
+                  ) : null}
                 </div>
                 <div>
                   <b>TAX INVOICE</b>
@@ -841,6 +881,8 @@ export default function InvoicesPage() {
                 <div>
                   <span>Customer</span>
                   <strong>{selected.customerName}</strong>
+                  {selectedCustomer?.gstin ? <small>GSTIN: {selectedCustomer.gstin}</small> : null}
+                  {selectedCustomer?.address ? <small>{selectedCustomer.address}</small> : null}
                 </div>
                 <div>
                   <span>Vehicle</span>
@@ -889,7 +931,23 @@ export default function InvoicesPage() {
                   Balance <strong>{money.format(selected.balanceAmount)}</strong>
                 </span>
               </section>
+              {taxProfile &&
+              (taxProfile.upiId || taxProfile.bankName || taxProfile.accountNumber) ? (
+                <section className="invoice-payment-details">
+                  <strong>Payment Details</strong>
+                  {taxProfile.upiId ? <span>UPI: {taxProfile.upiId}</span> : null}
+                  {taxProfile.bankName ? <span>Bank: {taxProfile.bankName}</span> : null}
+                  {taxProfile.accountName ? <span>Name: {taxProfile.accountName}</span> : null}
+                  {taxProfile.accountNumber ? (
+                    <span>Account: {taxProfile.accountNumber}</span>
+                  ) : null}
+                  {taxProfile.ifscCode ? <span>IFSC: {taxProfile.ifscCode}</span> : null}
+                </section>
+              ) : null}
               {selected.notes ? <p>{selected.notes}</p> : null}
+              {taxProfile?.invoiceTerms ? (
+                <p className="invoice-terms">Terms: {taxProfile.invoiceTerms}</p>
+              ) : null}
             </div>
             <footer className="modal-footer no-print">
               <button
