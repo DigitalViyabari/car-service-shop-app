@@ -34,4 +34,6 @@ Products and inventory items use archive status rather than deletion so future j
 
 `jobLineItems` stores active or removed labour and product estimate lines. Each line snapshots description, quantity, unit price, discount, GST rate, taxable value, tax, and total. Adding or removing a line updates the parent job estimate in the same atomic batch. Removed lines remain available for audit; preparing an estimate does not deduct physical stock.
 
+`serviceTypes` stores company-specific workshop offerings and supports inline creation during vehicle check-in. Job creation time is always server-recorded. Odometer and fuel level may be explicitly left unknown rather than replaced with misleading zero values.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.

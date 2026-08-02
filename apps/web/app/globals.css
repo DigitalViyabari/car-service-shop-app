@@ -411,6 +411,12 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .advance-job { min-height:40px; padding:0 14px; border:0; border-radius:10px; background:#171c22; color:#fff; cursor:pointer; font-size:10px; font-weight:800; }
 .advance-job span { margin-left:8px; color:#ed4148; }
 .job-modal { width:min(700px,100%); }
+.inline-service-add { display:grid; grid-template-columns:1fr auto; align-self:end; gap:7px; }
+.inline-service-add button { min-width:58px; border:0; border-radius:10px; background:#171c22; color:#fff; cursor:pointer; font-size:10px; font-weight:800; }
+.priority-select { font-weight:800; transition:border-color .2s, background-color .2s; }
+.priority-select-normal { border-color:#8bc6a5; background:#f0faf4; color:#236541; }
+.priority-select-urgent { border-color:#e6bd69; background:#fff9eb; color:#8b5a0b; }
+.priority-select-breakdown { border-color:#e3979b; background:#fff1f1; color:#a5232a; }
 .estimate-panel { margin-top:17px; overflow:hidden; border:1px solid #dfe2e5; border-radius:13px; background:#fff; }
 .estimate-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:14px 16px; border-bottom:1px solid #e4e6e9; background:#fafafa; }
 .estimate-heading h3 { margin:4px 0 0; font-size:14px; }

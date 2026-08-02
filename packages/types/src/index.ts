@@ -195,6 +195,14 @@ export interface InventoryItem extends AuditFields {
 export type JobStatus = "check_in" | "inspection" | "estimate_pending" | "approved" | "in_progress" | "quality_check" | "ready" | "delivered" | "cancelled";
 export type JobPriority = "normal" | "urgent" | "breakdown";
 
+export interface ServiceType extends AuditFields {
+  id: string;
+  companyId: string;
+  name: string;
+  searchName: string;
+  status: "active" | "archived";
+}
+
 export interface JobSheet extends AuditFields {
   id: string;
   companyId: string;
@@ -208,8 +216,8 @@ export interface JobSheet extends AuditFields {
   status: JobStatus;
   priority: JobPriority;
   serviceType: string;
-  odometer: number;
-  fuelLevel: number;
+  odometer: number | null;
+  fuelLevel: number | null;
   complaints: string[];
   internalNotes?: string;
   promisedAt?: string;
