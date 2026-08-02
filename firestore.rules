@@ -41,6 +41,14 @@ service cloud.firestore {
          membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "inventory_manager"]))
       );
     }
+    function branchFinanceManager(companyId, branchId) {
+      return branchMember(companyId, branchId) && (
+        (membership(companyId).data.companyRoles is list &&
+         membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin", "company_accountant"])) ||
+        (membership(companyId).data.branchRoleKeys is list &&
+         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "cashier"]))
+      );
+    }
     function validAuditCreate() {
       return request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.updatedBy == request.auth.uid &&
@@ -237,6 +245,52 @@ service cloud.firestore {
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.jobId == resource.data.jobId && validAuditUpdate();
       allow delete: if false;
+    }
+    match /invoices/{invoiceId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "jobId", "invoiceNumber", "customerId", "customerName",
+          "vehicleId", "vehicleLabel", "registrationNumber", "taxableAmount", "taxAmount",
+          "totalAmount", "paidAmount", "balanceAmount", "status", "issuedAt",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchFinanceManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.paidAmount == 0 &&
+        request.resource.data.balanceAmount == request.resource.data.totalAmount &&
+        request.resource.data.totalAmount >= 0 && request.resource.data.status == "issued" && validAuditCreate();
+      allow update: if branchFinanceManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.jobId == resource.data.jobId &&
+        request.resource.data.invoiceNumber == resource.data.invoiceNumber &&
+        request.resource.data.totalAmount == resource.data.totalAmount &&
+        request.resource.data.paidAmount >= resource.data.paidAmount &&
+        request.resource.data.balanceAmount == request.resource.data.totalAmount - request.resource.data.paidAmount &&
+        validAuditUpdate();
+      allow delete: if false;
+    }
+    match /invoiceLines/{lineId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "invoiceId", "jobLineItemId", "type", "description",
+          "quantity", "unit", "unitPrice", "discount", "gstRate", "taxableAmount",
+          "taxAmount", "totalAmount", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchFinanceManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        existsAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)) &&
+        request.resource.data.quantity > 0 && request.resource.data.totalAmount >= 0 && validAuditCreate();
+      allow update, delete: if false;
+    }
+    match /payments/{paymentId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "invoiceId", "jobId", "receiptNumber", "amount", "method",
+          "receivedAt", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchFinanceManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.amount > 0 && request.resource.data.status == "completed" &&
+        existsAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)) && validAuditCreate();
+      allow update, delete: if false;
     }
     match /{collection}/{documentId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&

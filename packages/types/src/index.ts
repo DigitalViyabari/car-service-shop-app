@@ -257,6 +257,65 @@ export interface JobLineItem extends AuditFields {
   status: "active" | "removed";
 }
 
+export type InvoiceStatus = "issued" | "part_paid" | "paid" | "void";
+export type PaymentMethod = "cash" | "upi" | "card" | "bank_transfer" | "cheque" | "other";
+
+export interface Invoice extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  jobId: string;
+  invoiceNumber: string;
+  customerId: string;
+  customerName: string;
+  vehicleId: string;
+  vehicleLabel: string;
+  registrationNumber: string;
+  taxableAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+  paidAmount: number;
+  balanceAmount: number;
+  status: InvoiceStatus;
+  issuedAt: string;
+  dueAt?: string;
+  notes?: string;
+}
+
+export interface InvoiceLine extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  invoiceId: string;
+  jobLineItemId: string;
+  type: "labour" | "product";
+  productId?: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  discount: number;
+  gstRate: number;
+  taxableAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+}
+
+export interface Payment extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  invoiceId: string;
+  jobId: string;
+  receiptNumber: string;
+  amount: number;
+  method: PaymentMethod;
+  reference?: string;
+  notes?: string;
+  receivedAt: string;
+  status: "completed" | "reversed";
+}
+
 export interface CommunicationEntitlement extends AuditFields {
   id: string;
   companyId: string;

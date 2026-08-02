@@ -38,4 +38,8 @@ Products and inventory items use archive status rather than deletion so future j
 
 Estimate approval state is stored on the job with method, reference, notes, actor, timestamp, lock state, and revision number. Approved estimates are locked against line changes. Creating a revision explicitly unlocks the current estimate and increments its revision number while preserving the prior decision in audit history.
 
+`invoices` are immutable financial snapshots generated from approved job estimates. `invoiceLines` preserve the exact labour/product pricing and GST calculation at issue time. `payments` are append-only receipts; recording a payment atomically updates the invoice paid and balance amounts.
+
+Pending integration: MSG91 credentials, approved SMS/WhatsApp templates, notification automation rules, and provider delivery-status webhooks will be activated later. The secure VPS API and entitlement ledger are already prepared.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.
