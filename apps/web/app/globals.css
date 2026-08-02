@@ -445,6 +445,29 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .approval-footer { justify-content:space-between; }
 .reject-button { min-height:43px; padding:0 14px; border:1px solid #e2a7aa; border-radius:11px; background:#fff4f4; color:#a8242b; cursor:pointer; font-weight:800; }
 
+/* Platform communications administration */
+.admin-page { min-height:100vh; padding:38px clamp(18px,5vw,70px); background:#eef0f2; }
+.admin-header { display:flex; align-items:end; justify-content:space-between; gap:20px; max-width:1200px; margin:auto; }
+.admin-header h1 { margin:8px 0; font-size:34px; }
+.admin-header p { margin:0; color:#6f7782; }
+.admin-header a { padding:11px 14px; border-radius:10px; background:#171c22; color:#fff; font-size:11px; font-weight:800; }
+.admin-message { max-width:1200px; margin:18px auto 0; background:#eaf5ef; color:#246b4b; }
+.admin-company-list { max-width:1200px; display:grid; gap:16px; margin:24px auto; }
+.admin-company-card { padding:22px; border:1px solid #d8dce0; border-radius:18px; background:#fff; box-shadow:var(--shadow); }
+.admin-company-title { display:flex; align-items:center; justify-content:space-between; }
+.admin-company-title span:first-child { color:#8a919a; font-size:8px; font-weight:850; text-transform:uppercase; }
+.admin-company-title h2 { margin:5px 0 0; font-size:19px; }
+.channel-grid,.credit-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-top:18px; }
+.channel-toggle { display:flex; grid-template-columns:none; align-items:center; gap:10px; margin:0; padding:13px; border:1px solid #e0e3e6; border-radius:12px; background:#fafafa; cursor:pointer; }
+.channel-toggle input { width:17px; height:17px; min-height:0; accent-color:var(--red); }
+.channel-toggle span { display:grid; gap:3px; }
+.channel-toggle strong { font-size:11px; }
+.channel-toggle small { color:#89919b; font-size:8px; }
+.credit-grid label { margin:0; font-size:10px; }
+.credential-note { display:flex; gap:10px; margin-top:17px; padding:12px 14px; border-left:3px solid var(--red); background:#f3f4f5; font-size:10px; }
+.credential-note span { color:#747c87; }
+.admin-save { display:block; margin:18px 0 0 auto; min-width:145px; }
+
 .state-page { min-height:100vh; display:grid; place-content:center; justify-items:center; padding:24px; text-align:center; background:var(--canvas); }
 .state-page h1 { margin-bottom:4px; }
 .state-card { width:min(560px,100%); border:1px solid var(--line); border-radius:18px; background:white; padding:30px; box-shadow:var(--shadow); }
@@ -558,6 +581,8 @@ form .dv-button { width: 100%; margin-top: 24px; }
   .job-detail { margin-top:14px; padding:20px 15px; border:1px solid #dadee2; border-radius:16px; background:#fff; box-shadow:var(--shadow); }
   .job-info-grid { grid-template-columns:repeat(2,1fr); }
   .job-stage-track>div { min-width:58px; }
+  .admin-header { align-items:start; flex-direction:column; }
+  .channel-grid,.credit-grid { grid-template-columns:repeat(2,1fr); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; }

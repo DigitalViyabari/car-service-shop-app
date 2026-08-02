@@ -2,6 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
+    function platformSuperAdmin() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.platformRoles is list &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.platformRoles.hasAny(["platform_super_admin"]);
+    }
     function membership(companyId) {
       return get(/databases/$(database)/documents/memberships/$(request.auth.uid + "_" + companyId));
     }
@@ -56,8 +62,14 @@ service cloud.firestore {
       allow write: if false;
     }
     match /companies/{companyId} {
-      allow read: if companyMember(companyId);
+      allow read: if companyMember(companyId) || platformSuperAdmin();
       allow write: if false;
+    }
+    match /communicationEntitlements/{companyId} {
+      allow read: if platformSuperAdmin() || companyLevelMember(companyId);
+      allow create: if platformSuperAdmin() && request.resource.data.companyId == companyId && validAuditCreate();
+      allow update: if platformSuperAdmin() && request.resource.data.companyId == resource.data.companyId && validAuditUpdate();
+      allow delete: if false;
     }
     match /branches/{branchId} {
       allow read: if branchMember(resource.data.companyId, branchId);

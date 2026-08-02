@@ -256,3 +256,22 @@ export interface JobLineItem extends AuditFields {
   totalAmount: number;
   status: "active" | "removed";
 }
+
+export interface CommunicationEntitlement extends AuditFields {
+  id: string;
+  companyId: string;
+  emailEnabled: boolean;
+  pushEnabled: boolean;
+  smsEnabled: boolean;
+  whatsappEnabled: boolean;
+  smsUnitRate: number;
+  whatsappUnitRate: number;
+  smsCredits: number;
+  whatsappCredits: number;
+  smsLowBalanceAt: number;
+  whatsappLowBalanceAt: number;
+  smsCredentialConfigured: boolean;
+  whatsappCredentialConfigured: boolean;
+  provider: "msg91";
+  status: "active" | "suspended";
+}
