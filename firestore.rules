@@ -257,13 +257,13 @@ service cloud.firestore {
     }
     match /invoices/{invoiceId} {
       allow get: if (exists(/databases/$(database)/documents/jobSheets/$(invoiceId)) &&
-        branchMember(
+        branchFinanceManager(
           get(/databases/$(database)/documents/jobSheets/$(invoiceId)).data.companyId,
           get(/databases/$(database)/documents/jobSheets/$(invoiceId)).data.branchId
         )) || (resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId));
+        branchFinanceManager(resource.data.companyId, resource.data.branchId));
       allow list: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        branchFinanceManager(resource.data.companyId, resource.data.branchId);
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "jobId", "invoiceNumber", "customerId", "customerName",
           "vehicleId", "vehicleLabel", "registrationNumber", "taxableAmount", "taxAmount",
@@ -286,7 +286,7 @@ service cloud.firestore {
     }
     match /invoiceLines/{lineId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        branchFinanceManager(resource.data.companyId, resource.data.branchId);
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "invoiceId", "jobLineItemId", "type", "description",
           "quantity", "unit", "unitPrice", "discount", "gstRate", "taxableAmount",
@@ -298,7 +298,7 @@ service cloud.firestore {
     }
     match /payments/{paymentId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
-        branchMember(resource.data.companyId, resource.data.branchId);
+        branchFinanceManager(resource.data.companyId, resource.data.branchId);
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "invoiceId", "jobId", "receiptNumber", "amount", "method",
           "receivedAt", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"

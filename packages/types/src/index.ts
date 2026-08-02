@@ -316,6 +316,9 @@ export interface Payment extends AuditFields {
   notes?: string;
   receivedAt: string;
   status: "completed" | "reversed";
+  reversalReason?: string;
+  reversedAt?: string;
+  reversedBy?: string;
 }
 
 export interface CommunicationEntitlement extends AuditFields {

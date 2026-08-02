@@ -176,6 +176,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const subscriptionTone = subscription?.status === "active" ? "positive" : "warning";
   const activeMembership = memberships.find(({ companyId }) => companyId === activeCompanyId);
   const isCompanyOwner = activeMembership?.companyRoles.includes("company_owner") ?? false;
+  const canAccessFinance =
+    (activeMembership?.companyRoles ?? []).some((role) =>
+      ["company_owner", "company_admin", "company_accountant"].includes(role),
+    ) ||
+    (activeMembership?.branchAssignments ?? []).some(
+      ({ branchId, roles }) =>
+        branchId === activeBranchId &&
+        roles.some((role) => role === "branch_manager" || role === "finance_manager"),
+    );
 
   async function handleSignOut() {
     setShowLogoutConfirmation(false);
@@ -219,13 +228,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <NavIcon name="inventory" />
             Products
           </Link>
-          <Link
-            href="/dashboard/invoices"
-            className={pathname.startsWith("/dashboard/invoices") ? "is-active" : ""}
-          >
-            <NavIcon name="finance" />
-            Invoices
-          </Link>
+          {canAccessFinance ? (
+            <Link
+              href="/dashboard/invoices"
+              className={pathname.startsWith("/dashboard/invoices") ? "is-active" : ""}
+            >
+              <NavIcon name="finance" />
+              Invoices &amp; Payments
+            </Link>
+          ) : null}
           <span aria-disabled="true">
             <NavIcon name="reports" />
             Reports
