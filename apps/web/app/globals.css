@@ -467,6 +467,12 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .credential-note { display:flex; gap:10px; margin-top:17px; padding:12px 14px; border-left:3px solid var(--red); background:#f3f4f5; font-size:10px; }
 .credential-note span { color:#747c87; }
 .admin-save { display:block; margin:18px 0 0 auto; min-width:145px; }
+.credential-panel { margin-top:18px; padding:18px; border:1px solid #dce1e6; border-radius:14px; background:#f7f8fa; }
+.credential-panel .credential-note { margin-top:0; }
+.credential-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(220px,1fr) auto; gap:12px; align-items:end; margin-top:15px; }
+.credential-grid label { display:grid; gap:6px; color:#4e5968; font-size:12px; font-weight:800; }
+.credential-grid input { width:100%; min-height:42px; padding:9px 11px; border:1px solid #ccd3db; border-radius:9px; background:#fff; color:#111827; }
+.credential-grid .dv-button { min-height:42px; white-space:nowrap; }
 
 .state-page { min-height:100vh; display:grid; place-content:center; justify-items:center; padding:24px; text-align:center; background:var(--canvas); }
 .state-page h1 { margin-bottom:4px; }
