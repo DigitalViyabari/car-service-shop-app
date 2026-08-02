@@ -9,3 +9,11 @@ Membership ID is initially `{uid}_{companyId}` for constant-time rule lookup. It
 Queries always include company and branch filters. Composite indexes are added alongside module implementation. Cross-branch reports are produced only for company-authorised users, preferably through Functions/materialized summaries. Audit logs are append-only, server-written, and include actor, tenant, action, target, timestamp, request/correlation ID, outcome, and support-access reason when applicable.
 
 Current rules are intentionally conservative. Before operational modules launch, replace the generic fallback with collection-specific allowlists and emulator rule tests.
+
+## Customers and vehicles
+
+`customers` and `vehicles` are branch-owned top-level collections. Customer documents include normalized `searchName` and `searchPhone` fields; vehicle documents include normalized `searchRegistration`. These support fast branch-local lookup without copying private customer data into unrelated records.
+
+Vehicles reference customers through `customerId`. Future job sheets will reference both IDs so historical service records remain stable. Customer `vehicleCount` is updated in the same batch as vehicle creation. Records are archived through `status` rather than physically deleted.
+
+Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.

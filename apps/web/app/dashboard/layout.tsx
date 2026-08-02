@@ -2,7 +2,7 @@
 
 import { StatusBadge } from "@dvcs/ui";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 
@@ -21,6 +21,7 @@ function NavIcon({ name }: { name: "overview" | "operations" | "inventory" | "fi
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const {
     user,
     profile,
@@ -103,8 +104,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <div className="nav-label">Workshop control</div>
         <nav className="nav" aria-label="Primary navigation">
-          <Link href="/dashboard"><NavIcon name="overview" />Overview</Link>
+          <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}><NavIcon name="overview" />Overview</Link>
           <span aria-disabled="true"><NavIcon name="operations" />Operations</span>
+          <Link href="/dashboard/customers" className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}><NavIcon name="team" />Customers</Link>
           <span aria-disabled="true"><NavIcon name="inventory" />Inventory</span>
           <span aria-disabled="true"><NavIcon name="finance" />Finance</span>
           <span aria-disabled="true"><NavIcon name="reports" />Reports</span>
@@ -166,9 +168,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </section>
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <Link href="/dashboard">Home</Link>
+        <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>Home</Link>
+        <Link href="/dashboard/customers" className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}>Customers</Link>
         <span>Jobs</span>
-        <span>Stock</span>
         <button onClick={() => void handleSignOut()}>Sign out</button>
       </nav>
     </div>

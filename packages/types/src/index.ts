@@ -85,3 +85,45 @@ export interface BranchSubscription extends AuditFields {
   currentPeriodEnd: string;
   gracePeriodEnd?: string;
 }
+
+export type CustomerType = "individual" | "business";
+
+export interface Customer extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  type: CustomerType;
+  name: string;
+  phone: string;
+  alternatePhone?: string;
+  email?: string;
+  gstin?: string;
+  address?: string;
+  notes?: string;
+  searchName: string;
+  searchPhone: string;
+  vehicleCount: number;
+  status: "active" | "archived";
+}
+
+export type VehicleFuelType = "petrol" | "diesel" | "cng" | "electric" | "hybrid" | "other";
+export type VehicleTransmission = "manual" | "automatic" | "amt" | "cvt" | "dct" | "other";
+
+export interface Vehicle extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  customerId: string;
+  registrationNumber: string;
+  make: string;
+  model: string;
+  variant?: string;
+  year?: number;
+  fuelType: VehicleFuelType;
+  transmission?: VehicleTransmission;
+  vin?: string;
+  odometer?: number;
+  notes?: string;
+  searchRegistration: string;
+  status: "active" | "archived";
+}

@@ -22,6 +22,23 @@ service cloud.firestore {
         (companyLevelMember(companyId) ||
          (membership(companyId).data.branchIds is list && branchId in membership(companyId).data.branchIds));
     }
+    function operationsManager(companyId, branchId) {
+      return branchMember(companyId, branchId) &&
+        membership(companyId).data.companyRoles is list &&
+        membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin"]);
+    }
+    function validAuditCreate() {
+      return request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.updatedBy == request.auth.uid &&
+        request.resource.data.createdAt == request.time &&
+        request.resource.data.updatedAt == request.time;
+    }
+    function validAuditUpdate() {
+      return request.resource.data.createdBy == resource.data.createdBy &&
+        request.resource.data.createdAt == resource.data.createdAt &&
+        request.resource.data.updatedBy == request.auth.uid &&
+        request.resource.data.updatedAt == request.time;
+    }
     match /users/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
       allow write: if false;
@@ -48,6 +65,44 @@ service cloud.firestore {
       allow list: if resource.data.companyId is string &&
         branchMember(resource.data.companyId, branchId);
       allow write: if false;
+    }
+    match /customers/{customerId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "type", "name", "phone", "searchName", "searchPhone",
+          "vehicleCount", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) &&
+        operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 160 &&
+        request.resource.data.phone is string && request.resource.data.phone.size() >= 10 && request.resource.data.phone.size() <= 15 &&
+        request.resource.data.vehicleCount == 0 && request.resource.data.status == "active" && validAuditCreate();
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.vehicleCount >= 0 && validAuditUpdate();
+      allow delete: if false;
+    }
+    match /vehicles/{vehicleId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "customerId", "registrationNumber", "searchRegistration",
+          "make", "model", "fuelType", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) &&
+        operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        exists(/databases/$(database)/documents/customers/$(request.resource.data.customerId)) &&
+        get(/databases/$(database)/documents/customers/$(request.resource.data.customerId)).data.companyId == request.resource.data.companyId &&
+        get(/databases/$(database)/documents/customers/$(request.resource.data.customerId)).data.branchId == request.resource.data.branchId &&
+        request.resource.data.registrationNumber is string && request.resource.data.registrationNumber.size() >= 6 && request.resource.data.registrationNumber.size() <= 20 &&
+        request.resource.data.make is string && request.resource.data.make.size() >= 1 && request.resource.data.make.size() <= 80 &&
+        request.resource.data.model is string && request.resource.data.model.size() >= 1 && request.resource.data.model.size() <= 80 &&
+        request.resource.data.status == "active" && validAuditCreate();
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.customerId == resource.data.customerId && validAuditUpdate();
+      allow delete: if false;
     }
     match /{collection}/{documentId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
