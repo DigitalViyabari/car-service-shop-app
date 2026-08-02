@@ -514,17 +514,42 @@ form .dv-button {
   align-items: center;
 }
 .topbar-settings {
-  min-height: 42px;
+  width: 38px;
+  min-height: 38px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 0 13px;
+  justify-content: center;
+  padding: 0;
   border: 1px solid #d4dbe2;
   border-radius: 11px;
   color: #26313d;
   background: #fff;
   font-size: 14px;
   font-weight: 800;
+}
+.settings-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.settings-shortcuts a {
+  padding: 10px 14px;
+  border: 1px solid #d7dde3;
+  border-radius: 10px;
+  background: #fff;
+  color: #46515d;
+  font-size: 13px;
+  font-weight: 800;
+}
+.settings-shortcuts a.is-primary {
+  border-color: #e33238;
+  background: #e33238;
+  color: #fff;
+}
+.invoice-editor-card {
+  scroll-margin-top: 90px;
+  border-color: rgba(227, 50, 56, 0.35);
 }
 .topbar-settings .nav-icon {
   width: 17px;
@@ -635,6 +660,152 @@ form .dv-button {
   .content textarea,
   .content button {
     font-size: max(14px, 0.875rem);
+  }
+}
+.platform-control {
+  display: grid;
+  gap: 22px;
+}
+.admin-header-links {
+  display: flex;
+  gap: 10px;
+}
+.platform-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+.platform-summary article {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid #d8dee4;
+  border-top: 4px solid #173958;
+  border-radius: 15px;
+  background: #fff;
+}
+.platform-summary span {
+  color: #68737f;
+  font-weight: 750;
+}
+.platform-summary strong {
+  font-size: 28px;
+  color: #151b22;
+}
+.platform-businesses,
+.platform-accounts,
+.platform-admin-create {
+  padding: 24px;
+  border: 1px solid #d8dee4;
+  border-radius: 18px;
+  background: #fff;
+}
+.platform-businesses > header,
+.platform-accounts > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.platform-businesses h2,
+.platform-accounts h2,
+.platform-admin-create h2 {
+  margin: 3px 0 0;
+}
+.platform-table {
+  overflow-x: auto;
+  border: 1px solid #e0e5ea;
+  border-radius: 13px;
+}
+.platform-row {
+  min-width: 850px;
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1.25fr 1.2fr 1fr 1fr 0.6fr 0.5fr;
+  gap: 14px;
+  align-items: center;
+  padding: 15px 17px;
+  border: 0;
+  border-bottom: 1px solid #e7ebef;
+  background: #fff;
+  color: #39434d;
+  text-align: left;
+}
+button.platform-row {
+  cursor: pointer;
+}
+button.platform-row:hover {
+  background: #f7f9fb;
+}
+.platform-row-head {
+  background: #111820;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.platform-accounts select {
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid #d5dce3;
+  border-radius: 10px;
+  background: #fff;
+}
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.account-grid article {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 15px;
+  padding: 16px;
+  border: 1px solid #e0e5ea;
+  border-radius: 13px;
+}
+.account-grid article > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.account-grid article span,
+.account-grid article small {
+  color: #6b7580;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.account-grid article button {
+  min-height: 38px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 9px;
+  background: #111820;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.platform-admin-create {
+  display: grid;
+  grid-template-columns: 0.8fr 1.6fr;
+  gap: 30px;
+  align-items: end;
+}
+.platform-admin-create p {
+  color: #68737f;
+}
+@media (max-width: 900px) {
+  .platform-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .account-grid {
+    grid-template-columns: 1fr;
+  }
+  .platform-admin-create {
+    grid-template-columns: 1fr;
   }
 }
 .current-branch {

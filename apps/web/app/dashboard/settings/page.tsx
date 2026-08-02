@@ -169,13 +169,21 @@ export default function BusinessSettingsPage() {
           {isOwner ? "Owner Editing" : "Read Only"}
         </span>
       </div>
+      <nav className="settings-shortcuts" aria-label="Settings sections">
+        <a href="#business-identity">Business</a>
+        <a href="#gst-address">GST &amp; Address</a>
+        <a href="#invoice-payment">Invoice &amp; Payment</a>
+        <a className="is-primary" href="#invoice-editor">
+          Invoice Editor
+        </a>
+      </nav>
       {message ? (
         <div className={`alert module-alert ${message.includes("saved") ? "" : "alert--error"}`}>
           {message}
         </div>
       ) : null}
       <form className="settings-form" onSubmit={save}>
-        <section className="settings-card">
+        <section className="settings-card" id="business-identity">
           <header>
             <span>01</span>
             <div>
@@ -210,7 +218,7 @@ export default function BusinessSettingsPage() {
             {field("authorizedSignatory", "Authorized Signatory")}
           </div>
         </section>
-        <section className="settings-card">
+        <section className="settings-card" id="gst-address">
           <header>
             <span>02</span>
             <div>
@@ -229,7 +237,7 @@ export default function BusinessSettingsPage() {
             {field("email", "Business Email", { type: "email" })}
           </div>
         </section>
-        <section className="settings-card">
+        <section className="settings-card" id="invoice-payment">
           <header>
             <span>03</span>
             <div>
@@ -256,12 +264,12 @@ export default function BusinessSettingsPage() {
             </label>
           </div>
         </section>
-        <section className="settings-card">
+        <section className="settings-card invoice-editor-card" id="invoice-editor">
           <header>
             <span>04</span>
             <div>
-              <h2>Invoice Design</h2>
-              <p>Logo, color and print size.</p>
+              <h2>Invoice Editor</h2>
+              <p>Logo, invoice color and A4/A5 print format.</p>
             </div>
           </header>
           <div className="form-grid invoice-design-fields">

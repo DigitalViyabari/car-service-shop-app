@@ -67,6 +67,12 @@ const notificationSchema = z.object({
   recipientUserId: z.string().min(8).max(128).optional(),
   message: z.string().min(3).max(300),
 });
+const createPlatformAdminSchema = z.object({
+  displayName: z.string().min(2).max(100),
+  email: z.email(),
+  temporaryPassword: z.string().min(8).max(128),
+});
+const impersonationSchema = z.object({ targetUserId: z.string().min(8).max(128) });
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 
@@ -149,6 +155,118 @@ async function superAdmin(uid: string) {
     ((profile.get("platformRoles") as unknown[] | undefined)?.includes("platform_super_admin") ??
       false)
   );
+}
+async function platformAdministrator(uid: string) {
+  const profile = await db.doc(`users/${uid}`).get(),
+    roles = (profile.get("platformRoles") as string[] | undefined) ?? [];
+  return (
+    profile.exists &&
+    roles.some((role) => ["platform_super_admin", "platform_support_admin"].includes(role))
+  );
+}
+async function platformOverview(user: DecodedIdToken) {
+  if (!(await platformAdministrator(user.uid)))
+    throw new ApiError(403, "Platform Admin access is required.");
+  const [companies, memberships, invoices, users] = await Promise.all([
+      db.collection("companies").get(),
+      db.collection("memberships").get(),
+      db.collection("invoices").get(),
+      db.collection("users").get(),
+    ]),
+    profiles = new Map(users.docs.map((item) => [item.id, item.data()])),
+    companyItems = companies.docs.map((company) => {
+      const companyId = company.id,
+        companyInvoices = invoices.docs.filter((item) => item.get("companyId") === companyId),
+        companyMembers = memberships.docs.filter((item) => item.get("companyId") === companyId),
+        owners = companyMembers
+          .filter((item) =>
+            ((item.get("companyRoles") as string[] | undefined) ?? []).includes("company_owner"),
+          )
+          .map((item) => {
+            const profile = profiles.get(String(item.get("userId"))) ?? {};
+            return {
+              userId: item.get("userId"),
+              displayName: profile.displayName ?? "Owner",
+              email: profile.email ?? "",
+            };
+          });
+      return {
+        id: companyId,
+        name: company.get("name") ?? "Business",
+        status: company.get("status") ?? "active",
+        turnover: companyInvoices.reduce(
+          (sum, item) => sum + Number(item.get("totalAmount") ?? 0),
+          0,
+        ),
+        collected: companyInvoices.reduce(
+          (sum, item) => sum + Number(item.get("paidAmount") ?? 0),
+          0,
+        ),
+        invoiceCount: companyInvoices.length,
+        memberCount: companyMembers.length,
+        owners,
+      };
+    }),
+    accounts = memberships.docs.map((membership) => {
+      const userId = String(membership.get("userId")),
+        profile = profiles.get(userId) ?? {};
+      return {
+        userId,
+        companyId: membership.get("companyId"),
+        displayName: profile.displayName ?? "Team Member",
+        email: profile.email ?? "",
+        companyRoles: membership.get("companyRoles") ?? [],
+        branchAssignments: membership.get("branchAssignments") ?? [],
+        status: membership.get("status") ?? "active",
+      };
+    });
+  return { companies: companyItems, accounts };
+}
+async function createPlatformAdmin(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await superAdmin(user.uid))) throw new ApiError(403, "Super Admin access is required.");
+  const parsed = createPlatformAdminSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid administrator details.");
+  const input = parsed.data,
+    created = await auth.createUser({
+      displayName: input.displayName,
+      email: input.email.toLowerCase(),
+      password: input.temporaryPassword,
+    }),
+    now = FieldValue.serverTimestamp();
+  await db
+    .doc(`users/${created.uid}`)
+    .set({
+      displayName: input.displayName,
+      email: input.email.toLowerCase(),
+      platformRoles: ["platform_support_admin"],
+      status: "active",
+      createdAt: now,
+      createdBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+  return { created: true, userId: created.uid };
+}
+async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await superAdmin(user.uid))) throw new ApiError(403, "Super Admin access is required.");
+  const parsed = impersonationSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Select a valid account.");
+  const target = await auth.getUser(parsed.data.targetUserId),
+    now = FieldValue.serverTimestamp();
+  const audit = await db
+    .collection("platformAuditLogs")
+    .add({
+      action: "account_impersonation",
+      actorUserId: user.uid,
+      targetUserId: target.uid,
+      targetEmail: target.email ?? "",
+      createdAt: now,
+    });
+  const token = await auth.createCustomToken(target.uid, {
+    impersonatedBy: user.uid,
+    impersonationAuditId: audit.id,
+  });
+  return { token, targetEmail: target.email ?? "" };
 }
 async function sender(uid: string, companyId: string, branchId: string) {
   const member = await db.doc(`memberships/${uid}_${companyId}`).get();
@@ -660,6 +778,12 @@ const server = createServer(async (request, response) => {
           url.searchParams.get("branchId") ?? "",
         ),
       );
+    if (request.method === "GET" && url.pathname === "/v1/admin/overview")
+      return reply(response, 200, await platformOverview(user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/create")
+      return reply(response, 200, await createPlatformAdmin(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")
+      return reply(response, 200, await impersonateAccount(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")

@@ -332,24 +332,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Team
             </Link>
           ) : null}
-          {canAccessFinance ? (
-            <Link
-              href="/dashboard/settings"
-              className={pathname.startsWith("/dashboard/settings") ? "is-active" : ""}
-            >
-              <NavIcon name="settings" />
-              Business &amp; GST
-            </Link>
-          ) : null}
-          {isCompanyOwner ? (
-            <Link
-              href="/dashboard/communications"
-              className={pathname.startsWith("/dashboard/communications") ? "is-active" : ""}
-            >
-              <NavIcon name="settings" />
-              Communications
-            </Link>
-          ) : null}
         </nav>
         <div className="sidebar-user">
           <div className="user-avatar" aria-hidden="true">
@@ -420,9 +402,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               </StatusBadge>
             ) : null}
             {isCompanyOwner ? (
-              <Link className="topbar-settings" href="/dashboard/settings">
+              <Link className="topbar-settings" href="/dashboard/settings" aria-label="Settings">
                 <NavIcon name="settings" />
-                Settings
               </Link>
             ) : null}
             <div className="notification-center">
