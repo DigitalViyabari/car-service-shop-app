@@ -6,6 +6,19 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 
+function NavIcon({ name }: { name: "overview" | "operations" | "inventory" | "finance" | "reports" | "team" | "settings" }) {
+  const paths = {
+    overview: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
+    operations: <><path d="M4 15.5 6.5 9h11l2.5 6.5"/><path d="M3 15.5h18v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3Z"/><circle cx="7" cy="17.5" r="1"/><circle cx="17" cy="17.5" r="1"/></>,
+    inventory: <><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7M12 11v10"/></>,
+    finance: <><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h3"/></>,
+    reports: <><path d="M5 21V10M12 21V3M19 21v-7"/><path d="M3 21h18"/></>,
+    team: <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M14 15.5a4 4 0 0 1 6.5 3.1"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+  };
+  return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+}
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const {
@@ -85,21 +98,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          DIGITAL <span>VIYABARI</span>
+          <i className="brand-mark" aria-hidden="true" />
+          <div>DIGITAL <span>VIYABARI</span></div>
         </div>
+        <div className="nav-label">Workshop control</div>
         <nav className="nav" aria-label="Primary navigation">
-          <Link href="/dashboard">Overview</Link>
-          <span aria-disabled="true">Operations</span>
-          <span aria-disabled="true">Inventory</span>
-          <span aria-disabled="true">Finance</span>
-          <span aria-disabled="true">Reports</span>
-          <span aria-disabled="true">Team</span>
-          <span aria-disabled="true">Settings</span>
+          <Link href="/dashboard"><NavIcon name="overview" />Overview</Link>
+          <span aria-disabled="true"><NavIcon name="operations" />Operations</span>
+          <span aria-disabled="true"><NavIcon name="inventory" />Inventory</span>
+          <span aria-disabled="true"><NavIcon name="finance" />Finance</span>
+          <span aria-disabled="true"><NavIcon name="reports" />Reports</span>
+          <span aria-disabled="true"><NavIcon name="team" />Team</span>
+          <span aria-disabled="true"><NavIcon name="settings" />Settings</span>
         </nav>
         <div className="sidebar-user">
+          <div className="user-avatar" aria-hidden="true">{profile.displayName?.charAt(0).toUpperCase() || "D"}</div>
           <span>{profile.displayName}</span>
           <small>{profile.email}</small>
-          <button onClick={() => void handleSignOut()}>Sign out</button>
+          <button onClick={() => void handleSignOut()} aria-label="Sign out" title="Sign out">↗</button>
         </div>
       </aside>
       <section className="workspace">
