@@ -154,7 +154,9 @@ a {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  background: radial-gradient(circle at 82% 28%, rgba(226, 49, 49, 0.22), transparent 25%), linear-gradient(135deg, rgba(7, 9, 12, 0.96), rgba(12, 25, 43, 0.96));
+  background:
+    radial-gradient(circle at 82% 28%, rgba(226, 49, 49, 0.22), transparent 25%),
+    linear-gradient(135deg, rgba(7, 9, 12, 0.96), rgba(12, 25, 43, 0.96));
 }
 .login-hero::before {
   content: "";
@@ -177,7 +179,14 @@ a {
   bottom: 8%;
   width: 140px;
   height: 3px;
-  background: linear-gradient(90deg, var(--red) 0 45%, transparent 45% 55%, #626872 55% 72%, transparent 72% 82%, #626872 82%);
+  background: linear-gradient(
+    90deg,
+    var(--red) 0 45%,
+    transparent 45% 55%,
+    #626872 55% 72%,
+    transparent 72% 82%,
+    #626872 82%
+  );
 }
 .login-hero > * {
   position: relative;
@@ -656,7 +665,14 @@ form .dv-button {
 .road-line {
   width: 84px;
   height: 2px;
-  background: linear-gradient(90deg, var(--red) 0 35%, transparent 35% 46%, #4b535e 46% 67%, transparent 67% 78%, #4b535e 78%);
+  background: linear-gradient(
+    90deg,
+    var(--red) 0 35%,
+    transparent 35% 46%,
+    #4b535e 46% 67%,
+    transparent 67% 78%,
+    #4b535e 78%
+  );
 }
 
 /* Customers and vehicles */
@@ -1846,7 +1862,7 @@ form .dv-button {
 }
 .job-workspace {
   display: grid;
-  grid-template-columns: minmax(350px, 0.75fr) minmax(520px, 1.25fr);
+  grid-template-columns: minmax(260px, 0.52fr) minmax(620px, 1.48fr);
   min-height: 630px;
   margin-top: 14px;
   overflow: hidden;
@@ -1900,22 +1916,42 @@ form .dv-button {
   top: 17px;
   bottom: 17px;
   width: 3px;
-  background: var(--red);
+  background: var(--stage-color, var(--red));
   border-radius: 0 3px 3px 0;
 }
-.priority-dot {
-  width: 8px;
-  height: 8px;
+.stage-dot {
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
-  background: #838b95;
+  background: var(--stage-color, #838b95);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--stage-color, #838b95) 15%, white);
 }
-.priority-urgent {
-  background: #ef9f25;
-  box-shadow: 0 0 0 4px #fff2dc;
+.job-stage-check_in {
+  --stage-color: #2878d0;
 }
-.priority-breakdown {
-  background: #dc3038;
-  box-shadow: 0 0 0 4px #fce9ea;
+.job-stage-inspection {
+  --stage-color: #0796a5;
+}
+.job-stage-estimate_pending {
+  --stage-color: #d99116;
+}
+.job-stage-approved {
+  --stage-color: #7a55c7;
+}
+.job-stage-in_progress {
+  --stage-color: #e16b25;
+}
+.job-stage-quality_check {
+  --stage-color: #4a5db5;
+}
+.job-stage-ready {
+  --stage-color: #209866;
+}
+.job-stage-delivered {
+  --stage-color: #66717d;
+}
+.job-stage-cancelled {
+  --stage-color: #cf343c;
 }
 .job-row > span:nth-child(2) {
   min-width: 0;
@@ -1953,6 +1989,30 @@ form .dv-button {
 .status-approved {
   background: #e8f0fa;
   color: #2b5f98;
+}
+.status-check_in {
+  background: #e8f2fd;
+  color: #2367ad;
+}
+.status-inspection {
+  background: #e3f7f8;
+  color: #087681;
+}
+.status-estimate_pending {
+  background: #fff3dc;
+  color: #96600b;
+}
+.status-approved {
+  background: #f0eafd;
+  color: #6342a8;
+}
+.status-in_progress {
+  background: #fff0e7;
+  color: #ad4d17;
+}
+.status-quality_check {
+  background: #e9ecfb;
+  color: #3d4d98;
 }
 .status-ready {
   background: #e8f6ef;
@@ -2025,14 +2085,38 @@ form .dv-button {
   font-weight: 800;
   text-transform: uppercase;
 }
+.job-stage-track .stage-check_in {
+  --stage-color: #2878d0;
+}
+.job-stage-track .stage-inspection {
+  --stage-color: #0796a5;
+}
+.job-stage-track .stage-estimate_pending {
+  --stage-color: #d99116;
+}
+.job-stage-track .stage-approved {
+  --stage-color: #7a55c7;
+}
+.job-stage-track .stage-in_progress {
+  --stage-color: #e16b25;
+}
+.job-stage-track .stage-quality_check {
+  --stage-color: #4a5db5;
+}
+.job-stage-track .stage-ready {
+  --stage-color: #209866;
+}
+.job-stage-track .stage-delivered {
+  --stage-color: #66717d;
+}
 .job-stage-track .is-done::before,
 .job-stage-track .is-current::before {
-  background: #dc343b;
+  background: var(--stage-color);
 }
 .job-stage-track .is-done i,
 .job-stage-track .is-current i {
-  border-color: #dc343b;
-  background: #dc343b;
+  border-color: var(--stage-color);
+  background: var(--stage-color);
 }
 .job-stage-track .is-current {
   color: #242a31;

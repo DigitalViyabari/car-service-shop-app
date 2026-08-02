@@ -679,16 +679,18 @@ export default function JobsPage() {
               filtered.map((job) => (
                 <button
                   key={job.id}
-                  className={`job-row ${selectedId === job.id ? "is-selected" : ""}`}
+                  className={`job-row job-stage-${job.status} ${selectedId === job.id ? "is-selected" : ""}`}
                   onClick={() => setSelectedId(job.id)}
                 >
-                  <span className={`priority-dot priority-${job.priority}`} />
+                  <span className="stage-dot" aria-hidden="true" />
                   <span>
                     <strong>{job.registrationNumber}</strong>
                     <small>
                       {job.customerName} · {job.vehicleLabel}
                     </small>
-                    <em>{job.jobNumber}</em>
+                    <em>
+                      {statusLabel(job.status)} · {job.jobNumber}
+                    </em>
                   </span>
                   <span className={`job-status status-${job.status}`}>
                     {statusLabel(job.status)}
@@ -719,9 +721,7 @@ export default function JobsPage() {
                   return (
                     <div
                       key={value}
-                      className={
-                        index < current ? "is-done" : index === current ? "is-current" : ""
-                      }
+                      className={`stage-${value} ${index < current ? "is-done" : index === current ? "is-current" : ""}`}
                     >
                       <i />
                       <span>{label}</span>
