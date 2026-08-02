@@ -127,6 +127,41 @@ service cloud.firestore {
         request.resource.data.companyId == resource.data.companyId && validAuditUpdate();
       allow delete: if false;
     }
+    match /products/{productId} {
+      allow read: if resource.data.companyId is string && companyMember(resource.data.companyId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "name", "sku", "type", "gstRate", "unit", "trackInventory",
+          "searchText", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && companyCatalogManager(request.resource.data.companyId) &&
+        request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 160 &&
+        request.resource.data.sku is string && request.resource.data.sku.size() >= 1 && request.resource.data.sku.size() <= 64 &&
+        request.resource.data.gstRate is number && request.resource.data.gstRate >= 0 && request.resource.data.gstRate <= 100 &&
+        request.resource.data.status == "active" && validAuditCreate();
+      allow update: if companyCatalogManager(resource.data.companyId) &&
+        request.resource.data.companyId == resource.data.companyId && validAuditUpdate();
+      allow delete: if false;
+    }
+    match /inventoryItems/{inventoryId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "productId", "purchasePrice", "sellingPrice", "currentStock",
+          "reservedStock", "reorderLevel", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        existsAfter(/databases/$(database)/documents/products/$(request.resource.data.productId)) &&
+        getAfter(/databases/$(database)/documents/products/$(request.resource.data.productId)).data.companyId == request.resource.data.companyId &&
+        request.resource.data.purchasePrice >= 0 && request.resource.data.sellingPrice >= 0 &&
+        request.resource.data.currentStock >= 0 && request.resource.data.reservedStock >= 0 &&
+        request.resource.data.reorderLevel >= 0 && request.resource.data.status == "active" && validAuditCreate();
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.productId == resource.data.productId &&
+        request.resource.data.purchasePrice >= 0 && request.resource.data.sellingPrice >= 0 &&
+        request.resource.data.currentStock >= 0 && request.resource.data.reservedStock >= 0 &&
+        request.resource.data.reorderLevel >= 0 && validAuditUpdate();
+      allow delete: if false;
+    }
     match /{collection}/{documentId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
         branchMember(resource.data.companyId, resource.data.branchId);

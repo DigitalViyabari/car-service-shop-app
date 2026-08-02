@@ -116,7 +116,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}><NavIcon name="overview" />Overview</Link>
           <span aria-disabled="true"><NavIcon name="operations" />Operations</span>
           <Link href="/dashboard/customers" className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}><NavIcon name="team" />Customers</Link>
-          <span aria-disabled="true"><NavIcon name="inventory" />Inventory</span>
+          <Link href="/dashboard/products" className={pathname.startsWith("/dashboard/products") ? "is-active" : ""}><NavIcon name="inventory" />Products</Link>
           <span aria-disabled="true"><NavIcon name="finance" />Finance</span>
           <span aria-disabled="true"><NavIcon name="reports" />Reports</span>
           <span aria-disabled="true"><NavIcon name="team" />Team</span>

@@ -22,4 +22,10 @@ Vehicle records include colour as a standard field. Supported fuel choices inclu
 
 The shared Indian default catalogue ships as application reference data and is read-only to tenants. Company-owned additions are stored in `vehicleCatalog`, scoped by `companyId`, and may include make, model, variant, body type, supported fuels/transmissions, year range, and notes. Customer vehicle records copy selected text values rather than depending on a mutable catalogue document, preserving historical accuracy.
 
+## Products and inventory
+
+`products` contains the company-owned product master: identity, SKU/barcode, part numbers, category, HSN/GST, unit, MRP, inventory tracking preference, and compatibility notes. `inventoryItems` contains branch-owned commercial and stock values such as purchase/selling price, available and reserved quantity, reorder level, rack location, and supplier. The inventory document ID is `{branchId}_{productId}` for constant-time lookup.
+
+Products and inventory items use archive status rather than deletion so future job cards, invoices, stock movements, and audit records keep stable references.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.

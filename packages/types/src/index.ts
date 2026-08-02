@@ -151,3 +151,43 @@ export interface VehicleCatalogEntry extends AuditFields {
   searchText: string;
   status: "active" | "archived";
 }
+
+export type ProductType = "spare_part" | "consumable" | "lubricant" | "tyre" | "battery" | "accessory" | "workshop_material";
+
+export interface Product extends AuditFields {
+  id: string;
+  companyId: string;
+  name: string;
+  nickname?: string;
+  sku: string;
+  barcode?: string;
+  oemPartNumber?: string;
+  manufacturerPartNumber?: string;
+  brand?: string;
+  category?: string;
+  type: ProductType;
+  description?: string;
+  hsnCode?: string;
+  gstRate: number;
+  unit: string;
+  mrp?: number;
+  trackInventory: boolean;
+  compatibilityNotes?: string;
+  searchText: string;
+  status: "active" | "archived";
+}
+
+export interface InventoryItem extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  productId: string;
+  purchasePrice: number;
+  sellingPrice: number;
+  currentStock: number;
+  reservedStock: number;
+  reorderLevel: number;
+  rackLocation?: string;
+  preferredSupplier?: string;
+  status: "active" | "archived";
+}
