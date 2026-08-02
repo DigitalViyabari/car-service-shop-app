@@ -433,6 +433,17 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .estimate-totals span { display:grid; gap:4px; }
 .estimate-totals strong { color:#fff; font-size:11px; }
 .estimate-modal { width:min(630px,100%); }
+.estimate-heading button:disabled,.estimate-lines button:disabled { cursor:not-allowed; opacity:.48; }
+.approval-strip { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 14px; border-top:1px solid #e8eaec; background:#fafafa; }
+.approval-state { padding:5px 7px; border-radius:7px; background:#e9ecef; color:#59636f; font-size:8px; font-weight:850; text-transform:capitalize; }
+.approval-approved { background:#e7f5ed; color:#246c4b; }
+.approval-rejected { background:#fce9ea; color:#ad282f; }
+.approval-sent { background:#fff3dc; color:#8e5c0c; }
+.approval-strip>div { display:flex; gap:6px; }
+.approval-strip button { min-height:29px; padding:0 8px; border:1px solid #cfd3d8; border-radius:7px; background:#fff; color:#424a54; cursor:pointer; font-size:8px; font-weight:800; }
+.approval-modal { width:min(580px,100%); }
+.approval-footer { justify-content:space-between; }
+.reject-button { min-height:43px; padding:0 14px; border:1px solid #e2a7aa; border-radius:11px; background:#fff4f4; color:#a8242b; cursor:pointer; font-weight:800; }
 
 .state-page { min-height:100vh; display:grid; place-content:center; justify-items:center; padding:24px; text-align:center; background:var(--canvas); }
 .state-page h1 { margin-bottom:4px; }

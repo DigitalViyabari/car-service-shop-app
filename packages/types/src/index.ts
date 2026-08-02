@@ -194,6 +194,8 @@ export interface InventoryItem extends AuditFields {
 
 export type JobStatus = "check_in" | "inspection" | "estimate_pending" | "approved" | "in_progress" | "quality_check" | "ready" | "delivered" | "cancelled";
 export type JobPriority = "normal" | "urgent" | "breakdown";
+export type EstimateApprovalStatus = "draft" | "sent" | "approved" | "rejected";
+export type EstimateApprovalMethod = "whatsapp" | "phone" | "email" | "signature" | "in_person";
 
 export interface ServiceType extends AuditFields {
   id: string;
@@ -226,6 +228,14 @@ export interface JobSheet extends AuditFields {
   assignedTechnicianIds: string[];
   estimateTotal: number;
   invoiceTotal: number;
+  approvalStatus?: EstimateApprovalStatus;
+  approvalMethod?: EstimateApprovalMethod;
+  approvalReference?: string;
+  approvalNotes?: string;
+  approvalAt?: string;
+  approvalBy?: string;
+  estimateLocked?: boolean;
+  estimateRevision?: number;
 }
 
 export interface JobLineItem extends AuditFields {

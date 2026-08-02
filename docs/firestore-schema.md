@@ -36,4 +36,6 @@ Products and inventory items use archive status rather than deletion so future j
 
 `serviceTypes` stores company-specific workshop offerings and supports inline creation during vehicle check-in. Job creation time is always server-recorded. Odometer and fuel level may be explicitly left unknown rather than replaced with misleading zero values.
 
+Estimate approval state is stored on the job with method, reference, notes, actor, timestamp, lock state, and revision number. Approved estimates are locked against line changes. Creating a revision explicitly unlocks the current estimate and increments its revision number while preserving the prior decision in audit history.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.
