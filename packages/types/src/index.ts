@@ -194,6 +194,24 @@ export interface InventoryItem extends AuditFields {
   status: "active" | "archived";
 }
 
+export type InventoryMovementType = "purchase" | "issue" | "adjustment_in" | "adjustment_out";
+export interface InventoryMovement extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  productId: string;
+  inventoryItemId: string;
+  type: InventoryMovementType;
+  quantity: number;
+  stockBefore: number;
+  stockAfter: number;
+  unitCost: number;
+  supplier?: string;
+  reference?: string;
+  notes: string;
+  occurredAt: string;
+}
+
 export type JobStatus = "check_in" | "inspection" | "estimate_pending" | "approved" | "in_progress" | "quality_check" | "ready" | "delivered" | "cancelled";
 export type JobPriority = "normal" | "urgent" | "breakdown";
 export type EstimateApprovalStatus = "draft" | "sent" | "approved" | "rejected";

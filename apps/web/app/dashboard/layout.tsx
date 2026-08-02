@@ -185,6 +185,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         branchId === activeBranchId &&
         roles.some((role) => role === "branch_manager" || role === "finance_manager"),
     );
+  const canAccessInventory =
+    (activeMembership?.companyRoles ?? []).some(
+      (role) => role === "company_owner" || role === "company_admin",
+    ) ||
+    (activeMembership?.branchAssignments ?? []).some(
+      ({ branchId, roles }) =>
+        branchId === activeBranchId &&
+        roles.some((role) => role === "branch_manager" || role === "inventory_manager"),
+    );
 
   async function handleSignOut() {
     setShowLogoutConfirmation(false);
@@ -221,13 +230,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <NavIcon name="team" />
             Customers
           </Link>
-          <Link
-            href="/dashboard/products"
-            className={pathname.startsWith("/dashboard/products") ? "is-active" : ""}
-          >
-            <NavIcon name="inventory" />
-            Products
-          </Link>
+          {canAccessInventory ? (
+            <Link
+              href="/dashboard/products"
+              className={pathname.startsWith("/dashboard/products") ? "is-active" : ""}
+            >
+              <NavIcon name="inventory" />
+              Inventory
+            </Link>
+          ) : null}
           {canAccessFinance ? (
             <Link
               href="/dashboard/invoices"

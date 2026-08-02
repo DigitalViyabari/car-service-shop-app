@@ -57,6 +57,12 @@ service cloud.firestore {
          membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "finance_manager"]))
       ));
     }
+    function branchInventoryManager(companyId, branchId) {
+      return operationsManager(companyId, branchId) ||
+        (branchMember(companyId, branchId) &&
+         membership(companyId).data.branchRoleKeys is list &&
+         membership(companyId).data.branchRoleKeys.hasAny(["inventory_manager"]));
+    }
     function validAuditCreate() {
       return request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.updatedBy == request.auth.uid &&
@@ -185,13 +191,13 @@ service cloud.firestore {
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "productId", "purchasePrice", "sellingPrice", "currentStock",
           "reservedStock", "reorderLevel", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
-        ]) && operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        ]) && branchInventoryManager(request.resource.data.companyId, request.resource.data.branchId) &&
         existsAfter(/databases/$(database)/documents/products/$(request.resource.data.productId)) &&
         getAfter(/databases/$(database)/documents/products/$(request.resource.data.productId)).data.companyId == request.resource.data.companyId &&
         request.resource.data.purchasePrice >= 0 && request.resource.data.sellingPrice >= 0 &&
         request.resource.data.currentStock >= 0 && request.resource.data.reservedStock >= 0 &&
         request.resource.data.reorderLevel >= 0 && request.resource.data.status == "active" && validAuditCreate();
-      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+      allow update: if branchInventoryManager(resource.data.companyId, resource.data.branchId) &&
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.productId == resource.data.productId &&
@@ -199,6 +205,22 @@ service cloud.firestore {
         request.resource.data.currentStock >= 0 && request.resource.data.reservedStock >= 0 &&
         request.resource.data.reorderLevel >= 0 && validAuditUpdate();
       allow delete: if false;
+    }
+    match /inventoryMovements/{movementId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "productId", "inventoryItemId", "type", "quantity",
+          "stockBefore", "stockAfter", "unitCost", "notes", "occurredAt",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchInventoryManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.quantity > 0 && request.resource.data.stockAfter >= 0 &&
+        request.resource.data.unitCost >= 0 &&
+        exists(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)) &&
+        get(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.currentStock == request.resource.data.stockBefore &&
+        getAfter(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.currentStock == request.resource.data.stockAfter &&
+        request.resource.data.occurredAt == request.time && validAuditCreate();
+      allow update, delete: if false;
     }
     match /jobSheets/{jobId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
