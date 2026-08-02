@@ -1,6 +1,6 @@
 # Roles and permissions
 
-Platform roles are `platform_super_admin` and `platform_support_admin`. Company roles are `company_owner`, `company_admin`, `company_accountant`, and `company_auditor`. Branch roles are `branch_manager`, `finance_manager`, `job_creator`, `service_advisor`, `inventory_manager`, `technician`, `receptionist`, and `viewer`.
+The customer-facing role set is deliberately limited to Super Admin, Owner, Branch Manager, Finance Manager, Staff / Technician, Inventory Manager, and Job Sheet Creator. Super Admin and Owner are protected top-level roles. Owners and Branch Managers may create staff and assign one of the five branch roles: `branch_manager`, `finance_manager`, `technician`, `inventory_manager`, or `job_creator`.
 
 `branch_manager` can manage all operational, inventory, and financial work for assigned branches. `finance_manager` is intentionally finance-only: the role can view and manage invoices, payments, receipts, and financial reports for assigned branches, but cannot create or alter customers, vehicles, jobs, workshop operations, products, or stock. `job_creator` can create a new job card for an existing customer and vehicle, but cannot change job status, estimates, inventory, invoices, payments, or reports.
 
