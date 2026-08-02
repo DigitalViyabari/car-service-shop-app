@@ -396,26 +396,46 @@ export default function InvoicesPage() {
           <button onClick={() => setError(null)}>×</button>
         </div>
       ) : null}
+      <section className="finance-legend">
+        <strong>Payment Guide</strong>
+        <span>
+          <i className="is-good" /> Paid — nothing remains
+        </span>
+        <span>
+          <i className="is-attention" /> Part Paid — collect the balance
+        </span>
+        <span>
+          <i className="is-active" /> Issued — waiting for payment
+        </span>
+        <span>
+          <i className="is-urgent" /> Outstanding — follow up required
+        </span>
+      </section>
       <section className="invoice-summary">
-        <div>
-          <span>Total Billed</span>
+        <div className="finance-blue">
+          <span>Total Work Invoiced</span>
           <strong>{money.format(totals.billed)}</strong>
+          <small>Value of all issued invoices</small>
         </div>
-        <div>
-          <span>Collected Today</span>
+        <div className="finance-green">
+          <span>Money Received Today</span>
           <strong>{money.format(collectedToday)}</strong>
+          <small>Today&apos;s completed payments</small>
         </div>
-        <div>
-          <span>Total Collected</span>
+        <div className="finance-navy">
+          <span>Money Received Overall</span>
           <strong>{money.format(totals.collected)}</strong>
+          <small>All successful collections</small>
         </div>
-        <div className={totals.due ? "has-warning" : ""}>
-          <span>Outstanding</span>
+        <div className={totals.due ? "finance-amber" : "finance-green"}>
+          <span>Money Still To Collect</span>
           <strong>{money.format(totals.due)}</strong>
+          <small>{totals.due ? "Customer follow-up required" : "All invoices are settled"}</small>
         </div>
-        <div>
-          <span>Open Invoices</span>
+        <div className={totals.open ? "finance-red" : "finance-green"}>
+          <span>Invoices With Balance</span>
           <strong>{totals.open}</strong>
+          <small>{totals.open ? "Open these invoices to collect" : "No unpaid invoices"}</small>
         </div>
       </section>
       <section className="invoice-workspace">
@@ -473,9 +493,23 @@ export default function InvoicesPage() {
                 </span>
               </div>
               <div className="invoice-amount">
-                <span>Balance Due</span>
+                <span>Customer Still Needs To Pay</span>
                 <strong>{money.format(selected.balanceAmount)}</strong>
                 <small>Invoice Total {money.format(selected.totalAmount)}</small>
+              </div>
+              <div
+                className={`payment-explainer ${selected.balanceAmount > 0 ? "needs-payment" : "is-settled"}`}
+              >
+                <strong>
+                  {selected.balanceAmount > 0
+                    ? "Payment Follow-Up Needed"
+                    : "Invoice Fully Settled"}
+                </strong>
+                <span>
+                  {selected.balanceAmount > 0
+                    ? `Record a full or partial payment when the customer pays. ${money.format(selected.paidAmount)} has already been received.`
+                    : "The full invoice amount has been received. No collection action remains."}
+                </span>
               </div>
               <div className="invoice-breakdown">
                 <span>
