@@ -499,22 +499,43 @@ export default function ProductsPage() {
           <button onClick={() => setError(null)}>×</button>
         </div>
       ) : null}
+      <section className="inventory-guide">
+        <strong>Stock Guide</strong>
+        <span>
+          <i className="is-good" /> Healthy — above reorder level
+        </span>
+        <span>
+          <i className="is-attention" /> Low — purchase soon
+        </span>
+        <span>
+          <i className="is-urgent" /> Out — workshop may be blocked
+        </span>
+        <span>
+          <i className="is-active" /> Blue — stock activity
+        </span>
+      </section>
       <section className="product-summary">
-        <div>
-          <span>Active Products</span>
+        <div className="inventory-blue">
+          <span>Products Being Tracked</span>
           <strong>{products.length}</strong>
+          <small>Active items in the company catalogue</small>
         </div>
-        <div>
-          <span>Units In Stock</span>
+        <div className="inventory-navy">
+          <span>Total Units Available</span>
           <strong>{totalStock.toLocaleString("en-IN")}</strong>
+          <small>Combined quantity across tracked products</small>
         </div>
-        <div className={lowStock ? "has-warning" : ""}>
-          <span>Low / Out Of Stock</span>
+        <div className={lowStock ? "inventory-red" : "inventory-green"}>
+          <span>Products Needing Attention</span>
           <strong>{lowStock}</strong>
+          <small>
+            {lowStock ? "Purchase or adjust these products" : "All stock levels look healthy"}
+          </small>
         </div>
-        <div>
-          <span>Stock Value</span>
+        <div className="inventory-green">
+          <span>Money Held In Stock</span>
           <strong>{money(stockValue)}</strong>
+          <small>Current quantity × latest purchase price</small>
         </div>
       </section>
       <section className="product-workspace">
@@ -663,6 +684,24 @@ export default function ProductsPage() {
                       width: `${Math.min(100, ((selectedStock?.currentStock ?? 0) / Math.max((selectedStock?.reorderLevel ?? 1) * 2, 1)) * 100)}%`,
                     }}
                   />
+                </div>
+                <div
+                  className={`stock-explainer ${(selectedStock?.currentStock ?? 0) <= 0 ? "is-out" : (selectedStock?.currentStock ?? 0) <= (selectedStock?.reorderLevel ?? 0) ? "is-low" : "is-healthy"}`}
+                >
+                  <strong>
+                    {(selectedStock?.currentStock ?? 0) <= 0
+                      ? "Workshop Supply Risk"
+                      : (selectedStock?.currentStock ?? 0) <= (selectedStock?.reorderLevel ?? 0)
+                        ? "Purchase Recommended"
+                        : "Stock Level Is Healthy"}
+                  </strong>
+                  <span>
+                    {(selectedStock?.currentStock ?? 0) <= 0
+                      ? "This product is unavailable. Receive stock before adding it to new work."
+                      : (selectedStock?.currentStock ?? 0) <= (selectedStock?.reorderLevel ?? 0)
+                        ? `Only ${selectedStock?.currentStock ?? 0} ${selected.unit} remain. The reorder level is ${selectedStock?.reorderLevel ?? 0}.`
+                        : "No immediate purchase action is required."}
+                  </span>
                 </div>
                 <dl>
                   <div>
