@@ -3589,13 +3589,21 @@ form .dv-button {
 }
 .invoice-status {
   display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
   width: max-content;
+  min-height: 0;
+  height: auto;
   padding: 5px 9px;
   border-radius: 999px;
   background: #eef1f4;
   color: #505b68;
   font-size: 10px;
   font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
   text-transform: capitalize;
 }
 .invoice-status-paid {
@@ -3615,6 +3623,7 @@ form .dv-button {
 }
 .invoice-detail-head {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
 }
