@@ -239,6 +239,9 @@ export interface BusinessTaxProfile extends AuditFields {
   accountNumber?: string;
   ifscCode?: string;
   upiId?: string;
+  invoiceLogoUrl?: string;
+  invoiceAccentColor?: string;
+  invoicePaperSize?: "A4" | "A5";
 }
 
 export type JobStatus =

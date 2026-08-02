@@ -55,8 +55,12 @@ service cloud.firestore {
     }
     function branchTechnician(companyId, branchId) {
       return branchMember(companyId, branchId) &&
-        membership(companyId).data.branchRoleKeys is list &&
-        membership(companyId).data.branchRoleKeys.hasAny(["technician"]);
+        ((membership(companyId).data.branchRoleKeys is list &&
+          membership(companyId).data.branchRoleKeys.hasAny(["technician"])) ||
+         (membership(companyId).data.branchAssignments is list &&
+          membership(companyId).data.branchAssignments.hasAny([
+            {"branchId": branchId, "roles": ["technician"]}
+          ])));
     }
     function customerDataViewer(companyId, branchId) {
       return operationsManager(companyId, branchId) || jobCreator(companyId, branchId);

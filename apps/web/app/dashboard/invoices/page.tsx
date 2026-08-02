@@ -21,7 +21,14 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react";
 import { useAuth } from "@/lib/auth-context";
 import { firebaseClient, getFirebaseAppCheckToken } from "@/lib/firebase-client";
 
@@ -842,7 +849,15 @@ export default function InvoicesPage() {
       ) : null}
       {printInvoice && selected ? (
         <div className="modal-backdrop invoice-print-backdrop">
-          <section className="module-modal invoice-print-modal" role="dialog" aria-modal="true">
+          <style>{`@media print { @page { size: ${taxProfile?.invoicePaperSize || "A4"}; margin: 10mm; } }`}</style>
+          <section
+            className={`module-modal invoice-print-modal paper-${(taxProfile?.invoicePaperSize || "A4").toLowerCase()}`}
+            style={
+              { "--invoice-accent": taxProfile?.invoiceAccentColor || "#173958" } as CSSProperties
+            }
+            role="dialog"
+            aria-modal="true"
+          >
             <header className="modal-header no-print">
               <div>
                 <span className="heading-kicker">Customer Invoice</span>
@@ -855,6 +870,13 @@ export default function InvoicesPage() {
             <div className="invoice-sheet">
               <header>
                 <div>
+                  {taxProfile?.invoiceLogoUrl ? (
+                    <img
+                      className="invoice-logo"
+                      src={taxProfile.invoiceLogoUrl}
+                      alt="Business logo"
+                    />
+                  ) : null}
                   <strong>
                     {taxProfile?.legalName || activeCompany?.name || "Digital Viyabari"}
                   </strong>

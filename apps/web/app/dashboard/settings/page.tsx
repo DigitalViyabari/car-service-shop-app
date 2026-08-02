@@ -33,6 +33,9 @@ const emptyDraft: Draft = {
   accountNumber: "",
   ifscCode: "",
   upiId: "",
+  invoiceLogoUrl: "",
+  invoiceAccentColor: "#173958",
+  invoicePaperSize: "A4",
 };
 
 export default function BusinessSettingsPage() {
@@ -250,6 +253,40 @@ export default function BusinessSettingsPage() {
                 onChange={(event) => update("invoiceTerms", event.target.value)}
                 placeholder="Payment, warranty and delivery terms"
               />
+            </label>
+          </div>
+        </section>
+        <section className="settings-card">
+          <header>
+            <span>04</span>
+            <div>
+              <h2>Invoice Design</h2>
+              <p>Logo, color and print size.</p>
+            </div>
+          </header>
+          <div className="form-grid invoice-design-fields">
+            {field("invoiceLogoUrl", "Logo Image URL", {
+              placeholder: "https://yourdomain.com/logo.png",
+            })}
+            <label>
+              Invoice Color
+              <input
+                type="color"
+                value={draft.invoiceAccentColor || "#173958"}
+                disabled={!isOwner}
+                onChange={(event) => update("invoiceAccentColor", event.target.value)}
+              />
+            </label>
+            <label>
+              Paper Size
+              <select
+                value={draft.invoicePaperSize || "A4"}
+                disabled={!isOwner}
+                onChange={(event) => update("invoicePaperSize", event.target.value as "A4" | "A5")}
+              >
+                <option value="A4">A4 — Full Invoice</option>
+                <option value="A5">A5 — Compact Invoice</option>
+              </select>
             </label>
           </div>
         </section>

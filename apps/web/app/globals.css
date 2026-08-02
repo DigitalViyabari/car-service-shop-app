@@ -291,13 +291,20 @@ form .dv-button {
   background: var(--canvas);
 }
 .sidebar {
-  position: relative;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow: hidden;
   background: linear-gradient(180deg, #080b0f, #0d1725);
   color: #a6afba;
   padding: 28px 18px 20px;
   display: flex;
   flex-direction: column;
   border-right: 1px solid #222932;
+}
+.technician-workspace-title {
+  color: #202832;
+  font-size: 13px;
 }
 .sidebar::after {
   content: "";
@@ -3823,6 +3830,26 @@ form .dv-button {
 .invoice-print-modal {
   max-width: 850px;
 }
+.invoice-print-modal.paper-a5 {
+  max-width: 620px;
+}
+.invoice-logo {
+  display: block;
+  max-width: 150px;
+  max-height: 54px;
+  margin-bottom: 5px;
+  object-fit: contain;
+  object-position: left center;
+}
+.invoice-design-fields input[type="color"] {
+  width: 100%;
+  min-height: 44px;
+  padding: 5px;
+  border: 1px solid #cfd6dd;
+  border-radius: 9px;
+  background: #fff;
+  cursor: pointer;
+}
 .invoice-sheet {
   margin: 0 28px 24px;
   border: 1px solid #d9dfe5;
@@ -3835,7 +3862,7 @@ form .dv-button {
   justify-content: space-between;
   gap: 20px;
   padding: 22px 24px;
-  background: #12171d;
+  background: var(--invoice-accent, #12171d);
   color: #fff;
 }
 .invoice-sheet > header > div {

@@ -100,6 +100,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [loading, router, user]);
+  useEffect(() => {
+    if (loading || !activeCompanyId || !activeBranchId || pathname !== "/dashboard") return;
+    const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
+      roles =
+        membership?.branchAssignments.find(({ branchId }) => branchId === activeBranchId)?.roles ??
+        [],
+      technicianOnly =
+        roles.includes("technician") &&
+        !(membership?.companyRoles ?? []).length &&
+        roles.every((role) => role === "technician");
+    if (technicianOnly) router.replace("/dashboard/jobs");
+  }, [activeBranchId, activeCompanyId, loading, memberships, pathname, router]);
 
   if (loading) {
     return (
@@ -313,42 +325,50 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       </aside>
       <section className="workspace">
         <header className="topbar">
-          <div className="selectors">
-            <label className="sr-only" htmlFor="company-selector">
-              Company
-            </label>
-            <select
-              id="company-selector"
-              aria-label="Company"
-              value={activeCompanyId ?? ""}
-              onChange={(event) => selectCompany(event.target.value)}
-            >
-              {companies.map((company) => (
-                <option key={company.id} value={company.id}>
-                  {company.name}
-                </option>
-              ))}
-            </select>
-            <label className="sr-only" htmlFor="branch-selector">
-              Branch
-            </label>
-            <select
-              id="branch-selector"
-              aria-label="Branch"
-              value={activeBranchId ?? ""}
-              onChange={(event) => selectBranch(event.target.value)}
-              disabled={companyBranches.length === 0}
-            >
-              {companyBranches.length === 0 ? <option value="">No assigned branches</option> : null}
-              {companyBranches.map((branch) => (
-                <option key={branch.id} value={branch.id}>
-                  {branch.name}
-                </option>
-              ))}
-            </select>
-          </div>
+          {!technicianOnly ? (
+            <div className="selectors">
+              <label className="sr-only" htmlFor="company-selector">
+                Company
+              </label>
+              <select
+                id="company-selector"
+                aria-label="Company"
+                value={activeCompanyId ?? ""}
+                onChange={(event) => selectCompany(event.target.value)}
+              >
+                {companies.map((company) => (
+                  <option key={company.id} value={company.id}>
+                    {company.name}
+                  </option>
+                ))}
+              </select>
+              <label className="sr-only" htmlFor="branch-selector">
+                Branch
+              </label>
+              <select
+                id="branch-selector"
+                aria-label="Branch"
+                value={activeBranchId ?? ""}
+                onChange={(event) => selectBranch(event.target.value)}
+                disabled={companyBranches.length === 0}
+              >
+                {companyBranches.length === 0 ? (
+                  <option value="">No assigned branches</option>
+                ) : null}
+                {companyBranches.map((branch) => (
+                  <option key={branch.id} value={branch.id}>
+                    {branch.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <strong className="technician-workspace-title">My Assigned Work</strong>
+          )}
           <div className="topbar-status">
-            <span className="current-branch">{activeBranch?.name ?? "No branch selected"}</span>
+            {!technicianOnly ? (
+              <span className="current-branch">{activeBranch?.name ?? "No branch selected"}</span>
+            ) : null}
             {!technicianOnly ? (
               <StatusBadge tone={subscription ? subscriptionTone : "neutral"}>
                 {subscription
@@ -358,19 +378,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ) : null}
           </div>
         </header>
-        {technicianOnly && !pathname.startsWith("/dashboard/jobs") ? (
-          <main className="content">
-            <div className="state-card">
-              <h1>My Work Only</h1>
-              <p>Open Job Cards to view your assigned work.</p>
-              <Link className="dv-button" href="/dashboard/jobs">
-                Open My Jobs
-              </Link>
-            </div>
-          </main>
-        ) : (
-          children
-        )}
+        {technicianOnly && !pathname.startsWith("/dashboard/jobs") ? null : children}
       </section>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {!technicianOnly ? (

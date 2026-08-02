@@ -41,6 +41,15 @@
       ]
     },
     {
+      "collectionGroup": "jobSheets",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "companyId", "order": "ASCENDING" },
+        { "fieldPath": "branchId", "order": "ASCENDING" },
+        { "fieldPath": "assignedTechnicianIds", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
       "collectionGroup": "jobLineItems",
       "queryScope": "COLLECTION",
       "fields": [
