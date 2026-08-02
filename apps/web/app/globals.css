@@ -513,6 +513,130 @@ form .dv-button {
   gap: 12px;
   align-items: center;
 }
+.topbar-settings {
+  min-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid #d4dbe2;
+  border-radius: 11px;
+  color: #26313d;
+  background: #fff;
+  font-size: 14px;
+  font-weight: 800;
+}
+.topbar-settings .nav-icon {
+  width: 17px;
+  height: 17px;
+}
+.notification-center {
+  position: relative;
+}
+.notification-bell {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d4dbe2;
+  border-radius: 12px;
+  background: #111820;
+  color: #fff;
+  cursor: pointer;
+}
+.notification-bell svg {
+  width: 20px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.notification-bell > span {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  padding: 0 5px;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  background: var(--red);
+  font-size: 11px;
+  font-weight: 900;
+}
+.notification-panel {
+  position: absolute;
+  z-index: 80;
+  top: calc(100% + 10px);
+  right: 0;
+  width: min(390px, calc(100vw - 32px));
+  max-height: 430px;
+  overflow-y: auto;
+  border: 1px solid #d5dce3;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 18px 55px rgba(17, 24, 32, 0.2);
+}
+.notification-panel header {
+  display: flex;
+  justify-content: space-between;
+  padding: 17px 18px;
+  border-bottom: 1px solid #e2e6ea;
+}
+.notification-panel header small {
+  color: #6b7580;
+}
+.notification-panel > a {
+  display: grid;
+  grid-template-columns: 10px 1fr;
+  gap: 12px;
+  padding: 15px 18px;
+  border-bottom: 1px solid #edf0f2;
+  color: #27313b;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+.notification-panel > a:hover {
+  background: #f7f9fb;
+}
+.notification-panel > p {
+  margin: 0;
+  padding: 28px 18px;
+  color: #68727d;
+  text-align: center;
+}
+.notification-type {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #347fcf;
+}
+.notification-type.delay_reported {
+  background: #e5a11a;
+}
+
+@media screen {
+  .content small,
+  .content .heading-kicker,
+  .content label,
+  .content dt,
+  .content .muted {
+    font-size: max(12px, 0.78rem);
+    line-height: 1.45;
+  }
+  .content input,
+  .content select,
+  .content textarea,
+  .content button {
+    font-size: max(14px, 0.875rem);
+  }
+}
 .current-branch {
   color: #5d6672;
   font-size: 12px;

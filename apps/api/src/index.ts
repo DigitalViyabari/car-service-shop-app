@@ -59,6 +59,14 @@ const reversePaymentSchema = z.object({
   paymentId: z.string().min(8).max(128),
   reason: z.string().min(3).max(300),
 });
+const notificationSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  jobId: z.string().min(2).max(128),
+  type: z.enum(["job_assigned", "delay_reported"]),
+  recipientUserId: z.string().min(8).max(128).optional(),
+  message: z.string().min(3).max(300),
+});
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 
@@ -304,6 +312,80 @@ async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: s
       .filter((item) => item.get("companyId") === companyId && item.get("branchId") === branchId)
       .map((item) => ({ id: item.id, ...item.data() })),
   };
+}
+async function listNotifications(user: DecodedIdToken, companyId: string, branchId: string) {
+  const member = await db.doc(`memberships/${user.uid}_${companyId}`).get(),
+    companyRoles = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    manager =
+      companyRoles.some((role) => ["company_owner", "company_admin"].includes(role)) ||
+      assignments.some(
+        (item) => item.branchId === branchId && item.roles.includes("branch_manager"),
+      );
+  if (!member.exists || member.get("status") !== "active")
+    throw new ApiError(403, "No active company membership.");
+  const snapshot = await db.collection("notifications").where("companyId", "==", companyId).get();
+  return {
+    notifications: snapshot.docs
+      .filter(
+        (item) =>
+          item.get("branchId") === branchId &&
+          (item.get("recipientUserId") === user.uid ||
+            (manager && item.get("audience") === "management")),
+      )
+      .map((item) => ({
+        id: item.id,
+        ...item.data(),
+        createdAtSeconds: Number(item.get("createdAt")?._seconds ?? 0),
+      }))
+      .sort((a, b) => b.createdAtSeconds - a.createdAtSeconds)
+      .slice(0, 20),
+  };
+}
+async function createNotification(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = notificationSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Invalid notification.");
+  const input = parsed.data,
+    member = await db.doc(`memberships/${user.uid}_${input.companyId}`).get(),
+    companyRoles = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    manager =
+      companyRoles.some((role) => ["company_owner", "company_admin"].includes(role)) ||
+      assignments.some(
+        (item) => item.branchId === input.branchId && item.roles.includes("branch_manager"),
+      ),
+    technician = assignments.some(
+      (item) => item.branchId === input.branchId && item.roles.includes("technician"),
+    ),
+    job = await db.doc(`jobSheets/${input.jobId}`).get();
+  if (!member.exists || member.get("status") !== "active" || !job.exists)
+    throw new ApiError(403, "Notification access is required.");
+  if (job.get("companyId") !== input.companyId || job.get("branchId") !== input.branchId)
+    throw new ApiError(400, "Job does not match this workspace.");
+  if (input.type === "job_assigned" && (!manager || !input.recipientUserId))
+    throw new ApiError(403, "Job assignment access is required.");
+  if (
+    input.type === "delay_reported" &&
+    (!technician || !(job.get("assignedTechnicianIds") as string[]).includes(user.uid))
+  )
+    throw new ApiError(403, "Assigned technician access is required.");
+  const now = FieldValue.serverTimestamp();
+  await db.collection("notifications").add({
+    companyId: input.companyId,
+    branchId: input.branchId,
+    jobId: input.jobId,
+    type: input.type,
+    message: input.message,
+    recipientUserId: input.recipientUserId ?? null,
+    audience: input.type === "delay_reported" ? "management" : "user",
+    createdAt: now,
+    createdBy: user.uid,
+  });
+  return { created: true };
 }
 async function reversePayment(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = reversePaymentSchema.safeParse(await body(request));
@@ -568,6 +650,18 @@ const server = createServer(async (request, response) => {
           url.searchParams.get("branchId") ?? "",
         ),
       );
+    if (request.method === "GET" && url.pathname === "/v1/notifications")
+      return reply(
+        response,
+        200,
+        await listNotifications(
+          user,
+          url.searchParams.get("companyId") ?? "",
+          url.searchParams.get("branchId") ?? "",
+        ),
+      );
+    if (request.method === "POST" && url.pathname === "/v1/notifications")
+      return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")
       return reply(response, 200, await createStaff(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/assign")

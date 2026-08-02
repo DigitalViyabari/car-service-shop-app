@@ -110,7 +110,29 @@ function displayDate(value: unknown) {
   if (!value) return "Not Recorded";
   if (typeof value === "object" && value && "toDate" in value)
     return (value as { toDate: () => Date }).toDate().toLocaleString("en-IN");
+  if (typeof value === "object" && value && "_seconds" in value)
+    return new Date(Number((value as { _seconds: number })._seconds) * 1000).toLocaleString(
+      "en-IN",
+    );
+  if (typeof value === "object" && value && "seconds" in value)
+    return new Date(Number((value as { seconds: number }).seconds) * 1000).toLocaleString("en-IN");
   return new Date(String(value)).toLocaleString("en-IN");
+}
+
+async function sendJobNotification(
+  user: NonNullable<ReturnType<typeof useAuth>["user"]>,
+  payload: Record<string, string>,
+) {
+  const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]);
+  await fetch("/api/v1/notifications", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${token}`,
+      "x-firebase-appcheck": appCheck,
+    },
+    body: JSON.stringify(payload),
+  });
 }
 
 export default function JobsPage() {
@@ -555,6 +577,16 @@ export default function JobsPage() {
         updatedAt: serverTimestamp(),
         updatedBy: user.uid,
       });
+      if (technicianId) {
+        await sendJobNotification(user, {
+          companyId: selected.companyId,
+          branchId: selected.branchId,
+          jobId: selected.id,
+          type: "job_assigned",
+          recipientUserId: technicianId,
+          message: `${selected.jobNumber} has been assigned to you.`,
+        });
+      }
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to assign technician.");
@@ -573,6 +605,13 @@ export default function JobsPage() {
         delayReportedBy: user.uid,
         updatedAt: serverTimestamp(),
         updatedBy: user.uid,
+      });
+      await sendJobNotification(user, {
+        companyId: selected.companyId,
+        branchId: selected.branchId,
+        jobId: selected.id,
+        type: "delay_reported",
+        message: `${selected.jobNumber}: ${delayReason.trim()}`,
       });
       setDelayReason("");
       await load();

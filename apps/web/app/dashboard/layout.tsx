@@ -5,6 +5,15 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { getFirebaseAppCheckToken } from "@/lib/firebase-client";
+
+type WorkspaceNotification = {
+  id: string;
+  type: "job_assigned" | "delay_reported";
+  message: string;
+  jobId: string;
+  createdAt?: { _seconds?: number; seconds?: number };
+};
 
 function NavIcon({
   name,
@@ -80,6 +89,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter();
   const pathname = usePathname();
   const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<WorkspaceNotification[]>([]);
   const {
     user,
     profile,
@@ -112,6 +123,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         roles.every((role) => role === "technician");
     if (technicianOnly) router.replace("/dashboard/jobs");
   }, [activeBranchId, activeCompanyId, loading, memberships, pathname, router]);
+  useEffect(() => {
+    if (!user || !activeCompanyId || !activeBranchId) return;
+    const currentUser = user;
+    let cancelled = false;
+    async function loadNotifications() {
+      try {
+        const [token, appCheck] = await Promise.all([
+            currentUser.getIdToken(),
+            getFirebaseAppCheckToken(),
+          ]),
+          response = await fetch(
+            `/api/v1/notifications?companyId=${encodeURIComponent(activeCompanyId!)}&branchId=${encodeURIComponent(activeBranchId!)}`,
+            {
+              headers: {
+                authorization: `Bearer ${token}`,
+                "x-firebase-appcheck": appCheck,
+              },
+            },
+          ),
+          result = (await response.json()) as { notifications?: WorkspaceNotification[] };
+        if (!cancelled && response.ok) setNotifications(result.notifications ?? []);
+      } catch {
+        if (!cancelled) setNotifications([]);
+      }
+    }
+    void loadNotifications();
+    const timer = window.setInterval(() => void loadNotifications(), 30_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [activeBranchId, activeCompanyId, user]);
 
   if (loading) {
     return (
@@ -376,6 +419,48 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   : "No subscription"}
               </StatusBadge>
             ) : null}
+            {isCompanyOwner ? (
+              <Link className="topbar-settings" href="/dashboard/settings">
+                <NavIcon name="settings" />
+                Settings
+              </Link>
+            ) : null}
+            <div className="notification-center">
+              <button
+                type="button"
+                className="notification-bell"
+                aria-label="Notifications"
+                aria-expanded={showNotifications}
+                onClick={() => setShowNotifications((value) => !value)}
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" />
+                </svg>
+                {notifications.length ? <span>{Math.min(notifications.length, 9)}</span> : null}
+              </button>
+              {showNotifications ? (
+                <section className="notification-panel">
+                  <header>
+                    <strong>Notifications</strong>
+                    <small>{notifications.length} Recent</small>
+                  </header>
+                  {notifications.length ? (
+                    notifications.map((notification) => (
+                      <Link
+                        href={`/dashboard/jobs?jobId=${notification.jobId}`}
+                        key={notification.id}
+                        onClick={() => setShowNotifications(false)}
+                      >
+                        <i className={`notification-type ${notification.type}`} />
+                        <span>{notification.message}</span>
+                      </Link>
+                    ))
+                  ) : (
+                    <p>No new notifications.</p>
+                  )}
+                </section>
+              ) : null}
+            </div>
           </div>
         </header>
         {technicianOnly && !pathname.startsWith("/dashboard/jobs") ? null : children}
