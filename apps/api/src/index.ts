@@ -167,6 +167,8 @@ async function platformAdministrator(uid: string) {
 async function platformOverview(user: DecodedIdToken) {
   if (!(await platformAdministrator(user.uid)))
     throw new ApiError(403, "Platform Admin access is required.");
+  const administratorProfile = await db.doc(`users/${user.uid}`).get(),
+    platformRoles = (administratorProfile.get("platformRoles") as string[] | undefined) ?? [];
   const [companies, memberships, invoices, users] = await Promise.all([
       db.collection("companies").get(),
       db.collection("memberships").get(),
@@ -220,7 +222,7 @@ async function platformOverview(user: DecodedIdToken) {
         status: membership.get("status") ?? "active",
       };
     });
-  return { companies: companyItems, accounts };
+  return { companies: companyItems, accounts, platformRoles };
 }
 async function createPlatformAdmin(request: IncomingMessage, user: DecodedIdToken) {
   if (!(await superAdmin(user.uid))) throw new ApiError(403, "Super Admin access is required.");
@@ -233,18 +235,16 @@ async function createPlatformAdmin(request: IncomingMessage, user: DecodedIdToke
       password: input.temporaryPassword,
     }),
     now = FieldValue.serverTimestamp();
-  await db
-    .doc(`users/${created.uid}`)
-    .set({
-      displayName: input.displayName,
-      email: input.email.toLowerCase(),
-      platformRoles: ["platform_support_admin"],
-      status: "active",
-      createdAt: now,
-      createdBy: user.uid,
-      updatedAt: now,
-      updatedBy: user.uid,
-    });
+  await db.doc(`users/${created.uid}`).set({
+    displayName: input.displayName,
+    email: input.email.toLowerCase(),
+    platformRoles: ["platform_support_admin"],
+    status: "active",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
   return { created: true, userId: created.uid };
 }
 async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken) {
@@ -253,15 +253,13 @@ async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken
   if (!parsed.success) throw new ApiError(400, "Select a valid account.");
   const target = await auth.getUser(parsed.data.targetUserId),
     now = FieldValue.serverTimestamp();
-  const audit = await db
-    .collection("platformAuditLogs")
-    .add({
-      action: "account_impersonation",
-      actorUserId: user.uid,
-      targetUserId: target.uid,
-      targetEmail: target.email ?? "",
-      createdAt: now,
-    });
+  const audit = await db.collection("platformAuditLogs").add({
+    action: "account_impersonation",
+    actorUserId: user.uid,
+    targetUserId: target.uid,
+    targetEmail: target.email ?? "",
+    createdAt: now,
+  });
   const token = await auth.createCustomToken(target.uid, {
     impersonatedBy: user.uid,
     impersonationAuditId: audit.id,

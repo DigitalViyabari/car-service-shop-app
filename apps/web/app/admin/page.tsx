@@ -31,17 +31,19 @@ const money = new Intl.NumberFormat("en-IN", {
 });
 
 export default function PlatformAdminPage() {
-  const { user, profile, loading } = useAuth();
+  const { user, loading } = useAuth();
   const [businesses, setBusinesses] = useState<Business[]>([]),
     [accounts, setAccounts] = useState<Account[]>([]),
     [selectedCompany, setSelectedCompany] = useState("all"),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [accessChecked, setAccessChecked] = useState(false),
+    [platformRoles, setPlatformRoles] = useState<string[]>([]);
   const [admin, setAdmin] = useState({ displayName: "", email: "", temporaryPassword: "" }),
     [busy, setBusy] = useState(false);
-  const allowed = profile?.platformRoles?.some((role) =>
+  const allowed = platformRoles.some((role) =>
       ["platform_super_admin", "platform_support_admin"].includes(role),
     ),
-    superAdmin = profile?.platformRoles?.includes("platform_super_admin");
+    superAdmin = platformRoles.includes("platform_super_admin");
   async function api(path: string, options: RequestInit = {}) {
     if (!user) throw new Error("Authentication is required.");
     const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]);
@@ -59,14 +61,16 @@ export default function PlatformAdminPage() {
     return result;
   }
   useEffect(() => {
-    if (!allowed) return;
+    if (!user) return;
     void api("/api/v1/admin/overview")
       .then((result) => {
         setBusinesses(result.companies ?? []);
         setAccounts(result.accounts ?? []);
+        setPlatformRoles(result.platformRoles ?? []);
       })
-      .catch((reason) => setMessage(reason.message));
-  }, [allowed]);
+      .catch((reason) => setMessage(reason.message))
+      .finally(() => setAccessChecked(true));
+  }, [user]);
   const visibleAccounts = useMemo(
     () =>
       accounts.filter((item) => selectedCompany === "all" || item.companyId === selectedCompany),
@@ -109,7 +113,7 @@ export default function PlatformAdminPage() {
       setBusy(false);
     }
   }
-  if (loading)
+  if (loading || (user && !accessChecked))
     return (
       <main className="state-page">
         <div className="car-loader" />

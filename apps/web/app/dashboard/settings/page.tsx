@@ -273,9 +273,27 @@ export default function BusinessSettingsPage() {
             </div>
           </header>
           <div className="form-grid invoice-design-fields">
-            {field("invoiceLogoUrl", "Logo Image URL", {
-              placeholder: "https://yourdomain.com/logo.png",
-            })}
+            <div className="invoice-logo-editor span-2">
+              <div>
+                {field("invoiceLogoUrl", "Logo Image URL", {
+                  placeholder: "https://yourdomain.com/logo.png",
+                })}
+                <small>
+                  Recommended: transparent PNG or SVG, approximately 600 × 216 px (25:9 ratio).
+                </small>
+              </div>
+              <div className="invoice-logo-preview" aria-label="Invoice logo preview">
+                {draft.invoiceLogoUrl ? (
+                  <img src={draft.invoiceLogoUrl} alt="Invoice logo preview" />
+                ) : (
+                  <span>
+                    Your Logo
+                    <br />
+                    <small>Invoice print area</small>
+                  </span>
+                )}
+              </div>
+            </div>
             <label>
               Invoice Color
               <input

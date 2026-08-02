@@ -551,6 +551,53 @@ form .dv-button {
   scroll-margin-top: 90px;
   border-color: rgba(227, 50, 56, 0.35);
 }
+.invoice-logo-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 20px;
+  align-items: end;
+}
+.invoice-logo-editor > div:first-child {
+  display: grid;
+  gap: 7px;
+}
+.invoice-logo-editor small {
+  color: #68737f;
+  font-weight: 650;
+}
+.invoice-logo-preview {
+  width: 210px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed #aeb7c1;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #f8fafb, #eef2f5);
+  color: #606b76;
+  text-align: center;
+  font-weight: 850;
+}
+.invoice-logo-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 8px;
+  object-fit: contain;
+}
+.invoice-logo-preview small {
+  font-size: 11px;
+}
+@media (max-width: 700px) {
+  .invoice-logo-editor {
+    grid-template-columns: 1fr;
+  }
+  .invoice-logo-preview {
+    width: 100%;
+    max-width: 280px;
+    height: 101px;
+  }
+}
 .topbar-settings .nav-icon {
   width: 17px;
   height: 17px;
