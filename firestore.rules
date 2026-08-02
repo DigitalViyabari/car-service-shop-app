@@ -30,8 +30,10 @@ service cloud.firestore {
     }
     function operationsManager(companyId, branchId) {
       return branchMember(companyId, branchId) &&
-        membership(companyId).data.companyRoles is list &&
-        membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin"]);
+        ((membership(companyId).data.companyRoles is list &&
+          membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin"])) ||
+         (membership(companyId).data.branchRoleKeys is list &&
+          membership(companyId).data.branchRoleKeys.hasAny(["branch_manager"])));
     }
     function companyCatalogManager(companyId) {
       return companyMember(companyId) && (
@@ -47,7 +49,7 @@ service cloud.firestore {
         (membership(companyId).data.companyRoles is list &&
          membership(companyId).data.companyRoles.hasAny(["company_accountant"])) ||
         (membership(companyId).data.branchRoleKeys is list &&
-         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "cashier"]))
+         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "finance_manager", "cashier"]))
       ));
     }
     function validAuditCreate() {
@@ -248,7 +250,13 @@ service cloud.firestore {
       allow delete: if false;
     }
     match /invoices/{invoiceId} {
-      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+      allow get: if (exists(/databases/$(database)/documents/jobSheets/$(invoiceId)) &&
+        branchMember(
+          get(/databases/$(database)/documents/jobSheets/$(invoiceId)).data.companyId,
+          get(/databases/$(database)/documents/jobSheets/$(invoiceId)).data.branchId
+        )) || (resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId));
+      allow list: if resource.data.companyId is string && resource.data.branchId is string &&
         branchMember(resource.data.companyId, resource.data.branchId);
       allow create: if request.resource.data.keys().hasAll([
           "companyId", "branchId", "jobId", "invoiceNumber", "customerId", "customerName",

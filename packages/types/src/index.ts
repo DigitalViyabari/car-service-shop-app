@@ -5,6 +5,7 @@ export type BranchRole =
   | "branch_manager"
   | "service_advisor"
   | "cashier"
+  | "finance_manager"
   | "inventory_manager"
   | "technician"
   | "receptionist"
@@ -23,6 +24,7 @@ export type Permission =
   | "operations.read"
   | "operations.write"
   | "financials.read"
+  | "financials.manage"
   | "inventory.manage"
   | "tasks.assigned.read"
   | "tasks.assigned.update";
