@@ -212,6 +212,34 @@ export interface InventoryMovement extends AuditFields {
   occurredAt: string;
 }
 
+export type GstRegistrationType = "regular" | "composition" | "unregistered";
+export interface BusinessTaxProfile extends AuditFields {
+  id: string;
+  companyId: string;
+  legalName: string;
+  tradeName: string;
+  gstRegistered: boolean;
+  gstin?: string;
+  pan?: string;
+  registrationType: GstRegistrationType;
+  addressLine1: string;
+  addressLine2?: string;
+  city: string;
+  state: string;
+  stateCode: string;
+  postalCode: string;
+  invoicePrefix: string;
+  invoiceTerms?: string;
+  authorizedSignatory?: string;
+  phone?: string;
+  email?: string;
+  bankName?: string;
+  accountName?: string;
+  accountNumber?: string;
+  ifscCode?: string;
+  upiId?: string;
+}
+
 export type JobStatus = "check_in" | "inspection" | "estimate_pending" | "approved" | "in_progress" | "quality_check" | "ready" | "delivered" | "cancelled";
 export type JobPriority = "normal" | "urgent" | "breakdown";
 export type EstimateApprovalStatus = "draft" | "sent" | "approved" | "rejected";

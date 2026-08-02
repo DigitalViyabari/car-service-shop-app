@@ -259,6 +259,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <NavIcon name="team" />
             Team
           </Link>
+          {canAccessFinance ? (
+            <Link
+              href="/dashboard/settings"
+              className={pathname.startsWith("/dashboard/settings") ? "is-active" : ""}
+            >
+              <NavIcon name="settings" />
+              Business &amp; GST
+            </Link>
+          ) : null}
           {isCompanyOwner ? (
             <Link
               href="/dashboard/communications"

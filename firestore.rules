@@ -23,6 +23,19 @@ service cloud.firestore {
           "company_owner", "company_admin", "company_accountant", "company_auditor"
         ]);
     }
+    function companyOwner(companyId) {
+      return companyMember(companyId) &&
+        membership(companyId).data.companyRoles is list &&
+        membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin"]);
+    }
+    function companyFinanceViewer(companyId) {
+      return companyMember(companyId) && (
+        (membership(companyId).data.companyRoles is list &&
+         membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin", "company_accountant"])) ||
+        (membership(companyId).data.branchRoleKeys is list &&
+         membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "finance_manager"]))
+      );
+    }
     function branchMember(companyId, branchId) {
       return companyMember(companyId) &&
         (companyLevelMember(companyId) ||
@@ -86,6 +99,18 @@ service cloud.firestore {
     match /companies/{companyId} {
       allow read: if companyMember(companyId) || platformSuperAdmin();
       allow write: if false;
+    }
+    match /businessTaxProfiles/{companyId} {
+      allow read: if companyFinanceViewer(companyId);
+      allow create: if companyOwner(companyId) && request.resource.data.companyId == companyId &&
+        request.resource.data.keys().hasAll([
+          "companyId", "legalName", "tradeName", "gstRegistered", "registrationType",
+          "addressLine1", "city", "state", "stateCode", "postalCode", "invoicePrefix",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && validAuditCreate();
+      allow update: if companyOwner(companyId) && resource.data.companyId == companyId &&
+        request.resource.data.companyId == resource.data.companyId && validAuditUpdate();
+      allow delete: if false;
     }
     match /communicationEntitlements/{companyId} {
       allow read: if platformSuperAdmin() || companyLevelMember(companyId);
