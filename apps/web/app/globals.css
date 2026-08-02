@@ -598,6 +598,29 @@ form .dv-button {
     height: 101px;
   }
 }
+.admin-access-diagnostic {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 6px;
+  margin: 12px 0;
+  padding: 16px;
+  border: 1px solid #e0b4b4;
+  border-radius: 12px;
+  background: #fff4f4;
+  text-align: left;
+}
+.admin-access-diagnostic span,
+.admin-access-diagnostic small {
+  overflow-wrap: anywhere;
+  color: #4f5964;
+}
+.admin-access-diagnostic p {
+  margin: 8px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #edcccc;
+  color: #b1262b;
+  font-weight: 750;
+}
 .topbar-settings .nav-icon {
   width: 17px;
   height: 17px;

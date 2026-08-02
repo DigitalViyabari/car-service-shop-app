@@ -126,6 +126,17 @@ export default function PlatformAdminPage() {
         <div className="state-card">
           <h1>Platform Admin Access Required</h1>
           <p>This page is restricted to authorised Digital Viyabari administrators.</p>
+          {user ? (
+            <div className="admin-access-diagnostic">
+              <strong>Signed-In Account</strong>
+              <span>{user.email ?? "No email"}</span>
+              <small>UID: {user.uid}</small>
+              {message ? <p>{message}</p> : null}
+            </div>
+          ) : null}
+          <button className="dv-button" onClick={() => window.location.reload()}>
+            Check Access Again
+          </button>
         </div>
       </main>
     );
