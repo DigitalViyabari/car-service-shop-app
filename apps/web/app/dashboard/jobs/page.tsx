@@ -160,6 +160,8 @@ export default function JobsPage() {
   const [technicians, setTechnicians] = useState<WorkshopMember[]>([]);
   const [handledPrefill, setHandledPrefill] = useState(false);
   const [delayReason, setDelayReason] = useState("");
+  const [showDelivery, setShowDelivery] = useState(false);
+  const [deliveryDraft, setDeliveryDraft] = useState({ dueAt: "", dueKm: "", notes: "" });
   const membership = memberships.find((item) => item.companyId === activeCompanyId),
     branchRoles =
       membership?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
@@ -617,6 +619,50 @@ export default function JobsPage() {
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to report the delay.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function completeDelivery(event: FormEvent) {
+    event.preventDefault();
+    if (!user || !selected || !canAssignTechnician) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const now = serverTimestamp(),
+        batch = writeBatch(firebaseClient.db);
+      batch.update(doc(firebaseClient.db, "jobSheets", selected.id), {
+        status: "delivered",
+        deliveredAt: now,
+        deliveryNotes: deliveryDraft.notes.trim(),
+        nextServiceDueAt: deliveryDraft.dueAt || null,
+        nextServiceDueKm: deliveryDraft.dueKm ? Number(deliveryDraft.dueKm) : null,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+      if (deliveryDraft.dueAt || deliveryDraft.dueKm) {
+        batch.set(doc(firebaseClient.db, "serviceReminders", selected.id), {
+          companyId: selected.companyId,
+          branchId: selected.branchId,
+          jobId: selected.id,
+          customerId: selected.customerId,
+          vehicleId: selected.vehicleId,
+          registrationNumber: selected.registrationNumber,
+          dueAt: deliveryDraft.dueAt || null,
+          dueKm: deliveryDraft.dueKm ? Number(deliveryDraft.dueKm) : null,
+          status: "scheduled",
+          createdAt: now,
+          createdBy: user.uid,
+          updatedAt: now,
+          updatedBy: user.uid,
+        });
+      }
+      await batch.commit();
+      setShowDelivery(false);
+      setDeliveryDraft({ dueAt: "", dueKm: "", notes: "" });
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to complete delivery.");
     } finally {
       setSubmitting(false);
     }
@@ -1224,6 +1270,7 @@ export default function JobsPage() {
                     disabled={submitting}
                     onClick={() => {
                       if (nextStatus[0] === "approved") setShowApproval(true);
+                      else if (nextStatus[0] === "delivered") setShowDelivery(true);
                       else void setStatus(nextStatus[0]);
                     }}
                   >
@@ -1240,6 +1287,79 @@ export default function JobsPage() {
           )}
         </aside>
       </section>
+      {showDelivery && selected ? (
+        <div className="modal-backdrop">
+          <form className="module-modal delivery-modal" onSubmit={completeDelivery}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Vehicle Ready</span>
+                <h2>Complete Delivery</h2>
+              </div>
+              <button type="button" onClick={() => setShowDelivery(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <div className="delivery-vehicle">
+                <strong>{selected.registrationNumber}</strong>
+                <span>
+                  {selected.customerName} · {selected.vehicleLabel}
+                </span>
+              </div>
+              <div className="form-grid">
+                <label>
+                  Next Service Date
+                  <input
+                    type="date"
+                    value={deliveryDraft.dueAt}
+                    onChange={(event) =>
+                      setDeliveryDraft({ ...deliveryDraft, dueAt: event.target.value })
+                    }
+                  />
+                </label>
+                <label>
+                  Next Service Odometer (km)
+                  <input
+                    type="number"
+                    min="0"
+                    value={deliveryDraft.dueKm}
+                    onChange={(event) =>
+                      setDeliveryDraft({ ...deliveryDraft, dueKm: event.target.value })
+                    }
+                    placeholder="Example: 45000"
+                  />
+                </label>
+                <label className="span-2">
+                  Delivery Notes
+                  <textarea
+                    rows={3}
+                    value={deliveryDraft.notes}
+                    onChange={(event) =>
+                      setDeliveryDraft({ ...deliveryDraft, notes: event.target.value })
+                    }
+                    placeholder="Work completed, warranty or customer instructions"
+                  />
+                </label>
+              </div>
+              <p className="delivery-reminder-note">
+                Adding a date or odometer schedules the customer’s next-service reminder.
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowDelivery(false)}
+              >
+                Cancel
+              </button>
+              <button className="dv-button" disabled={submitting}>
+                {submitting ? "Completing…" : "Deliver Vehicle"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
       {showForm ? (
         <div
           className="modal-backdrop"

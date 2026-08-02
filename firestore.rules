@@ -324,6 +324,19 @@ service cloud.firestore {
         request.resource.data.lastNumber == resource.data.lastNumber + 1 && validAuditUpdate();
       allow delete: if false;
     }
+    match /serviceReminders/{reminderId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchMember(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "jobId", "customerId", "vehicleId", "registrationNumber",
+          "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && operationsManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.status == "scheduled" && validAuditCreate();
+      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId && validAuditUpdate();
+      allow delete: if false;
+    }
     match /serviceTypes/{serviceTypeId} {
       allow read: if resource.data.companyId is string && companyMember(resource.data.companyId);
       allow create: if request.resource.data.keys().hasAll([

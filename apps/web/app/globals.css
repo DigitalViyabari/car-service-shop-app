@@ -736,6 +736,32 @@ form .dv-button {
   display: grid;
   gap: 22px;
 }
+.delivery-modal {
+  max-width: 720px;
+}
+.delivery-vehicle {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border-left: 4px solid #27a36a;
+  border-radius: 10px;
+  background: #f0faf5;
+}
+.delivery-vehicle strong {
+  font-size: 22px;
+}
+.delivery-vehicle span {
+  color: #66717c;
+}
+.delivery-reminder-note {
+  margin: 16px 0 0;
+  padding: 13px 15px;
+  border-radius: 10px;
+  background: #edf5ff;
+  color: #285f99;
+  font-weight: 700;
+}
 .admin-header-links {
   display: flex;
   gap: 10px;

@@ -289,6 +289,9 @@ export interface JobSheet extends AuditFields {
   promisedAt?: string;
   checkedInAt: string;
   deliveredAt?: string;
+  deliveryNotes?: string;
+  nextServiceDueAt?: string;
+  nextServiceDueKm?: number | null;
   assignedTechnicianIds: string[];
   estimateTotal: number;
   invoiceTotal: number;
@@ -300,6 +303,19 @@ export interface JobSheet extends AuditFields {
   approvalBy?: string;
   estimateLocked?: boolean;
   estimateRevision?: number;
+}
+
+export interface ServiceReminder extends AuditFields {
+  id: string;
+  companyId: string;
+  branchId: string;
+  jobId: string;
+  customerId: string;
+  vehicleId: string;
+  registrationNumber: string;
+  dueAt?: string | null;
+  dueKm?: number | null;
+  status: "scheduled" | "sent" | "completed" | "cancelled";
 }
 
 export interface JobLineItem extends AuditFields {
