@@ -1,0 +1,22 @@
+{
+  "name": "@dvcs/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "firebase-admin": "^13.6.0",
+    "zod": "^4.3.5"
+  },
+  "devDependencies": {
+    "@dvcs/config": "workspace:*",
+    "typescript": "^5.9.3"
+  }
+}
