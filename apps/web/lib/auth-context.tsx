@@ -75,9 +75,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         where("status", "==", "active"),
       ),
     );
-    const nextMemberships = membershipSnapshots.docs.map((snapshot) =>
-      fromDocument<Membership>(snapshot),
-    );
+    const nextMemberships = membershipSnapshots.docs.map((snapshot) => {
+      const membership = fromDocument<Membership>(snapshot);
+      return {
+        ...membership,
+        companyRoles: membership.companyRoles ?? [],
+        branchIds: membership.branchIds ?? [],
+        branchAssignments: membership.branchAssignments ?? [],
+      };
+    });
     const companySnapshots = await Promise.all(
       nextMemberships.map((membership) =>
         getDoc(doc(firebaseClient.db, "companies", membership.companyId)),

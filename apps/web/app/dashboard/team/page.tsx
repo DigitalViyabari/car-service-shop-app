@@ -40,11 +40,11 @@ export default function TeamPage() {
       role: "job_creator" as BranchRole,
     });
   const own = memberships.find((item) => item.companyId === activeCompanyId),
-    isOwner =
-      own?.companyRoles.some((role) => role === "company_owner" || role === "company_admin") ??
-      false,
+    isOwner = (own?.companyRoles ?? []).some(
+      (role) => role === "company_owner" || role === "company_admin",
+    ),
     ownBranchRoles =
-      own?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
+      (own?.branchAssignments ?? []).find((item) => item.branchId === activeBranchId)?.roles ?? [],
     isManager = ownBranchRoles.includes("branch_manager"),
     canManageTeam = isOwner || isManager,
     assignableRoles = isOwner ? roles : managerRoles,
@@ -159,8 +159,8 @@ export default function TeamPage() {
         <section className="team-panel">
           {members.map((member) => {
             const assigned =
-              member.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles[0] ??
-              "viewer";
+              (member.branchAssignments ?? []).find((item) => item.branchId === activeBranchId)
+                ?.roles[0] ?? "viewer";
             return (
               <article className="team-row" key={member.id}>
                 <div className="team-avatar">{member.displayName.charAt(0).toUpperCase()}</div>
@@ -168,9 +168,9 @@ export default function TeamPage() {
                   <strong>{member.displayName}</strong>
                   <small>{member.email}</small>
                 </div>
-                {member.companyRoles.length ? (
+                {(member.companyRoles ?? []).length ? (
                   <span className="company-access">
-                    {member.companyRoles.join(", ").replaceAll("_", " ")}
+                    {(member.companyRoles ?? []).join(", ").replaceAll("_", " ")}
                   </span>
                 ) : (
                   <select

@@ -140,8 +140,9 @@ form .dv-button { width: 100%; margin-top: 24px; }
 .sidebar-user span { color:white; font-size:13px; font-weight:750; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .sidebar-user small { min-width:0; overflow:hidden; color:#747f8d; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
 .sidebar-user button, .mobile-nav button, .link-button { border:0; background:transparent; color:inherit; cursor:pointer; font:inherit; }
-.sidebar-user button { grid-column:3; grid-row:1/3; width:32px; height:32px; padding:0; color:#838d9a; border-radius:9px; font-size:18px; transition:.2s; }
+.sidebar-user button { grid-column:3; grid-row:1/3; min-height:34px; padding:0 11px; color:#c9d0d8; border:1px solid #343c46; border-radius:9px; font-size:11px; font-weight:800; white-space:nowrap; transition:.2s; }
 .sidebar-user button:hover { color:white; background:#232a33; }
+.logout-confirmation{max-width:540px}.logout-confirmation>.muted{padding:8px 28px 24px}.logout-confirmation .modal-footer{padding:20px 28px}
 .workspace { min-width:0; }
 .topbar { min-height:74px; background:rgba(255,255,255,.88); backdrop-filter:blur(14px); border-bottom:1px solid var(--line); padding:13px 30px; display:flex; gap:16px; align-items:center; justify-content:space-between; }
 .selectors { display:flex; gap:10px; }

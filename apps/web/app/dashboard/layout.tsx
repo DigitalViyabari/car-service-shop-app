@@ -3,25 +3,83 @@
 import { StatusBadge } from "@dvcs/ui";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 
-function NavIcon({ name }: { name: "overview" | "operations" | "inventory" | "finance" | "reports" | "team" | "settings" }) {
+function NavIcon({
+  name,
+}: {
+  name: "overview" | "operations" | "inventory" | "finance" | "reports" | "team" | "settings";
+}) {
   const paths = {
-    overview: <><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></>,
-    operations: <><path d="M4 15.5 6.5 9h11l2.5 6.5"/><path d="M3 15.5h18v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3Z"/><circle cx="7" cy="17.5" r="1"/><circle cx="17" cy="17.5" r="1"/></>,
-    inventory: <><path d="m4 7 8-4 8 4-8 4-8-4Z"/><path d="m4 7v10l8 4 8-4V7M12 11v10"/></>,
-    finance: <><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M3 10h18M7 15h3"/></>,
-    reports: <><path d="M5 21V10M12 21V3M19 21v-7"/><path d="M3 21h18"/></>,
-    team: <><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3.5 20a5.5 5.5 0 0 1 11 0M14 15.5a4 4 0 0 1 6.5 3.1"/></>,
-    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
+    overview: (
+      <>
+        <rect x="3" y="3" width="7" height="7" rx="2" />
+        <rect x="14" y="3" width="7" height="7" rx="2" />
+        <rect x="3" y="14" width="7" height="7" rx="2" />
+        <rect x="14" y="14" width="7" height="7" rx="2" />
+      </>
+    ),
+    operations: (
+      <>
+        <path d="M4 15.5 6.5 9h11l2.5 6.5" />
+        <path d="M3 15.5h18v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-3Z" />
+        <circle cx="7" cy="17.5" r="1" />
+        <circle cx="17" cy="17.5" r="1" />
+      </>
+    ),
+    inventory: (
+      <>
+        <path d="m4 7 8-4 8 4-8 4-8-4Z" />
+        <path d="m4 7v10l8 4 8-4V7M12 11v10" />
+      </>
+    ),
+    finance: (
+      <>
+        <rect x="3" y="5" width="18" height="14" rx="3" />
+        <path d="M3 10h18M7 15h3" />
+      </>
+    ),
+    reports: (
+      <>
+        <path d="M5 21V10M12 21V3M19 21v-7" />
+        <path d="M3 21h18" />
+      </>
+    ),
+    team: (
+      <>
+        <circle cx="9" cy="8" r="3" />
+        <circle cx="17" cy="9" r="2" />
+        <path d="M3.5 20a5.5 5.5 0 0 1 11 0M14 15.5a4 4 0 0 1 6.5 3.1" />
+      </>
+    ),
+    settings: (
+      <>
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
+      </>
+    ),
   };
-  return <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{paths[name]}</svg>;
+  return (
+    <svg
+      className="nav-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {paths[name]}
+    </svg>
+  );
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
+  const [showLogoutConfirmation, setShowLogoutConfirmation] = useState(false);
   const {
     user,
     profile,
@@ -48,13 +106,30 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <main className="state-page" aria-live="polite">
         <div className="car-loader" aria-hidden="true">
           <svg viewBox="0 0 112 48" role="presentation">
-            <path className="car-loader-body" d="M16 31.5h4.5l6.2-13.2c1.1-2.3 3.4-3.8 6-3.8h35.8c2.7 0 5.2 1.2 6.9 3.3l10.8 13.7h7.3c2.5 0 4.5 2 4.5 4.5v2.5H14V34c0-1.4.9-2.5 2-2.5Z" />
-            <path className="car-loader-window" d="m32 19-5.2 12.5h23.7v-13H34.2c-1 0-1.8.5-2.2 1.4Zm23.2-.5v13h24L69 20.2a5 5 0 0 0-3.7-1.7H55.2Z" />
+            <path
+              className="car-loader-body"
+              d="M16 31.5h4.5l6.2-13.2c1.1-2.3 3.4-3.8 6-3.8h35.8c2.7 0 5.2 1.2 6.9 3.3l10.8 13.7h7.3c2.5 0 4.5 2 4.5 4.5v2.5H14V34c0-1.4.9-2.5 2-2.5Z"
+            />
+            <path
+              className="car-loader-window"
+              d="m32 19-5.2 12.5h23.7v-13H34.2c-1 0-1.8.5-2.2 1.4Zm23.2-.5v13h24L69 20.2a5 5 0 0 0-3.7-1.7H55.2Z"
+            />
             <path className="car-loader-detail" d="M55 18.5v13M14 35.5h84M19 31.5h8M88 31.5h5" />
-            <g className="car-loader-wheel"><circle cx="34" cy="37" r="7" /><path d="M34 32v10M29 37h10M30.5 33.5l7 7M37.5 33.5l-7 7" /></g>
-            <g className="car-loader-wheel"><circle cx="79" cy="37" r="7" /><path d="M79 32v10M74 37h10M75.5 33.5l7 7M82.5 33.5l-7 7" /></g>
+            <g className="car-loader-wheel">
+              <circle cx="34" cy="37" r="7" />
+              <path d="M34 32v10M29 37h10M30.5 33.5l7 7M37.5 33.5l-7 7" />
+            </g>
+            <g className="car-loader-wheel">
+              <circle cx="79" cy="37" r="7" />
+              <path d="M79 32v10M74 37h10M75.5 33.5l7 7M82.5 33.5l-7 7" />
+            </g>
           </svg>
-          <div className="car-loader-road"><span /><span /><span /><span /></div>
+          <div className="car-loader-road">
+            <span />
+            <span />
+            <span />
+            <span />
+          </div>
         </div>
         <h1>Preparing your workshop</h1>
         <p className="muted">Starting the engine and loading your workspace…</p>
@@ -103,6 +178,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const isCompanyOwner = activeMembership?.companyRoles.includes("company_owner") ?? false;
 
   async function handleSignOut() {
+    setShowLogoutConfirmation(false);
     await signOutUser();
     router.replace("/");
   }
@@ -112,28 +188,78 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <aside className="sidebar">
         <div className="brand">
           <i className="brand-mark" aria-hidden="true" />
-          <div>DIGITAL <span>VIYABARI</span></div>
+          <div>
+            DIGITAL <span>VIYABARI</span>
+          </div>
         </div>
         <div className="nav-label">Workshop control</div>
         <nav className="nav" aria-label="Primary navigation">
-          <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}><NavIcon name="overview" />Overview</Link>
-          <Link href="/dashboard/jobs" className={pathname.startsWith("/dashboard/jobs") ? "is-active" : ""}><NavIcon name="operations" />Job Cards</Link>
-          <Link href="/dashboard/customers" className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}><NavIcon name="team" />Customers</Link>
-          <Link href="/dashboard/products" className={pathname.startsWith("/dashboard/products") ? "is-active" : ""}><NavIcon name="inventory" />Products</Link>
-          <Link href="/dashboard/invoices" className={pathname.startsWith("/dashboard/invoices") ? "is-active" : ""}><NavIcon name="finance" />Invoices</Link>
-          <span aria-disabled="true"><NavIcon name="reports" />Reports</span>
-          <Link href="/dashboard/team" className={pathname.startsWith("/dashboard/team") ? "is-active" : ""}><NavIcon name="team" />Team</Link>
+          <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
+            <NavIcon name="overview" />
+            Overview
+          </Link>
+          <Link
+            href="/dashboard/jobs"
+            className={pathname.startsWith("/dashboard/jobs") ? "is-active" : ""}
+          >
+            <NavIcon name="operations" />
+            Job Cards
+          </Link>
+          <Link
+            href="/dashboard/customers"
+            className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
+          >
+            <NavIcon name="team" />
+            Customers
+          </Link>
+          <Link
+            href="/dashboard/products"
+            className={pathname.startsWith("/dashboard/products") ? "is-active" : ""}
+          >
+            <NavIcon name="inventory" />
+            Products
+          </Link>
+          <Link
+            href="/dashboard/invoices"
+            className={pathname.startsWith("/dashboard/invoices") ? "is-active" : ""}
+          >
+            <NavIcon name="finance" />
+            Invoices
+          </Link>
+          <span aria-disabled="true">
+            <NavIcon name="reports" />
+            Reports
+          </span>
+          <Link
+            href="/dashboard/team"
+            className={pathname.startsWith("/dashboard/team") ? "is-active" : ""}
+          >
+            <NavIcon name="team" />
+            Team
+          </Link>
           {isCompanyOwner ? (
-            <Link href="/dashboard/communications" className={pathname.startsWith("/dashboard/communications") ? "is-active" : ""}>
-              <NavIcon name="settings" />Communications
+            <Link
+              href="/dashboard/communications"
+              className={pathname.startsWith("/dashboard/communications") ? "is-active" : ""}
+            >
+              <NavIcon name="settings" />
+              Communications
             </Link>
           ) : null}
         </nav>
         <div className="sidebar-user">
-          <div className="user-avatar" aria-hidden="true">{profile.displayName?.charAt(0).toUpperCase() || "D"}</div>
+          <div className="user-avatar" aria-hidden="true">
+            {profile.displayName?.charAt(0).toUpperCase() || "D"}
+          </div>
           <span>{profile.displayName}</span>
           <small>{profile.email}</small>
-          <button onClick={() => void handleSignOut()} aria-label="Sign out" title="Sign out">↗</button>
+          <button
+            className="sidebar-logout"
+            onClick={() => setShowLogoutConfirmation(true)}
+            aria-label="Log out"
+          >
+            Log Out
+          </button>
         </div>
       </aside>
       <section className="workspace">
@@ -184,11 +310,55 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {children}
       </section>
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>Home</Link>
-        <Link href="/dashboard/customers" className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}>Customers</Link>
+        <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
+          Home
+        </Link>
+        <Link
+          href="/dashboard/customers"
+          className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
+        >
+          Customers
+        </Link>
         <span>Jobs</span>
-        <button onClick={() => void handleSignOut()}>Sign out</button>
+        <button onClick={() => setShowLogoutConfirmation(true)}>Log Out</button>
       </nav>
+      {showLogoutConfirmation ? (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="module-modal logout-confirmation"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="logout-title"
+          >
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Account Security</span>
+                <h2 id="logout-title">Are You Sure You Want To Log Out?</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowLogoutConfirmation(false)}
+                aria-label="Close logout confirmation"
+              >
+                ×
+              </button>
+            </header>
+            <p className="muted">You will need to sign in again to access your workshop.</p>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowLogoutConfirmation(false)}
+              >
+                Stay Signed In
+              </button>
+              <button type="button" className="dv-button" onClick={() => void handleSignOut()}>
+                Yes, Log Out
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }
