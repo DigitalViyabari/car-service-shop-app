@@ -799,6 +799,13 @@ form .dv-button {
 .platform-login form button {
   margin-top: 5px;
 }
+.platform-reset-password {
+  border: 0;
+  background: transparent;
+  color: #2869ae;
+  font-weight: 800;
+  cursor: pointer;
+}
 .platform-login > section > small {
   display: block;
   margin-top: 18px;
