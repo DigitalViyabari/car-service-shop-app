@@ -6,6 +6,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { firebaseClient } from "@/lib/firebase-client";
 
+type PurchaseReportItem = {
+  id: string;
+  billDate: string;
+  taxableAmount: number;
+  taxAmount: number;
+  totalAmount: number;
+};
+type ExpenseReportItem = { id: string; expenseDate: string; amount: number };
+
 type Period =
   | "today"
   | "last_7"
@@ -92,6 +101,8 @@ export default function ReportsPage() {
     [jobs, setJobs] = useState<JobSheet[]>([]),
     [inventory, setInventory] = useState<InventoryItem[]>([]),
     [products, setProducts] = useState<Product[]>([]),
+    [purchases, setPurchases] = useState<PurchaseReportItem[]>([]),
+    [expenses, setExpenses] = useState<ExpenseReportItem[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState("");
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
@@ -109,7 +120,15 @@ export default function ReportsPage() {
     setLoading(true);
     setError("");
     try {
-      const [invoiceDocs, paymentDocs, jobDocs, inventoryDocs, productDocs] = await Promise.all([
+      const [
+        invoiceDocs,
+        paymentDocs,
+        jobDocs,
+        inventoryDocs,
+        productDocs,
+        purchaseDocs,
+        expenseDocs,
+      ] = await Promise.all([
         getDocs(
           query(
             collection(firebaseClient.db, "invoices"),
@@ -144,6 +163,20 @@ export default function ReportsPage() {
             where("companyId", "==", activeCompanyId),
           ),
         ),
+        getDocs(
+          query(
+            collection(firebaseClient.db, "purchaseBills"),
+            where("companyId", "==", activeCompanyId),
+            where("branchId", "==", activeBranchId),
+          ),
+        ),
+        getDocs(
+          query(
+            collection(firebaseClient.db, "expenses"),
+            where("companyId", "==", activeCompanyId),
+            where("branchId", "==", activeBranchId),
+          ),
+        ),
       ]);
       setInvoices(invoiceDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Invoice));
       setPayments(paymentDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Payment));
@@ -152,6 +185,12 @@ export default function ReportsPage() {
         inventoryDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as InventoryItem),
       );
       setProducts(productDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Product));
+      setPurchases(
+        purchaseDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as PurchaseReportItem),
+      );
+      setExpenses(
+        expenseDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as ExpenseReportItem),
+      );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load reports.");
     } finally {
@@ -172,11 +211,18 @@ export default function ReportsPage() {
         (item) => item.status === "completed" && inRange(item.receivedAt),
       ),
       includedJobs = jobs.filter((item) => inRange(item.checkedInAt)),
+      includedPurchases = purchases.filter((item) => inRange(item.billDate)),
+      includedExpenses = expenses.filter((item) => inRange(item.expenseDate)),
       billed = includedInvoices.reduce((sum, item) => sum + item.totalAmount, 0),
       collected = includedPayments.reduce((sum, item) => sum + item.amount, 0),
       outstanding = includedInvoices
         .filter((item) => item.status !== "void")
         .reduce((sum, item) => sum + item.balanceAmount, 0),
+      purchaseTotal = includedPurchases.reduce((sum, item) => sum + item.totalAmount, 0),
+      expenseTotal = includedExpenses.reduce((sum, item) => sum + item.amount, 0),
+      outputGst = includedInvoices.reduce((sum, item) => sum + item.taxAmount, 0),
+      inputGst = includedPurchases.reduce((sum, item) => sum + item.taxAmount, 0),
+      netCash = collected - purchaseTotal - expenseTotal,
       jobCounts = Object.entries(
         includedJobs.reduce<Record<string, number>>(
           (result, item) => ({ ...result, [item.status]: (result[item.status] ?? 0) + 1 }),
@@ -208,12 +254,18 @@ export default function ReportsPage() {
       billed,
       collected,
       outstanding,
+      purchaseTotal,
+      expenseTotal,
+      outputGst,
+      inputGst,
+      netGst: Math.max(0, outputGst - inputGst),
+      netCash,
       jobCounts,
       serviceCounts,
       lowItems,
       stockValue,
     };
-  }, [customEnd, customStart, inventory, invoices, jobs, payments, period]);
+  }, [customEnd, customStart, expenses, inventory, invoices, jobs, payments, period, purchases]);
   function exportCsv() {
     const rows = [
         ["Branch", activeBranch?.name ?? ""],
@@ -222,6 +274,12 @@ export default function ReportsPage() {
         ["Billed", report.billed],
         ["Collected", report.collected],
         ["Outstanding", report.outstanding],
+        ["Purchases", report.purchaseTotal],
+        ["Expenses", report.expenseTotal],
+        ["Net Cash Movement", report.netCash],
+        ["Output GST", report.outputGst],
+        ["Input GST", report.inputGst],
+        ["Estimated GST Payable", report.netGst],
         ["Stock Value", report.stockValue],
         [],
         ["Invoice", "Customer", "Registration", "Total", "Paid", "Balance", "Status"],
@@ -370,6 +428,26 @@ export default function ReportsPage() {
                   ? `${report.lowItems.length} products need attention`
                   : "All stock levels look healthy"}
               </small>
+            </div>
+            <div className="kpi-amber">
+              <span>Purchases</span>
+              <strong>{money.format(report.purchaseTotal)}</strong>
+              <small>Stock bought in this period</small>
+            </div>
+            <div className="kpi-red">
+              <span>Expenses</span>
+              <strong>{money.format(report.expenseTotal)}</strong>
+              <small>Workshop operating costs</small>
+            </div>
+            <div className={report.netCash >= 0 ? "kpi-green" : "kpi-red"}>
+              <span>Net Cash Movement</span>
+              <strong>{money.format(report.netCash)}</strong>
+              <small>Collected minus purchases and expenses</small>
+            </div>
+            <div className={report.netGst ? "kpi-amber" : "kpi-green"}>
+              <span>Estimated GST Payable</span>
+              <strong>{money.format(report.netGst)}</strong>
+              <small>Output GST less eligible input GST</small>
             </div>
           </section>
           <section className="report-grid">

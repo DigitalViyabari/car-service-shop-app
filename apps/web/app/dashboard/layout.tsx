@@ -305,6 +305,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               Inventory
             </Link>
           ) : null}
+          {canAccessInventory || canAccessFinance ? (
+            <Link
+              href="/dashboard/procurement"
+              className={pathname.startsWith("/dashboard/procurement") ? "is-active" : ""}
+            >
+              <NavIcon name="finance" />
+              Purchases &amp; Expenses
+            </Link>
+          ) : null}
           {canAccessFinance ? (
             <Link
               href="/dashboard/invoices"

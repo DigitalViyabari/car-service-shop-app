@@ -90,6 +90,10 @@ service cloud.firestore {
          membership(companyId).data.branchRoleKeys is list &&
          membership(companyId).data.branchRoleKeys.hasAny(["inventory_manager"]));
     }
+    function branchProcurementViewer(companyId, branchId) {
+      return branchFinanceManager(companyId, branchId) ||
+        branchInventoryManager(companyId, branchId);
+    }
     function validAuditCreate() {
       return request.resource.data.createdBy == request.auth.uid &&
         request.resource.data.updatedBy == request.auth.uid &&
@@ -260,6 +264,64 @@ service cloud.firestore {
         getAfter(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.currentStock == request.resource.data.stockAfter &&
         request.resource.data.occurredAt == request.time && validAuditCreate();
       allow update, delete: if false;
+    }
+    match /suppliers/{supplierId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchProcurementViewer(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "name", "phone", "gstin", "status",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchInventoryManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.name is string && request.resource.data.name.size() >= 2 &&
+        request.resource.data.name.size() <= 160 && request.resource.data.status == "active" &&
+        validAuditCreate();
+      allow update: if branchInventoryManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId && validAuditUpdate();
+      allow delete: if false;
+    }
+    match /purchaseBills/{purchaseId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchProcurementViewer(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "supplierId", "supplierName", "billNumber", "billDate",
+          "taxableAmount", "taxAmount", "totalAmount", "paymentStatus", "status",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchInventoryManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.billNumber is string && request.resource.data.billNumber.size() >= 1 &&
+        request.resource.data.billNumber.size() <= 80 && request.resource.data.taxableAmount >= 0 &&
+        request.resource.data.taxAmount >= 0 && request.resource.data.totalAmount >= 0 &&
+        request.resource.data.status == "posted" && validAuditCreate();
+      allow update, delete: if false;
+    }
+    match /purchaseLines/{lineId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchProcurementViewer(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "purchaseId", "productId", "productName", "quantity",
+          "unitCost", "gstRate", "taxableAmount", "taxAmount", "totalAmount",
+          "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchInventoryManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        existsAfter(/databases/$(database)/documents/purchaseBills/$(request.resource.data.purchaseId)) &&
+        request.resource.data.quantity > 0 && request.resource.data.unitCost >= 0 &&
+        request.resource.data.gstRate >= 0 && request.resource.data.gstRate <= 100 &&
+        request.resource.data.totalAmount >= 0 && validAuditCreate();
+      allow update, delete: if false;
+    }
+    match /expenses/{expenseId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+        branchFinanceManager(resource.data.companyId, resource.data.branchId);
+      allow create: if request.resource.data.keys().hasAll([
+          "companyId", "branchId", "category", "description", "amount", "expenseDate",
+          "paymentMethod", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
+        ]) && branchFinanceManager(request.resource.data.companyId, request.resource.data.branchId) &&
+        request.resource.data.description is string && request.resource.data.description.size() >= 2 &&
+        request.resource.data.description.size() <= 300 && request.resource.data.amount > 0 &&
+        request.resource.data.status == "recorded" && validAuditCreate();
+      allow update: if branchFinanceManager(resource.data.companyId, resource.data.branchId) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId && validAuditUpdate();
+      allow delete: if false;
     }
     match /jobSheets/{jobId} {
       allow read: if resource.data.companyId is string && resource.data.branchId is string &&
