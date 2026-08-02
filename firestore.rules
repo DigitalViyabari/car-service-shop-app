@@ -42,12 +42,13 @@ service cloud.firestore {
       );
     }
     function branchFinanceManager(companyId, branchId) {
-      return branchMember(companyId, branchId) && (
+      return operationsManager(companyId, branchId) ||
+        (branchMember(companyId, branchId) && (
         (membership(companyId).data.companyRoles is list &&
-         membership(companyId).data.companyRoles.hasAny(["company_owner", "company_admin", "company_accountant"])) ||
+         membership(companyId).data.companyRoles.hasAny(["company_accountant"])) ||
         (membership(companyId).data.branchRoleKeys is list &&
          membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "cashier"]))
-      );
+      ));
     }
     function validAuditCreate() {
       return request.resource.data.createdBy == request.auth.uid &&
