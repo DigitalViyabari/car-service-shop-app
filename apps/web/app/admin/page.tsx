@@ -158,7 +158,19 @@ export default function PlatformAdminPage() {
         <h1>Loading Platform</h1>
       </main>
     );
-  if (!user || !allowed)
+  if (!user)
+    return (
+      <main className="state-page">
+        <div className="state-card">
+          <h1>Platform Sign-In Required</h1>
+          <p>Sign in with an authorised Super Admin or Support Admin account.</p>
+          <a className="dv-button" href="/admin/login">
+            Open Admin Login
+          </a>
+        </div>
+      </main>
+    );
+  if (!allowed)
     return (
       <main className="state-page">
         <div className="state-card">
@@ -186,7 +198,8 @@ export default function PlatformAdminPage() {
         <div>
           <span className="heading-kicker">Digital Viyabari Control</span>
           <h1>Business Control Centre</h1>
-          <p>Turnover, owners and account access in one place.</p>
+          <p>Turnover, subscriptions, owners and account access in one place.</p>
+          <span className="platform-role-chip">{superAdmin ? "Super Admin" : "Support Admin"}</span>
         </div>
         <div className="admin-header-links">
           <a href="/admin/communications">Communications</a>

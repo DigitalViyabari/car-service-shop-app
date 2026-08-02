@@ -736,6 +736,75 @@ form .dv-button {
   display: grid;
   gap: 22px;
 }
+.platform-role-chip {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #245f9e;
+  font-size: 12px;
+  font-weight: 850;
+}
+.platform-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at 15% 15%, #263b56, #0a0f16 48%);
+}
+.platform-login > section {
+  width: min(470px, 100%);
+  padding: 36px;
+  border: 1px solid #303a46;
+  border-radius: 22px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.35);
+}
+.platform-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 28px;
+  color: #151b22;
+}
+.platform-login-brand span {
+  color: #e33238;
+}
+.platform-login h1 {
+  margin: 7px 0;
+  font-size: 34px;
+}
+.platform-login p {
+  margin: 0 0 22px;
+  color: #68737f;
+}
+.platform-login form {
+  display: grid;
+  gap: 16px;
+}
+.platform-login label {
+  display: grid;
+  gap: 7px;
+  color: #3b4651;
+  font-weight: 800;
+}
+.platform-login input {
+  min-height: 50px;
+  padding: 0 14px;
+  border: 1px solid #ccd4dc;
+  border-radius: 11px;
+  font-size: 16px;
+}
+.platform-login form button {
+  margin-top: 5px;
+}
+.platform-login > section > small {
+  display: block;
+  margin-top: 18px;
+  color: #7a8490;
+  text-align: center;
+}
 .delivery-modal {
   max-width: 720px;
 }
