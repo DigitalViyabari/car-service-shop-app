@@ -4194,6 +4194,26 @@ form .dv-button {
   border-radius: 11px;
   background: #fff;
 }
+.custom-report-range {
+  display: flex;
+  gap: 8px;
+}
+.custom-report-range label {
+  display: grid;
+  gap: 3px;
+  color: #697480;
+  font-size: 8px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.custom-report-range input {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid #cfd6dd;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 10px;
+}
 .report-kpis {
   display: grid;
   grid-template-columns: repeat(5, 1fr);

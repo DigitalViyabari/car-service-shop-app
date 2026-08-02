@@ -6,7 +6,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { firebaseClient } from "@/lib/firebase-client";
 
-type Period = "this_month" | "last_30" | "all";
+type Period =
+  | "today"
+  | "last_7"
+  | "last_30"
+  | "this_month"
+  | "last_month"
+  | "this_financial_year"
+  | "last_financial_year"
+  | "custom";
 const money = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
@@ -28,11 +36,47 @@ function dateOf(value: unknown) {
     return (value as { toDate: () => Date }).toDate();
   return new Date(String(value));
 }
-function startFor(period: Period) {
+function dayStart(value: Date) {
+  return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+}
+function dateInputValue(value: Date) {
+  const year = value.getFullYear(),
+    month = String(value.getMonth() + 1).padStart(2, "0"),
+    day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+function rangeFor(period: Period, customStart: string, customEnd: string) {
   const now = new Date();
-  if (period === "all") return null;
-  if (period === "last_30") return new Date(now.getTime() - 30 * 86400000);
-  return new Date(now.getFullYear(), now.getMonth(), 1);
+  const today = dayStart(now);
+  if (period === "today") return [today, new Date(today.getTime() + 86400000)] as const;
+  if (period === "last_7")
+    return [
+      new Date(today.getTime() - 6 * 86400000),
+      new Date(today.getTime() + 86400000),
+    ] as const;
+  if (period === "last_30")
+    return [
+      new Date(today.getTime() - 29 * 86400000),
+      new Date(today.getTime() + 86400000),
+    ] as const;
+  if (period === "this_month")
+    return [
+      new Date(now.getFullYear(), now.getMonth(), 1),
+      new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    ] as const;
+  if (period === "last_month")
+    return [
+      new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      new Date(now.getFullYear(), now.getMonth(), 1),
+    ] as const;
+  if (period === "custom") {
+    const start = customStart ? new Date(`${customStart}T00:00:00`) : today,
+      end = customEnd ? new Date(`${customEnd}T00:00:00`) : today;
+    return [start, new Date(end.getTime() + 86400000)] as const;
+  }
+  const currentFinancialYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1,
+    startYear = period === "last_financial_year" ? currentFinancialYear - 1 : currentFinancialYear;
+  return [new Date(startYear, 3, 1), new Date(startYear + 1, 3, 1)] as const;
 }
 function csvCell(value: unknown) {
   return `"${String(value ?? "").replaceAll('"', '""')}"`;
@@ -41,6 +85,8 @@ function csvCell(value: unknown) {
 export default function ReportsPage() {
   const { memberships, activeCompanyId, activeBranchId, activeBranch } = useAuth(),
     [period, setPeriod] = useState<Period>("this_month"),
+    [customStart, setCustomStart] = useState(dateInputValue(new Date())),
+    [customEnd, setCustomEnd] = useState(dateInputValue(new Date())),
     [invoices, setInvoices] = useState<Invoice[]>([]),
     [payments, setPayments] = useState<Payment[]>([]),
     [jobs, setJobs] = useState<JobSheet[]>([]),
@@ -116,15 +162,19 @@ export default function ReportsPage() {
     void load();
   }, [load]);
   const report = useMemo(() => {
-    const start = startFor(period),
-      includedInvoices = invoices.filter((item) => !start || dateOf(item.issuedAt) >= start),
+    const [start, end] = rangeFor(period, customStart, customEnd),
+      inRange = (value: unknown) => {
+        const date = dateOf(value);
+        return date >= start && date < end;
+      },
+      includedInvoices = invoices.filter((item) => inRange(item.issuedAt)),
       includedPayments = payments.filter(
-        (item) => item.status === "completed" && (!start || dateOf(item.receivedAt) >= start),
+        (item) => item.status === "completed" && inRange(item.receivedAt),
       ),
-      includedJobs = jobs.filter((item) => !start || dateOf(item.checkedInAt) >= start),
+      includedJobs = jobs.filter((item) => inRange(item.checkedInAt)),
       billed = includedInvoices.reduce((sum, item) => sum + item.totalAmount, 0),
       collected = includedPayments.reduce((sum, item) => sum + item.amount, 0),
-      outstanding = invoices
+      outstanding = includedInvoices
         .filter((item) => item.status !== "void")
         .reduce((sum, item) => sum + item.balanceAmount, 0),
       jobCounts = Object.entries(
@@ -163,7 +213,7 @@ export default function ReportsPage() {
       lowItems,
       stockValue,
     };
-  }, [inventory, invoices, jobs, payments, period]);
+  }, [customEnd, customStart, inventory, invoices, jobs, payments, period]);
   function exportCsv() {
     const rows = [
         ["Branch", activeBranch?.name ?? ""],
@@ -224,10 +274,37 @@ export default function ReportsPage() {
         </div>
         <div className="report-actions">
           <select value={period} onChange={(event) => setPeriod(event.target.value as Period)}>
-            <option value="this_month">This Month</option>
+            <option value="today">Today</option>
+            <option value="last_7">Last 7 Days</option>
             <option value="last_30">Last 30 Days</option>
-            <option value="all">All Time</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_financial_year">This Financial Year</option>
+            <option value="last_financial_year">Last Financial Year</option>
+            <option value="custom">Custom</option>
           </select>
+          {period === "custom" ? (
+            <div className="custom-report-range">
+              <label>
+                From
+                <input
+                  type="date"
+                  value={customStart}
+                  max={customEnd}
+                  onChange={(event) => setCustomStart(event.target.value)}
+                />
+              </label>
+              <label>
+                To
+                <input
+                  type="date"
+                  value={customEnd}
+                  min={customStart}
+                  onChange={(event) => setCustomEnd(event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
           <button className="dv-button" onClick={exportCsv}>
             Export CSV
           </button>
