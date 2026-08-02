@@ -108,7 +108,7 @@ function displayDate(value: unknown) {
 }
 
 export default function JobsPage() {
-  const { user, activeCompanyId, activeBranchId, activeBranch } = useAuth();
+  const { user, activeCompanyId, activeBranchId } = useAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]),
     [customers, setCustomers] = useState<Customer[]>([]),
     [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -593,7 +593,7 @@ export default function JobsPage() {
         <div>
           <span className="heading-kicker">Service Operations</span>
           <h1>Job Cards</h1>
-          <p className="muted">Live workshop flow for {activeBranch?.name ?? "this branch"}.</p>
+          <p className="muted">Track every vehicle in service.</p>
         </div>
         <button className="quick-action quick-action--enabled" onClick={openNew}>
           <strong>+</strong> New Job Card
@@ -619,22 +619,19 @@ export default function JobsPage() {
       </section>
       <section className="job-summary">
         <div className="summary-blue">
-          <span>Vehicles Still In Workshop</span>
+          <span>Active Jobs</span>
           <strong>{counts.active}</strong>
-          <small>All jobs not yet delivered</small>
         </div>
         <div className="summary-navy">
-          <span>Work Happening Now</span>
+          <span>In Progress</span>
           <strong>{counts.progress}</strong>
-          <small>Technicians are working on these</small>
         </div>
         <div className="summary-green">
-          <span>Ready For Customer</span>
+          <span>Ready</span>
           <strong>{counts.ready}</strong>
-          <small>Contact customers for delivery</small>
         </div>
         <div className={counts.urgent ? "summary-red" : "summary-green"}>
-          <span>Requires Priority Attention</span>
+          <span>Urgent</span>
           <strong>{counts.urgent}</strong>
           <small>{counts.urgent ? "Handle these jobs first" : "No urgent jobs"}</small>
         </div>
@@ -898,7 +895,7 @@ export default function JobsPage() {
           ) : (
             <div className="detail-empty">
               <h2>Select A Job Card</h2>
-              <p>Vehicle, complaints and workshop status will appear here.</p>
+              <p>Choose a job to view details.</p>
             </div>
           )}
         </aside>

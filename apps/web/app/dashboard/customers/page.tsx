@@ -459,7 +459,7 @@ export default function CustomersPage() {
         <div>
           <span className="heading-kicker">Customer garage</span>
           <h1>Customers &amp; vehicles</h1>
-          <p className="muted">One service-ready profile for every owner and vehicle.</p>
+          <p className="muted">Customers and their vehicles.</p>
         </div>
         <button
           className="quick-action quick-action--enabled"
@@ -497,15 +497,13 @@ export default function CustomersPage() {
         <div className="customer-blue">
           <span>Total Customers</span>
           <strong>{customers.length}</strong>
-          <small>Active customer records in this branch</small>
         </div>
         <div className="customer-navy">
           <span>Registered Vehicles</span>
           <strong>{vehicles.length}</strong>
-          <small>Vehicles available for job creation</small>
         </div>
         <div className="customer-green">
-          <span>Service-Ready Customers</span>
+          <span>Ready For Service</span>
           <strong>
             {
               customers.filter((customer) =>
@@ -513,7 +511,6 @@ export default function CustomersPage() {
               ).length
             }
           </strong>
-          <small>Customer has at least one vehicle</small>
         </div>
         <div
           className={
@@ -524,7 +521,7 @@ export default function CustomersPage() {
               : "customer-green"
           }
         >
-          <span>Customers Without Vehicle</span>
+          <span>Vehicle Needed</span>
           <strong>
             {
               customers.filter(
@@ -532,7 +529,7 @@ export default function CustomersPage() {
               ).length
             }
           </strong>
-          <small>Add a vehicle before creating their job</small>
+          <small>Add vehicle</small>
         </div>
       </section>
 
@@ -720,7 +717,7 @@ export default function CustomersPage() {
             <div className="detail-empty">
               <span className="empty-wheel" aria-hidden="true" />
               <h2>Select a customer</h2>
-              <p>Customer contact, vehicle, and future service history will appear here.</p>
+              <p>Choose a customer to view details.</p>
             </div>
           )}
         </aside>

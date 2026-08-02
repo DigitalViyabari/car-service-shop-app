@@ -27,8 +27,7 @@ const roleDescriptions: Partial<Record<BranchRole, string>> = {
   job_creator: "Customer vehicle check-in and new job sheets.",
 };
 export default function TeamPage() {
-  const { user, memberships, activeCompany, activeCompanyId, activeBranchId, activeBranch } =
-      useAuth(),
+  const { user, memberships, activeCompanyId, activeBranchId, activeBranch } = useAuth(),
     [members, setMembers] = useState<Member[]>([]),
     [message, setMessage] = useState(""),
     [saving, setSaving] = useState<string | null>(null),
@@ -131,11 +130,7 @@ export default function TeamPage() {
         <div>
           <span className="heading-kicker">{canManageTeam ? "Company Access" : "Your Access"}</span>
           <h1>Team &amp; Roles</h1>
-          <p className="muted">
-            {canManageTeam
-              ? `Manage ${activeCompany?.name} access for ${activeBranch?.name}.`
-              : `Your assigned role for ${activeBranch?.name}.`}
-          </p>
+          <p className="muted">{canManageTeam ? "Staff access and roles." : "Your access."}</p>
         </div>
         {canManageTeam ? (
           <button

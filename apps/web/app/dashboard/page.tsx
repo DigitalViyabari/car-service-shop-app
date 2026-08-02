@@ -160,8 +160,8 @@ export default function DashboardPage() {
       <div className="dashboard-heading">
         <div>
           <span className="heading-kicker">{activeBranch.name} · Live Workshop</span>
-          <h1>Good Day! Here&apos;s What Needs Your Attention</h1>
-          <p className="muted">A simple, live summary of vehicles, work, payments and stock.</p>
+          <h1>Today&apos;s Workshop</h1>
+          <p className="muted">Live work, payments and stock.</p>
         </div>
         {canCreateJob ? (
           <Link href="/dashboard/jobs" className="quick-action quick-action--enabled">
@@ -197,15 +197,13 @@ export default function DashboardPage() {
         <>
           <section className="overview-kpis">
             <article className="tone-blue">
-              <span>Vehicles Being Serviced</span>
+              <span>Active Jobs</span>
               <strong>{summary.activeJobs.length}</strong>
-              <p>Job cards currently open on the workshop floor.</p>
               <small>{summary.todayJobs.length} checked in today</small>
             </article>
             <article className={summary.ready ? "tone-green" : "tone-neutral"}>
               <span>Ready For Customer</span>
               <strong>{summary.ready}</strong>
-              <p>Vehicles that completed work and can be delivered.</p>
               <small>
                 {summary.ready ? "Contact these customers" : "Nothing waiting for delivery"}
               </small>
@@ -213,22 +211,19 @@ export default function DashboardPage() {
             <article className={summary.urgent ? "tone-red" : "tone-green"}>
               <span>Urgent Jobs</span>
               <strong>{summary.urgent}</strong>
-              <p>Urgent or breakdown vehicles requiring priority.</p>
               <small>{summary.urgent ? "Action recommended now" : "No urgent work"}</small>
             </article>
             {canViewFinance ? (
               <article className={summary.outstanding ? "tone-amber" : "tone-green"}>
-                <span>Payment Still To Collect</span>
+                <span>Payment Due</span>
                 <strong>{money.format(summary.outstanding)}</strong>
-                <p>Unpaid balance across all active invoices.</p>
                 <small>{money.format(summary.collected)} collected overall</small>
               </article>
             ) : null}
             {canViewInventory ? (
               <article className={summary.lowStock ? "tone-amber" : "tone-green"}>
-                <span>Products To Reorder</span>
+                <span>Low Stock</span>
                 <strong>{summary.lowStock}</strong>
-                <p>Stock at or below its selected reorder level.</p>
                 <small>
                   {summary.lowStock ? "Review inventory today" : "Stock levels look healthy"}
                 </small>
@@ -240,8 +235,7 @@ export default function DashboardPage() {
               <header>
                 <div>
                   <span className="heading-kicker">Live Process</span>
-                  <h2>Where Every Vehicle Is Now</h2>
-                  <p>Each number shows how many open jobs are at that step.</p>
+                  <h2>Workshop Flow</h2>
                 </div>
                 <Link href="/dashboard/jobs">Open Job Cards →</Link>
               </header>

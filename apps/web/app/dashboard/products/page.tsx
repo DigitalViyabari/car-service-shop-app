@@ -481,9 +481,7 @@ export default function ProductsPage() {
         <div>
           <span className="heading-kicker">Parts &amp; Materials</span>
           <h1>Product Catalogue</h1>
-          <p className="muted">
-            Company products with live stock for {activeBranch?.name ?? "this branch"}.
-          </p>
+          <p className="muted">Products, pricing and live stock.</p>
         </div>
         <button
           className="quick-action quick-action--enabled"
@@ -516,26 +514,23 @@ export default function ProductsPage() {
       </section>
       <section className="product-summary">
         <div className="inventory-blue">
-          <span>Products Being Tracked</span>
+          <span>Products</span>
           <strong>{products.length}</strong>
-          <small>Active items in the company catalogue</small>
         </div>
         <div className="inventory-navy">
-          <span>Total Units Available</span>
+          <span>Units In Stock</span>
           <strong>{totalStock.toLocaleString("en-IN")}</strong>
-          <small>Combined quantity across tracked products</small>
         </div>
         <div className={lowStock ? "inventory-red" : "inventory-green"}>
-          <span>Products Needing Attention</span>
+          <span>Low Stock</span>
           <strong>{lowStock}</strong>
           <small>
             {lowStock ? "Purchase or adjust these products" : "All stock levels look healthy"}
           </small>
         </div>
         <div className="inventory-green">
-          <span>Money Held In Stock</span>
+          <span>Stock Value</span>
           <strong>{money(stockValue)}</strong>
-          <small>Current quantity × latest purchase price</small>
         </div>
       </section>
       <section className="product-workspace">
@@ -791,7 +786,7 @@ export default function ProductsPage() {
           ) : (
             <div className="detail-empty">
               <h2>Select A Product</h2>
-              <p>Pricing, stock and compatibility will appear here.</p>
+              <p>Choose a product to view details.</p>
             </div>
           )}
         </aside>

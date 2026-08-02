@@ -219,10 +219,8 @@ export default function ReportsPage() {
       <div className="dashboard-heading">
         <div>
           <span className="heading-kicker">Business Intelligence</span>
-          <h1>Reports &amp; Insights</h1>
-          <p className="muted">
-            Operational and financial performance for {activeBranch?.name ?? "this branch"}.
-          </p>
+          <h1>Reports</h1>
+          <p className="muted">Workshop and financial performance.</p>
         </div>
         <div className="report-actions">
           <select value={period} onChange={(event) => setPeriod(event.target.value as Period)}>
@@ -260,26 +258,26 @@ export default function ReportsPage() {
         <>
           <section className="report-kpis">
             <div className="kpi-blue">
-              <span>Vehicles That Visited</span>
+              <span>Vehicles</span>
               <strong>{report.includedJobs.length}</strong>
               <small>
                 {deliveredJobs} delivered · {completionRate}% completed
               </small>
             </div>
             <div className="kpi-navy">
-              <span>Work Invoiced</span>
+              <span>Invoiced</span>
               <strong>{money.format(report.billed)}</strong>
               <small>Average invoice {money.format(averageInvoice)}</small>
             </div>
             <div className="kpi-green">
-              <span>Money Received</span>
+              <span>Collected</span>
               <strong>{money.format(report.collected)}</strong>
               <small>
                 {report.includedPayments.length} payments · {collectionRate}% collected
               </small>
             </div>
             <div className={report.outstanding ? "kpi-amber" : "kpi-green"}>
-              <span>Money Still To Collect</span>
+              <span>Balance Due</span>
               <strong>{money.format(report.outstanding)}</strong>
               <small>
                 {report.outstanding
@@ -288,7 +286,7 @@ export default function ReportsPage() {
               </small>
             </div>
             <div className={report.lowItems.length ? "kpi-red" : "kpi-green"}>
-              <span>Stock On Hand</span>
+              <span>Stock Value</span>
               <strong>{money.format(report.stockValue)}</strong>
               <small>
                 {report.lowItems.length

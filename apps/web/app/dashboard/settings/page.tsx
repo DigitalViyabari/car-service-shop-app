@@ -177,7 +177,7 @@ export default function BusinessSettingsPage() {
             <span>01</span>
             <div>
               <h2>Business Identity</h2>
-              <p>Legal and customer-facing workshop information.</p>
+              <p>Workshop details.</p>
             </div>
           </header>
           <div className="form-grid">
@@ -212,7 +212,7 @@ export default function BusinessSettingsPage() {
             <span>02</span>
             <div>
               <h2>Registered Address</h2>
-              <p>Place of supply and invoice address.</p>
+              <p>Invoice address.</p>
             </div>
           </header>
           <div className="form-grid">
@@ -231,7 +231,7 @@ export default function BusinessSettingsPage() {
             <span>03</span>
             <div>
               <h2>Invoice &amp; Payment Details</h2>
-              <p>Defaults printed on customer documents.</p>
+              <p>Invoice defaults.</p>
             </div>
           </header>
           <div className="form-grid">

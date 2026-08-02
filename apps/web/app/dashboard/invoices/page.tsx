@@ -373,10 +373,7 @@ export default function InvoicesPage() {
         <div>
           <span className="heading-kicker">Branch Finance</span>
           <h1>Invoices &amp; Payments</h1>
-          <p className="muted">
-            Approved work, collections and outstanding balances for{" "}
-            {activeBranch?.name ?? "this branch"}.
-          </p>
+          <p className="muted">Invoices, collections and balances.</p>
         </div>
         <button
           className="quick-action quick-action--enabled"
@@ -413,27 +410,24 @@ export default function InvoicesPage() {
       </section>
       <section className="invoice-summary">
         <div className="finance-blue">
-          <span>Total Work Invoiced</span>
+          <span>Invoiced</span>
           <strong>{money.format(totals.billed)}</strong>
-          <small>Value of all issued invoices</small>
         </div>
         <div className="finance-green">
-          <span>Money Received Today</span>
+          <span>Today</span>
           <strong>{money.format(collectedToday)}</strong>
-          <small>Today&apos;s completed payments</small>
         </div>
         <div className="finance-navy">
-          <span>Money Received Overall</span>
+          <span>Collected</span>
           <strong>{money.format(totals.collected)}</strong>
-          <small>All successful collections</small>
         </div>
         <div className={totals.due ? "finance-amber" : "finance-green"}>
-          <span>Money Still To Collect</span>
+          <span>Balance Due</span>
           <strong>{money.format(totals.due)}</strong>
           <small>{totals.due ? "Customer follow-up required" : "All invoices are settled"}</small>
         </div>
         <div className={totals.open ? "finance-red" : "finance-green"}>
-          <span>Invoices With Balance</span>
+          <span>Unpaid Invoices</span>
           <strong>{totals.open}</strong>
           <small>{totals.open ? "Open these invoices to collect" : "No unpaid invoices"}</small>
         </div>
@@ -577,7 +571,7 @@ export default function InvoicesPage() {
           ) : (
             <div className="detail-empty">
               <h2>Select An Invoice</h2>
-              <p>Invoice totals and receipts will appear here.</p>
+              <p>Choose an invoice to view details.</p>
             </div>
           )}
         </aside>
