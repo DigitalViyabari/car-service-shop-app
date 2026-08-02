@@ -203,7 +203,17 @@ export default function ReportsPage() {
       </main>
     );
   const maxJobs = Math.max(1, ...report.jobCounts.map(([, value]) => value)),
-    maxServices = Math.max(1, ...report.serviceCounts.map(([, value]) => value));
+    maxServices = Math.max(1, ...report.serviceCounts.map(([, value]) => value)),
+    deliveredJobs = report.includedJobs.filter((item) => item.status === "delivered").length,
+    completionRate = report.includedJobs.length
+      ? Math.round((deliveredJobs / report.includedJobs.length) * 100)
+      : 0,
+    collectionRate = report.billed
+      ? Math.min(100, Math.round((report.collected / report.billed) * 100))
+      : 0,
+    averageInvoice = report.includedInvoices.length
+      ? report.billed / report.includedInvoices.length
+      : 0;
   return (
     <main className="content reports-page">
       <div className="dashboard-heading">
@@ -226,6 +236,21 @@ export default function ReportsPage() {
         </div>
       </div>
       {error ? <div className="alert alert--error module-alert">{error}</div> : null}
+      <section className="report-guide">
+        <strong>How To Read This Report</strong>
+        <span>
+          <i className="is-good" /> Green means healthy or completed.
+        </span>
+        <span>
+          <i className="is-active" /> Blue means active business.
+        </span>
+        <span>
+          <i className="is-attention" /> Amber needs attention.
+        </span>
+        <span>
+          <i className="is-urgent" /> Red requires action.
+        </span>
+      </section>
       {loading ? (
         <div className="list-state">
           <span className="spinner" />
@@ -234,32 +259,42 @@ export default function ReportsPage() {
       ) : (
         <>
           <section className="report-kpis">
-            <div>
-              <span>Jobs Created</span>
+            <div className="kpi-blue">
+              <span>Vehicles That Visited</span>
               <strong>{report.includedJobs.length}</strong>
               <small>
-                {report.includedJobs.filter((item) => item.status === "delivered").length} Delivered
+                {deliveredJobs} delivered · {completionRate}% completed
               </small>
             </div>
-            <div>
-              <span>Revenue Billed</span>
+            <div className="kpi-navy">
+              <span>Work Invoiced</span>
               <strong>{money.format(report.billed)}</strong>
-              <small>{report.includedInvoices.length} Invoices</small>
+              <small>Average invoice {money.format(averageInvoice)}</small>
             </div>
-            <div>
-              <span>Collections</span>
+            <div className="kpi-green">
+              <span>Money Received</span>
               <strong>{money.format(report.collected)}</strong>
-              <small>{report.includedPayments.length} Payments</small>
+              <small>
+                {report.includedPayments.length} payments · {collectionRate}% collected
+              </small>
             </div>
-            <div className={report.outstanding ? "is-warning" : ""}>
-              <span>Outstanding</span>
+            <div className={report.outstanding ? "kpi-amber" : "kpi-green"}>
+              <span>Money Still To Collect</span>
               <strong>{money.format(report.outstanding)}</strong>
-              <small>Current Branch Balance</small>
+              <small>
+                {report.outstanding
+                  ? "Follow up on unpaid invoices"
+                  : "No payment follow-up needed"}
+              </small>
             </div>
-            <div>
-              <span>Inventory Value</span>
+            <div className={report.lowItems.length ? "kpi-red" : "kpi-green"}>
+              <span>Stock On Hand</span>
               <strong>{money.format(report.stockValue)}</strong>
-              <small>{report.lowItems.length} Low Stock Items</small>
+              <small>
+                {report.lowItems.length
+                  ? `${report.lowItems.length} products need attention`
+                  : "All stock levels look healthy"}
+              </small>
             </div>
           </section>
           <section className="report-grid">
