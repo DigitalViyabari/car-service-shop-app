@@ -3,6 +3,7 @@
 import type {
   Customer,
   CustomerType,
+  JobSheet,
   Vehicle,
   VehicleCatalogEntry,
   VehicleFuelType,
@@ -116,11 +117,22 @@ function initials(name: string) {
     .join("")
     .toUpperCase();
 }
+function serviceDate(value: unknown) {
+  if (!value) return "—";
+  if (typeof value === "object" && value && "toDate" in value)
+    return (value as { toDate: () => Date }).toDate().toLocaleDateString("en-IN");
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("en-IN");
+}
+function jobStatus(value: string) {
+  return value.replaceAll("_", " ");
+}
 
 export default function CustomersPage() {
   const { user, activeCompanyId, activeBranchId } = useAuth();
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [jobs, setJobs] = useState<JobSheet[]>([]);
   const [catalogEntries, setCatalogEntries] = useState<VehicleCatalogEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -139,28 +151,36 @@ export default function CustomersPage() {
     setLoading(true);
     setError(null);
     try {
-      const [customerSnapshots, vehicleSnapshots, catalogSnapshots] = await Promise.all([
-        getDocs(
-          query(
-            collection(firebaseClient.db, "customers"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
+      const [customerSnapshots, vehicleSnapshots, catalogSnapshots, jobSnapshots] =
+        await Promise.all([
+          getDocs(
+            query(
+              collection(firebaseClient.db, "customers"),
+              where("companyId", "==", activeCompanyId),
+              where("branchId", "==", activeBranchId),
+            ),
           ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "vehicles"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
+          getDocs(
+            query(
+              collection(firebaseClient.db, "vehicles"),
+              where("companyId", "==", activeCompanyId),
+              where("branchId", "==", activeBranchId),
+            ),
           ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "vehicleCatalog"),
-            where("companyId", "==", activeCompanyId),
+          getDocs(
+            query(
+              collection(firebaseClient.db, "vehicleCatalog"),
+              where("companyId", "==", activeCompanyId),
+            ),
           ),
-        ),
-      ]);
+          getDocs(
+            query(
+              collection(firebaseClient.db, "jobSheets"),
+              where("companyId", "==", activeCompanyId),
+              where("branchId", "==", activeBranchId),
+            ),
+          ),
+        ]);
       const nextCustomers = customerSnapshots.docs
         .map(asCustomer)
         .filter(({ status }) => status === "active")
@@ -170,6 +190,11 @@ export default function CustomersPage() {
         .filter(({ status }) => status === "active");
       setCustomers(nextCustomers);
       setVehicles(nextVehicles);
+      setJobs(
+        jobSnapshots.docs
+          .map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
+          .sort((a, b) => b.jobNumber.localeCompare(a.jobNumber)),
+      );
       setCatalogEntries(
         catalogSnapshots.docs
           .map((item) => ({ ...(item.data() as Omit<VehicleCatalogEntry, "id">), id: item.id }))
@@ -211,6 +236,7 @@ export default function CustomersPage() {
 
   const selectedCustomer = customers.find(({ id }) => id === selectedId) ?? null;
   const selectedVehicles = vehicles.filter(({ customerId }) => customerId === selectedId);
+  const selectedHistory = jobs.filter(({ customerId }) => customerId === selectedId);
   const catalogueMakes = [
     ...new Set([
       ...indianVehicleCatalogue.map(({ make }) => make),
@@ -693,6 +719,43 @@ export default function CustomersPage() {
                   ))
                 )}
               </div>
+              <section className="service-history">
+                <div className="service-history-head">
+                  <div>
+                    <span className="heading-kicker">History</span>
+                    <h3>Service Visits</h3>
+                  </div>
+                  <b>{selectedHistory.length}</b>
+                </div>
+                {selectedHistory.length ? (
+                  <div className="service-history-list">
+                    {selectedHistory.slice(0, 6).map((job) => (
+                      <article key={job.id}>
+                        <i className={`history-stage job-stage-${job.status}`} />
+                        <div>
+                          <strong>{job.registrationNumber}</strong>
+                          <span>
+                            {job.serviceType} · {serviceDate(job.checkedInAt)}
+                          </span>
+                        </div>
+                        <div>
+                          <em className={`job-status status-${job.status}`}>
+                            {jobStatus(job.status)}
+                          </em>
+                          <small>
+                            {new Intl.NumberFormat("en-IN", {
+                              style: "currency",
+                              currency: "INR",
+                            }).format(job.invoiceTotal || job.estimateTotal || 0)}
+                          </small>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="service-history-empty">No service visits yet.</div>
+                )}
+              </section>
               <div className="detail-footer">
                 <button
                   className="text-action"

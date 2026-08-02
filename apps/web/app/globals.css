@@ -1066,6 +1066,81 @@ form .dv-button {
   font-size: 10px;
   text-transform: capitalize;
 }
+.service-history {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e6e8ea;
+}
+.service-history-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.service-history-head h3 {
+  margin: 3px 0 0;
+  font-size: 16px;
+}
+.service-history-head > b {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #151b22;
+  color: #fff;
+  font-size: 10px;
+}
+.service-history-list {
+  display: grid;
+  border: 1px solid #e1e5e8;
+  border-radius: 13px;
+  overflow: hidden;
+}
+.service-history-list article {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 13px;
+  border-bottom: 1px solid #edf0f2;
+  background: #fff;
+}
+.service-history-list article:last-child {
+  border-bottom: 0;
+}
+.service-history-list article > div {
+  display: grid;
+  gap: 3px;
+}
+.service-history-list article > div:last-child {
+  justify-items: end;
+}
+.service-history-list strong {
+  font-size: 11px;
+}
+.service-history-list span,
+.service-history-list small {
+  color: #7b8590;
+  font-size: 9px;
+}
+.service-history-list em {
+  font-style: normal;
+}
+.history-stage {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--stage-color, #7a8490);
+}
+.service-history-empty {
+  padding: 18px;
+  border: 1px dashed #d7dce1;
+  border-radius: 12px;
+  color: #808a95;
+  font-size: 11px;
+  text-align: center;
+}
 .detail-footer {
   display: flex;
   justify-content: space-between;
