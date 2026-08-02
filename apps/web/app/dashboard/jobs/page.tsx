@@ -25,7 +25,7 @@ import {
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { firebaseClient } from "@/lib/firebase-client";
+import { firebaseClient, getFirebaseAppCheckToken } from "@/lib/firebase-client";
 
 const stages: Array<[JobStatus, string]> = [
   ["check_in", "Check-In"],
@@ -84,6 +84,11 @@ type LineDraft = {
   discount: string;
   gstRate: string;
 };
+type WorkshopMember = {
+  userId: string;
+  displayName: string;
+  branchAssignments: { branchId: string; roles: string[] }[];
+};
 const emptyLine: LineDraft = {
   type: "labour",
   productId: "",
@@ -108,7 +113,7 @@ function displayDate(value: unknown) {
 }
 
 export default function JobsPage() {
-  const { user, activeCompanyId, activeBranchId } = useAuth();
+  const { user, memberships, activeCompanyId, activeBranchId } = useAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]),
     [customers, setCustomers] = useState<Customer[]>([]),
     [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -128,6 +133,15 @@ export default function JobsPage() {
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]),
     [addingService, setAddingService] = useState(false),
     [newServiceName, setNewServiceName] = useState("");
+  const [technicians, setTechnicians] = useState<WorkshopMember[]>([]);
+  const membership = memberships.find((item) => item.companyId === activeCompanyId),
+    canAssignTechnician =
+      (membership?.companyRoles ?? []).some((role) =>
+        ["company_owner", "company_admin"].includes(role),
+      ) ||
+      (membership?.branchAssignments ?? []).some(
+        (item) => item.branchId === activeBranchId && item.roles.includes("branch_manager"),
+      );
   const [showApproval, setShowApproval] = useState(false),
     [approvalMethod, setApprovalMethod] = useState<EstimateApprovalMethod>("whatsapp"),
     [approvalReference, setApprovalReference] = useState(""),
@@ -237,9 +251,39 @@ export default function JobsPage() {
       setLoading(false);
     }
   }, [activeBranchId, activeCompanyId]);
+  const loadTechnicians = useCallback(async () => {
+    if (!user || !activeCompanyId || !activeBranchId || !canAssignTechnician) return;
+    try {
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch(
+          `/api/v1/team?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
+          {
+            headers: {
+              authorization: `Bearer ${token}`,
+              "x-firebase-appcheck": appCheck,
+            },
+          },
+        ),
+        result = (await response.json()) as { members?: WorkshopMember[]; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to load technicians.");
+      setTechnicians(
+        (result.members ?? []).filter((member) =>
+          member.branchAssignments.some(
+            (assignment) =>
+              assignment.branchId === activeBranchId && assignment.roles.includes("technician"),
+          ),
+        ),
+      );
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load technicians.");
+    }
+  }, [activeBranchId, activeCompanyId, canAssignTechnician, user]);
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    void loadTechnicians();
+  }, [loadTechnicians]);
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return jobs.filter((job) => {
@@ -398,6 +442,23 @@ export default function JobsPage() {
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update job status.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+  async function assignTechnician(technicianId: string) {
+    if (!user || !selected || !canAssignTechnician) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(firebaseClient.db, "jobSheets", selected.id), {
+        assignedTechnicianIds: technicianId ? [technicianId] : [],
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      });
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to assign technician.");
     } finally {
       setSubmitting(false);
     }
@@ -775,6 +836,31 @@ export default function JobsPage() {
                   </strong>
                 </div>
               </div>
+              <section className="job-assignment">
+                <div>
+                  <span>Assigned To</span>
+                  <strong>
+                    {technicians.find(({ userId }) =>
+                      selected.assignedTechnicianIds?.includes(userId),
+                    )?.displayName ?? "Unassigned"}
+                  </strong>
+                </div>
+                {canAssignTechnician ? (
+                  <select
+                    aria-label="Assign technician"
+                    value={selected.assignedTechnicianIds?.[0] ?? ""}
+                    disabled={submitting}
+                    onChange={(event) => void assignTechnician(event.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {technicians.map((technician) => (
+                      <option key={technician.userId} value={technician.userId}>
+                        {technician.displayName}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+              </section>
               <section className="estimate-panel">
                 <div className="estimate-heading">
                   <div>

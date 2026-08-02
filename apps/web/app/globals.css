@@ -2151,6 +2151,41 @@ form .dv-button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.job-assignment {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 12px;
+  padding: 12px 14px;
+  border: 1px solid #dfe4e8;
+  border-left: 4px solid #2878d0;
+  border-radius: 11px;
+  background: #f5f9fd;
+}
+.job-assignment > div {
+  display: grid;
+  gap: 3px;
+}
+.job-assignment span {
+  color: #75808b;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.job-assignment strong {
+  font-size: 11px;
+}
+.job-assignment select {
+  min-width: 180px;
+  min-height: 36px;
+  padding: 7px 10px;
+  border: 1px solid #cbd4dc;
+  border-radius: 9px;
+  background: #fff;
+  font-size: 10px;
+}
 .complaint-panel {
   margin-top: 17px;
   padding: 17px;
