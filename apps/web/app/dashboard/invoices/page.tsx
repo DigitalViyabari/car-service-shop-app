@@ -242,9 +242,8 @@ export default function InvoicesPage() {
       const taxable = selectedJobLines.reduce((sum, line) => sum + line.taxableAmount, 0),
         tax = selectedJobLines.reduce((sum, line) => sum + line.taxAmount, 0),
         total = selectedJobLines.reduce((sum, line) => sum + line.totalAmount, 0),
-        now = serverTimestamp(),
-        date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
-      const invoiceNumber = `${taxProfile?.invoicePrefix || "INV"}-${date}-${invoiceRef.id.slice(0, 5).toUpperCase()}`,
+        now = serverTimestamp();
+      const invoiceNumber = selectedJob.jobNumber,
         batch = writeBatch(firebaseClient.db);
       batch.set(invoiceRef, {
         companyId: activeCompanyId,

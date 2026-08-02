@@ -7,40 +7,590 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { z } from "zod";
 
 if (!getApps().length) initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
-const app = getApp(); const db = getFirestore(app); const auth = getAuth(app);
+const app = getApp();
+const db = getFirestore(app);
+const auth = getAuth(app);
 const port = Number(process.env.PORT ?? 3200);
 const channels = z.enum(["sms", "whatsapp"]);
-const configureSchema = z.object({ companyId:z.string().min(2).max(128), channel:channels, authKey:z.string().min(16).max(512), integratedNumber:z.string().regex(/^\d{10,15}$/).optional() });
-const sendSchema = z.object({ companyId:z.string().min(2).max(128), branchId:z.string().min(2).max(128), channel:channels, recipient:z.string().regex(/^\d{10,15}$/), templateId:z.string().min(2).max(180), languageCode:z.string().min(2).max(12).default("en"), variables:z.record(z.string(),z.string().max(500)).default({}), idempotencyKey:z.string().min(12).max(160), description:z.string().min(2).max(240) });
-const branchRoles=z.enum(["branch_manager","finance_manager","job_creator","inventory_manager","technician"]);
-const assignmentSchema=z.object({companyId:z.string().min(2).max(128),userId:z.string().min(8).max(128),branchId:z.string().min(2).max(128),roles:z.array(branchRoles).min(1).max(4)});
-const createStaffSchema=z.object({companyId:z.string().min(2),branchId:z.string().min(2),displayName:z.string().min(2).max(100),email:z.email(),temporaryPassword:z.string().min(8).max(128),role:branchRoles});
-const reversePaymentSchema=z.object({companyId:z.string().min(2).max(128),branchId:z.string().min(2).max(128),paymentId:z.string().min(8).max(128),reason:z.string().min(3).max(300)});
-type Encrypted={ciphertext:string;iv:string;tag:string};
-type Credential={authKey:Encrypted;integratedNumber?:Encrypted;provider:"msg91"};
+const configureSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  channel: channels,
+  authKey: z.string().min(16).max(512),
+  integratedNumber: z
+    .string()
+    .regex(/^\d{10,15}$/)
+    .optional(),
+});
+const sendSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  channel: channels,
+  recipient: z.string().regex(/^\d{10,15}$/),
+  templateId: z.string().min(2).max(180),
+  languageCode: z.string().min(2).max(12).default("en"),
+  variables: z.record(z.string(), z.string().max(500)).default({}),
+  idempotencyKey: z.string().min(12).max(160),
+  description: z.string().min(2).max(240),
+});
+const branchRoles = z.enum([
+  "branch_manager",
+  "finance_manager",
+  "job_creator",
+  "inventory_manager",
+  "technician",
+]);
+const assignmentSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  userId: z.string().min(8).max(128),
+  branchId: z.string().min(2).max(128),
+  roles: z.array(branchRoles).min(1).max(4),
+});
+const createStaffSchema = z.object({
+  companyId: z.string().min(2),
+  branchId: z.string().min(2),
+  displayName: z.string().min(2).max(100),
+  email: z.email(),
+  temporaryPassword: z.string().min(8).max(128),
+  role: branchRoles,
+});
+const reversePaymentSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  paymentId: z.string().min(8).max(128),
+  reason: z.string().min(3).max(300),
+});
+type Encrypted = { ciphertext: string; iv: string; tag: string };
+type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 
-function key(){const value=Buffer.from(process.env.COMMUNICATION_CREDENTIAL_MASTER_KEY??"","base64");if(value.length!==32)throw new ApiError(503,"Encryption is not configured.");return value;}
-function encrypt(value:string):Encrypted{const iv=randomBytes(12),cipher=createCipheriv("aes-256-gcm",key(),iv),ciphertext=Buffer.concat([cipher.update(value,"utf8"),cipher.final()]);return{ciphertext:ciphertext.toString("base64"),iv:iv.toString("base64"),tag:cipher.getAuthTag().toString("base64")};}
-function decrypt(value:Encrypted){const decipher=createDecipheriv("aes-256-gcm",key(),Buffer.from(value.iv,"base64"));decipher.setAuthTag(Buffer.from(value.tag,"base64"));return Buffer.concat([decipher.update(Buffer.from(value.ciphertext,"base64")),decipher.final()]).toString("utf8");}
-class ApiError extends Error{constructor(readonly status:number,message:string){super(message);}}
-function reply(response:ServerResponse,status:number,body:unknown){response.writeHead(status,{"content-type":"application/json; charset=utf-8","cache-control":"no-store","x-content-type-options":"nosniff"});response.end(JSON.stringify(body));}
-async function body(request:IncomingMessage){const parts:Buffer[]=[];let size=0;for await(const part of request){const chunk=Buffer.isBuffer(part)?part:Buffer.from(part);size+=chunk.length;if(size>64_000)throw new ApiError(413,"Request is too large.");parts.push(chunk);}try{return JSON.parse(Buffer.concat(parts).toString("utf8"));}catch{throw new ApiError(400,"Invalid JSON body.");}}
-async function identity(request:IncomingMessage):Promise<DecodedIdToken>{const bearer=request.headers.authorization;if(!bearer?.startsWith("Bearer "))throw new ApiError(401,"Authentication is required.");if(process.env.REQUIRE_APP_CHECK!=="false"){const token=request.headers["x-firebase-appcheck"];if(typeof token!=="string")throw new ApiError(401,"App Check is required.");try{await getAppCheck(app).verifyToken(token);}catch{throw new ApiError(401,"Invalid App Check token.");}}try{return await auth.verifyIdToken(bearer.slice(7),true);}catch{throw new ApiError(401,"Invalid authentication token.");}}
-async function superAdmin(uid:string){const profile=await db.doc(`users/${uid}`).get();return profile.exists&&((profile.get("platformRoles")as unknown[]|undefined)?.includes("platform_super_admin")??false);}
-async function sender(uid:string,companyId:string,branchId:string){const member=await db.doc(`memberships/${uid}_${companyId}`).get();if(!member.exists||member.get("status")!=="active")throw new ApiError(403,"No active company membership.");const company=(member.get("companyRoles")as string[]|undefined)??[],assignments=(member.get("branchAssignments")as{branchId?:string;roles?:string[]}[]|undefined)??[];if(!company.some(role=>["company_owner","company_admin"].includes(role))&&!assignments.some(item=>item.branchId===branchId&&item.roles?.some(role=>["branch_manager","service_advisor","receptionist"].includes(role))))throw new ApiError(403,"Messaging permission is required.");}
-async function teamManager(uid:string,companyId:string,branchId:string){const member=await db.doc(`memberships/${uid}_${companyId}`).get(),company=(member.get("companyRoles")as string[]|undefined)??[],assignments=(member.get("branchAssignments")as{branchId:string;roles:string[]}[]|undefined)??[],owner=company.some(role=>["company_owner","company_admin"].includes(role)),manager=assignments.some(item=>item.branchId===branchId&&item.roles.includes("branch_manager"));if(!member.exists||member.get("status")!=="active"||(!owner&&!manager))throw new ApiError(403,"Owner, Administrator or Branch Manager access is required.");return{owner,manager};}
-async function financeManager(uid:string,companyId:string,branchId:string){const member=await db.doc(`memberships/${uid}_${companyId}`).get(),company=(member.get("companyRoles")as string[]|undefined)??[],assignments=(member.get("branchAssignments")as{branchId:string;roles:string[]}[]|undefined)??[],allowed=company.some(role=>["company_owner","company_admin","company_accountant"].includes(role))||assignments.some(item=>item.branchId===branchId&&item.roles.some(role=>["branch_manager","finance_manager"].includes(role)));if(!member.exists||member.get("status")!=="active"||!allowed)throw new ApiError(403,"Finance Manager access is required.");}
-async function listTeam(user:DecodedIdToken,companyId:string,branchId:string){await teamManager(user.uid,companyId,branchId);const members=await db.collection("memberships").where("companyId","==",companyId).get();return{members:await Promise.all(members.docs.map(async item=>{const data=item.data(),profile=await db.doc(`users/${String(data.userId)}`).get();return{id:item.id,userId:data.userId,displayName:profile.get("displayName")??"Team Member",email:profile.get("email")??"",status:data.status,companyRoles:data.companyRoles??[],branchAssignments:data.branchAssignments??[]};}))};}
-async function assignTeam(request:IncomingMessage,user:DecodedIdToken){const parsed=assignmentSchema.safeParse(await body(request));if(!parsed.success)throw new ApiError(400,"Invalid role assignment.");const{companyId,userId,branchId,roles}=parsed.data,authority=await teamManager(user.uid,companyId,branchId);if(!authority.owner&&roles.includes("branch_manager"))throw new ApiError(403,"Only an Owner can assign a Branch Manager.");const ref=db.doc(`memberships/${userId}_${companyId}`),snapshot=await ref.get();if(!snapshot.exists)throw new ApiError(404,"The user does not have a company membership.");const current=(snapshot.get("branchAssignments")as{branchId:string;roles:string[]}[]|undefined)??[],next=[...current.filter(item=>item.branchId!==branchId),{branchId,roles}],branchIds=[...new Set(next.map(item=>item.branchId))],branchRoleKeys=[...new Set(next.flatMap(item=>item.roles))];await ref.update({branchAssignments:next,branchIds,branchRoleKeys,updatedAt:FieldValue.serverTimestamp(),updatedBy:user.uid});return{updated:true,userId,branchId,roles};}
-async function createStaff(request:IncomingMessage,user:DecodedIdToken){const parsed=createStaffSchema.safeParse(await body(request));if(!parsed.success)throw new ApiError(400,"Enter valid staff details.");const{companyId,branchId,displayName,email,temporaryPassword,role}=parsed.data,authority=await teamManager(user.uid,companyId,branchId);if(!authority.owner&&role==="branch_manager")throw new ApiError(403,"Only an Owner can create a Branch Manager.");let created;try{created=await auth.createUser({displayName,email:email.toLowerCase(),password:temporaryPassword});}catch{throw new ApiError(409,"This email already exists or cannot be created.");}const now=FieldValue.serverTimestamp(),batch=db.batch();batch.set(db.doc(`users/${created.uid}`),{displayName,email:email.toLowerCase(),platformRoles:[],status:"active",createdAt:now,createdBy:user.uid,updatedAt:now,updatedBy:user.uid});batch.set(db.doc(`memberships/${created.uid}_${companyId}`),{userId:created.uid,companyId,companyRoles:[],branchIds:[branchId],branchAssignments:[{branchId,roles:[role]}],branchRoleKeys:[role],status:"active",createdAt:now,createdBy:user.uid,updatedAt:now,updatedBy:user.uid});await batch.commit();return{created:true};}
-async function reversePayment(request:IncomingMessage,user:DecodedIdToken){const parsed=reversePaymentSchema.safeParse(await body(request));if(!parsed.success)throw new ApiError(400,"Enter a valid reversal reason.");const{companyId,branchId,paymentId,reason}=parsed.data;await financeManager(user.uid,companyId,branchId);const paymentRef=db.doc(`payments/${paymentId}`);return db.runTransaction(async transaction=>{const payment=await transaction.get(paymentRef);if(!payment.exists||payment.get("companyId")!==companyId||payment.get("branchId")!==branchId)throw new ApiError(404,"Payment not found.");if(payment.get("status")!=="completed")throw new ApiError(409,"Payment has already been reversed.");const invoiceRef=db.doc(`invoices/${String(payment.get("invoiceId"))}`),invoice=await transaction.get(invoiceRef);if(!invoice.exists)throw new ApiError(404,"Invoice not found.");const amount=Number(payment.get("amount")),paid=Math.max(0,Number(invoice.get("paidAmount"))-amount),total=Number(invoice.get("totalAmount")),balance=Math.max(0,total-paid),now=FieldValue.serverTimestamp();transaction.update(paymentRef,{status:"reversed",reversalReason:reason,reversedAt:now,reversedBy:user.uid,updatedAt:now,updatedBy:user.uid});transaction.update(invoiceRef,{paidAmount:paid,balanceAmount:balance,status:paid<=.001?"issued":"part_paid",updatedAt:now,updatedBy:user.uid});return{reversed:true,paymentId,balanceAmount:balance};});}
+function key() {
+  const value = Buffer.from(process.env.COMMUNICATION_CREDENTIAL_MASTER_KEY ?? "", "base64");
+  if (value.length !== 32) throw new ApiError(503, "Encryption is not configured.");
+  return value;
+}
+function encrypt(value: string): Encrypted {
+  const iv = randomBytes(12),
+    cipher = createCipheriv("aes-256-gcm", key(), iv),
+    ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return {
+    ciphertext: ciphertext.toString("base64"),
+    iv: iv.toString("base64"),
+    tag: cipher.getAuthTag().toString("base64"),
+  };
+}
+function decrypt(value: Encrypted) {
+  const decipher = createDecipheriv("aes-256-gcm", key(), Buffer.from(value.iv, "base64"));
+  decipher.setAuthTag(Buffer.from(value.tag, "base64"));
+  return Buffer.concat([
+    decipher.update(Buffer.from(value.ciphertext, "base64")),
+    decipher.final(),
+  ]).toString("utf8");
+}
+class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+function reply(response: ServerResponse, status: number, body: unknown) {
+  response.writeHead(status, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store",
+    "x-content-type-options": "nosniff",
+  });
+  response.end(JSON.stringify(body));
+}
+async function body(request: IncomingMessage) {
+  const parts: Buffer[] = [];
+  let size = 0;
+  for await (const part of request) {
+    const chunk = Buffer.isBuffer(part) ? part : Buffer.from(part);
+    size += chunk.length;
+    if (size > 64_000) throw new ApiError(413, "Request is too large.");
+    parts.push(chunk);
+  }
+  try {
+    return JSON.parse(Buffer.concat(parts).toString("utf8"));
+  } catch {
+    throw new ApiError(400, "Invalid JSON body.");
+  }
+}
+async function identity(request: IncomingMessage): Promise<DecodedIdToken> {
+  const bearer = request.headers.authorization;
+  if (!bearer?.startsWith("Bearer ")) throw new ApiError(401, "Authentication is required.");
+  if (process.env.REQUIRE_APP_CHECK !== "false") {
+    const token = request.headers["x-firebase-appcheck"];
+    if (typeof token !== "string") throw new ApiError(401, "App Check is required.");
+    try {
+      await getAppCheck(app).verifyToken(token);
+    } catch {
+      throw new ApiError(401, "Invalid App Check token.");
+    }
+  }
+  try {
+    return await auth.verifyIdToken(bearer.slice(7), true);
+  } catch {
+    throw new ApiError(401, "Invalid authentication token.");
+  }
+}
+async function superAdmin(uid: string) {
+  const profile = await db.doc(`users/${uid}`).get();
+  return (
+    profile.exists &&
+    ((profile.get("platformRoles") as unknown[] | undefined)?.includes("platform_super_admin") ??
+      false)
+  );
+}
+async function sender(uid: string, companyId: string, branchId: string) {
+  const member = await db.doc(`memberships/${uid}_${companyId}`).get();
+  if (!member.exists || member.get("status") !== "active")
+    throw new ApiError(403, "No active company membership.");
+  const company = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId?: string; roles?: string[] }[] | undefined) ??
+      [];
+  if (
+    !company.some((role) => ["company_owner", "company_admin"].includes(role)) &&
+    !assignments.some(
+      (item) =>
+        item.branchId === branchId &&
+        item.roles?.some((role) =>
+          ["branch_manager", "service_advisor", "receptionist"].includes(role),
+        ),
+    )
+  )
+    throw new ApiError(403, "Messaging permission is required.");
+}
+async function teamManager(uid: string, companyId: string, branchId: string) {
+  const member = await db.doc(`memberships/${uid}_${companyId}`).get(),
+    company = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    owner = company.some((role) => ["company_owner", "company_admin"].includes(role)),
+    manager = assignments.some(
+      (item) => item.branchId === branchId && item.roles.includes("branch_manager"),
+    );
+  if (!member.exists || member.get("status") !== "active" || (!owner && !manager))
+    throw new ApiError(403, "Owner, Administrator or Branch Manager access is required.");
+  return { owner, manager };
+}
+async function financeManager(uid: string, companyId: string, branchId: string) {
+  const member = await db.doc(`memberships/${uid}_${companyId}`).get(),
+    company = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    allowed =
+      company.some((role) =>
+        ["company_owner", "company_admin", "company_accountant"].includes(role),
+      ) ||
+      assignments.some(
+        (item) =>
+          item.branchId === branchId &&
+          item.roles.some((role) => ["branch_manager", "finance_manager"].includes(role)),
+      );
+  if (!member.exists || member.get("status") !== "active" || !allowed)
+    throw new ApiError(403, "Finance Manager access is required.");
+}
+async function listTeam(user: DecodedIdToken, companyId: string, branchId: string) {
+  await teamManager(user.uid, companyId, branchId);
+  const members = await db.collection("memberships").where("companyId", "==", companyId).get();
+  return {
+    members: await Promise.all(
+      members.docs.map(async (item) => {
+        const data = item.data(),
+          profile = await db.doc(`users/${String(data.userId)}`).get();
+        return {
+          id: item.id,
+          userId: data.userId,
+          displayName: profile.get("displayName") ?? "Team Member",
+          email: profile.get("email") ?? "",
+          status: data.status,
+          companyRoles: data.companyRoles ?? [],
+          branchAssignments: data.branchAssignments ?? [],
+        };
+      }),
+    ),
+  };
+}
+async function assignTeam(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = assignmentSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Invalid role assignment.");
+  const { companyId, userId, branchId, roles } = parsed.data,
+    authority = await teamManager(user.uid, companyId, branchId);
+  if (!authority.owner && roles.includes("branch_manager"))
+    throw new ApiError(403, "Only an Owner can assign a Branch Manager.");
+  const ref = db.doc(`memberships/${userId}_${companyId}`),
+    snapshot = await ref.get();
+  if (!snapshot.exists) throw new ApiError(404, "The user does not have a company membership.");
+  const current =
+      (snapshot.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    next = [...current.filter((item) => item.branchId !== branchId), { branchId, roles }],
+    branchIds = [...new Set(next.map((item) => item.branchId))],
+    branchRoleKeys = [...new Set(next.flatMap((item) => item.roles))];
+  await ref.update({
+    branchAssignments: next,
+    branchIds,
+    branchRoleKeys,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: user.uid,
+  });
+  return { updated: true, userId, branchId, roles };
+}
+async function createStaff(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = createStaffSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid staff details.");
+  const { companyId, branchId, displayName, email, temporaryPassword, role } = parsed.data,
+    authority = await teamManager(user.uid, companyId, branchId);
+  if (!authority.owner && role === "branch_manager")
+    throw new ApiError(403, "Only an Owner can create a Branch Manager.");
+  let created;
+  try {
+    created = await auth.createUser({
+      displayName,
+      email: email.toLowerCase(),
+      password: temporaryPassword,
+    });
+  } catch {
+    throw new ApiError(409, "This email already exists or cannot be created.");
+  }
+  const now = FieldValue.serverTimestamp(),
+    batch = db.batch();
+  batch.set(db.doc(`users/${created.uid}`), {
+    displayName,
+    email: email.toLowerCase(),
+    platformRoles: [],
+    status: "active",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.set(db.doc(`memberships/${created.uid}_${companyId}`), {
+    userId: created.uid,
+    companyId,
+    companyRoles: [],
+    branchIds: [branchId],
+    branchAssignments: [{ branchId, roles: [role] }],
+    branchRoleKeys: [role],
+    status: "active",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  await batch.commit();
+  return { created: true };
+}
+async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: string) {
+  const member = await db.doc(`memberships/${user.uid}_${companyId}`).get(),
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    technician = assignments.some(
+      (item) => item.branchId === branchId && item.roles.includes("technician"),
+    );
+  if (!member.exists || member.get("status") !== "active" || !technician)
+    throw new ApiError(403, "Technician access is required.");
+  const jobs = await db
+    .collection("jobSheets")
+    .where("assignedTechnicianIds", "array-contains", user.uid)
+    .get();
+  return {
+    jobs: jobs.docs
+      .filter((item) => item.get("companyId") === companyId && item.get("branchId") === branchId)
+      .map((item) => ({ id: item.id, ...item.data() })),
+  };
+}
+async function reversePayment(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = reversePaymentSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter a valid reversal reason.");
+  const { companyId, branchId, paymentId, reason } = parsed.data;
+  await financeManager(user.uid, companyId, branchId);
+  const paymentRef = db.doc(`payments/${paymentId}`);
+  return db.runTransaction(async (transaction) => {
+    const payment = await transaction.get(paymentRef);
+    if (
+      !payment.exists ||
+      payment.get("companyId") !== companyId ||
+      payment.get("branchId") !== branchId
+    )
+      throw new ApiError(404, "Payment not found.");
+    if (payment.get("status") !== "completed")
+      throw new ApiError(409, "Payment has already been reversed.");
+    const invoiceRef = db.doc(`invoices/${String(payment.get("invoiceId"))}`),
+      invoice = await transaction.get(invoiceRef);
+    if (!invoice.exists) throw new ApiError(404, "Invoice not found.");
+    const amount = Number(payment.get("amount")),
+      paid = Math.max(0, Number(invoice.get("paidAmount")) - amount),
+      total = Number(invoice.get("totalAmount")),
+      balance = Math.max(0, total - paid),
+      now = FieldValue.serverTimestamp();
+    transaction.update(paymentRef, {
+      status: "reversed",
+      reversalReason: reason,
+      reversedAt: now,
+      reversedBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    transaction.update(invoiceRef, {
+      paidAmount: paid,
+      balanceAmount: balance,
+      status: paid <= 0.001 ? "issued" : "part_paid",
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    return { reversed: true, paymentId, balanceAmount: balance };
+  });
+}
 
-async function configure(request:IncomingMessage,user:DecodedIdToken){if(!(await superAdmin(user.uid)))throw new ApiError(403,"Platform Super Admin access is required.");const parsed=configureSchema.safeParse(await body(request));if(!parsed.success)throw new ApiError(400,"Invalid credential configuration.");const{companyId,channel,authKey,integratedNumber}=parsed.data;if(channel==="whatsapp"&&!integratedNumber)throw new ApiError(400,"WhatsApp integrated number is required.");const credential:Credential={provider:"msg91",authKey:encrypt(authKey),...(integratedNumber?{integratedNumber:encrypt(integratedNumber)}:{})};await Promise.all([db.doc(`communicationCredentials/${companyId}_${channel}`).set({...credential,companyId,channel,updatedAt:FieldValue.serverTimestamp(),updatedBy:user.uid},{merge:true}),db.doc(`communicationEntitlements/${companyId}`).set({[`${channel}CredentialConfigured`]:true,updatedAt:FieldValue.serverTimestamp(),updatedBy:user.uid},{merge:true})]);return{configured:true,companyId,channel};}
+async function configure(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await superAdmin(user.uid)))
+    throw new ApiError(403, "Platform Super Admin access is required.");
+  const parsed = configureSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Invalid credential configuration.");
+  const { companyId, channel, authKey, integratedNumber } = parsed.data;
+  if (channel === "whatsapp" && !integratedNumber)
+    throw new ApiError(400, "WhatsApp integrated number is required.");
+  const credential: Credential = {
+    provider: "msg91",
+    authKey: encrypt(authKey),
+    ...(integratedNumber ? { integratedNumber: encrypt(integratedNumber) } : {}),
+  };
+  await Promise.all([
+    db.doc(`communicationCredentials/${companyId}_${channel}`).set(
+      {
+        ...credential,
+        companyId,
+        channel,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    ),
+    db.doc(`communicationEntitlements/${companyId}`).set(
+      {
+        [`${channel}CredentialConfigured`]: true,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    ),
+  ]);
+  return { configured: true, companyId, channel };
+}
 
-async function send(request:IncomingMessage,user:DecodedIdToken){const parsed=sendSchema.safeParse(await body(request));if(!parsed.success)throw new ApiError(400,"Invalid communication request.");const input=parsed.data;await sender(user.uid,input.companyId,input.branchId);const credentialDoc=await db.doc(`communicationCredentials/${input.companyId}_${input.channel}`).get();if(!credentialDoc.exists)throw new ApiError(409,"Provider credentials are not configured.");const ledger=db.doc(`communicationLedger/${input.companyId}_${input.idempotencyKey}`),entitlement=db.doc(`communicationEntitlements/${input.companyId}`);const reservation=await db.runTransaction(async transaction=>{const[prior,plan]=await Promise.all([transaction.get(ledger),transaction.get(entitlement)]);if(prior.exists)return{duplicate:true,status:String(prior.get("status")),rate:0};if(!plan.exists||plan.get("status")!=="active"||plan.get(`${input.channel}Enabled`)!==true)throw new ApiError(409,`${input.channel.toUpperCase()} is not enabled.`);const creditField=`${input.channel}Credits`,rate=Number(plan.get(`${input.channel}UnitRate`)??0),credits=Number(plan.get(creditField)??0);if(credits<1)throw new ApiError(402,`${input.channel.toUpperCase()} credits are exhausted.`);transaction.update(entitlement,{[creditField]:credits-1,updatedAt:FieldValue.serverTimestamp(),updatedBy:user.uid});transaction.create(ledger,{companyId:input.companyId,branchId:input.branchId,channel:input.channel,type:"usage",units:1,amount:rate,balanceAfter:credits-1,description:input.description,referenceId:input.idempotencyKey,recipientMasked:`******${input.recipient.slice(-4)}`,status:"pending",createdAt:FieldValue.serverTimestamp(),createdBy:user.uid,updatedAt:FieldValue.serverTimestamp(),updatedBy:user.uid});return{duplicate:false,status:"pending",rate};});if(reservation.duplicate)return reservation;
-  const credential=credentialDoc.data()as Credential;let provider:{messageId:string;summary:string};try{provider=await sendMsg91(input,decrypt(credential.authKey),credential.integratedNumber?decrypt(credential.integratedNumber):undefined);}catch(reason){await db.runTransaction(async transaction=>{const[current,plan]=await Promise.all([transaction.get(ledger),transaction.get(entitlement)]);if(!current.exists||current.get("status")!=="pending"||!plan.exists)return;const field=`${input.channel}Credits`,credits=Number(plan.get(field)??0);transaction.update(entitlement,{[field]:credits+1,updatedAt:FieldValue.serverTimestamp(),updatedBy:"system_refund"});transaction.update(ledger,{status:"failed",failureReason:reason instanceof Error?reason.message.slice(0,300):"Provider rejected request.",updatedAt:FieldValue.serverTimestamp(),updatedBy:"system_refund"});transaction.create(db.collection("communicationLedger").doc(),{companyId:input.companyId,branchId:input.branchId,channel:input.channel,type:"refund",units:1,amount:reservation.rate,balanceAfter:credits+1,description:`Automatic Refund: ${input.description}`,referenceId:input.idempotencyKey,status:"completed",createdAt:FieldValue.serverTimestamp(),createdBy:"system_refund",updatedAt:FieldValue.serverTimestamp(),updatedBy:"system_refund"});});throw new ApiError(503,"Provider could not send the message. The credit was refunded.");}await ledger.update({status:"completed",providerMessageId:provider.messageId,providerResponse:provider.summary,updatedAt:FieldValue.serverTimestamp(),updatedBy:user.uid});return{duplicate:false,status:"completed",referenceId:input.idempotencyKey};}
+async function send(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = sendSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Invalid communication request.");
+  const input = parsed.data;
+  await sender(user.uid, input.companyId, input.branchId);
+  const credentialDoc = await db
+    .doc(`communicationCredentials/${input.companyId}_${input.channel}`)
+    .get();
+  if (!credentialDoc.exists) throw new ApiError(409, "Provider credentials are not configured.");
+  const ledger = db.doc(`communicationLedger/${input.companyId}_${input.idempotencyKey}`),
+    entitlement = db.doc(`communicationEntitlements/${input.companyId}`);
+  const reservation = await db.runTransaction(async (transaction) => {
+    const [prior, plan] = await Promise.all([
+      transaction.get(ledger),
+      transaction.get(entitlement),
+    ]);
+    if (prior.exists) return { duplicate: true, status: String(prior.get("status")), rate: 0 };
+    if (
+      !plan.exists ||
+      plan.get("status") !== "active" ||
+      plan.get(`${input.channel}Enabled`) !== true
+    )
+      throw new ApiError(409, `${input.channel.toUpperCase()} is not enabled.`);
+    const creditField = `${input.channel}Credits`,
+      rate = Number(plan.get(`${input.channel}UnitRate`) ?? 0),
+      credits = Number(plan.get(creditField) ?? 0);
+    if (credits < 1)
+      throw new ApiError(402, `${input.channel.toUpperCase()} credits are exhausted.`);
+    transaction.update(entitlement, {
+      [creditField]: credits - 1,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: user.uid,
+    });
+    transaction.create(ledger, {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      channel: input.channel,
+      type: "usage",
+      units: 1,
+      amount: rate,
+      balanceAfter: credits - 1,
+      description: input.description,
+      referenceId: input.idempotencyKey,
+      recipientMasked: `******${input.recipient.slice(-4)}`,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: user.uid,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: user.uid,
+    });
+    return { duplicate: false, status: "pending", rate };
+  });
+  if (reservation.duplicate) return reservation;
+  const credential = credentialDoc.data() as Credential;
+  let provider: { messageId: string; summary: string };
+  try {
+    provider = await sendMsg91(
+      input,
+      decrypt(credential.authKey),
+      credential.integratedNumber ? decrypt(credential.integratedNumber) : undefined,
+    );
+  } catch (reason) {
+    await db.runTransaction(async (transaction) => {
+      const [current, plan] = await Promise.all([
+        transaction.get(ledger),
+        transaction.get(entitlement),
+      ]);
+      if (!current.exists || current.get("status") !== "pending" || !plan.exists) return;
+      const field = `${input.channel}Credits`,
+        credits = Number(plan.get(field) ?? 0);
+      transaction.update(entitlement, {
+        [field]: credits + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: "system_refund",
+      });
+      transaction.update(ledger, {
+        status: "failed",
+        failureReason:
+          reason instanceof Error ? reason.message.slice(0, 300) : "Provider rejected request.",
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: "system_refund",
+      });
+      transaction.create(db.collection("communicationLedger").doc(), {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        channel: input.channel,
+        type: "refund",
+        units: 1,
+        amount: reservation.rate,
+        balanceAfter: credits + 1,
+        description: `Automatic Refund: ${input.description}`,
+        referenceId: input.idempotencyKey,
+        status: "completed",
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: "system_refund",
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: "system_refund",
+      });
+    });
+    throw new ApiError(503, "Provider could not send the message. The credit was refunded.");
+  }
+  await ledger.update({
+    status: "completed",
+    providerMessageId: provider.messageId,
+    providerResponse: provider.summary,
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: user.uid,
+  });
+  return { duplicate: false, status: "completed", referenceId: input.idempotencyKey };
+}
 
-async function sendMsg91(input:z.infer<typeof sendSchema>,authKey:string,integratedNumber?:string){const sms=input.channel==="sms",url=sms?"https://control.msg91.com/api/v5/flow":"https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/",payload=sms?{template_id:input.templateId,short_url:"0",realTimeResponse:"1",recipients:[{mobiles:input.recipient,...input.variables}]}:{integrated_number:integratedNumber,content_type:"template",payload:{to_and_components:[{to:[input.recipient],components:input.variables}],template:{name:input.templateId,language:{code:input.languageCode,policy:"deterministic"}}}};const response=await fetch(url,{method:"POST",headers:{accept:"application/json",authkey:authKey,"content-type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(15_000)}),text=await response.text();if(!response.ok)throw new Error(`MSG91 ${response.status}: ${text.slice(0,180)}`);let result:Record<string,unknown>={};try{result=JSON.parse(text)as Record<string,unknown>;}catch{result={response:text};}return{messageId:String(result.request_id??result.message_id??result.id??"accepted"),summary:JSON.stringify(result).slice(0,600)};}
+async function sendMsg91(
+  input: z.infer<typeof sendSchema>,
+  authKey: string,
+  integratedNumber?: string,
+) {
+  const sms = input.channel === "sms",
+    url = sms
+      ? "https://control.msg91.com/api/v5/flow"
+      : "https://control.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/",
+    payload = sms
+      ? {
+          template_id: input.templateId,
+          short_url: "0",
+          realTimeResponse: "1",
+          recipients: [{ mobiles: input.recipient, ...input.variables }],
+        }
+      : {
+          integrated_number: integratedNumber,
+          content_type: "template",
+          payload: {
+            to_and_components: [{ to: [input.recipient], components: input.variables }],
+            template: {
+              name: input.templateId,
+              language: { code: input.languageCode, policy: "deterministic" },
+            },
+          },
+        };
+  const response = await fetch(url, {
+      method: "POST",
+      headers: { accept: "application/json", authkey: authKey, "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    }),
+    text = await response.text();
+  if (!response.ok) throw new Error(`MSG91 ${response.status}: ${text.slice(0, 180)}`);
+  let result: Record<string, unknown> = {};
+  try {
+    result = JSON.parse(text) as Record<string, unknown>;
+  } catch {
+    result = { response: text };
+  }
+  return {
+    messageId: String(result.request_id ?? result.message_id ?? result.id ?? "accepted"),
+    summary: JSON.stringify(result).slice(0, 600),
+  };
+}
 
-const server=createServer(async(request,response)=>{try{const url=new URL(request.url??"/","http://localhost");if(request.method==="GET"&&url.pathname==="/health")return reply(response,200,{status:"ok",service:"dvcs-api"});const user=await identity(request);if(request.method==="GET"&&url.pathname==="/v1/team")return reply(response,200,await listTeam(user,url.searchParams.get("companyId")??"",url.searchParams.get("branchId")??""));if(request.method==="POST"&&url.pathname==="/v1/team/create")return reply(response,200,await createStaff(request,user));if(request.method==="POST"&&url.pathname==="/v1/team/assign")return reply(response,200,await assignTeam(request,user));if(request.method==="POST"&&url.pathname==="/v1/payments/reverse")return reply(response,200,await reversePayment(request,user));if(request.method==="POST"&&url.pathname==="/v1/communications/configure")return reply(response,200,await configure(request,user));if(request.method==="POST"&&url.pathname==="/v1/communications/send")return reply(response,200,await send(request,user));throw new ApiError(404,"Route not found.");}catch(reason){const status=reason instanceof ApiError?reason.status:500;reply(response,status,{error:status===500?"Internal server error.":reason instanceof Error?reason.message:"Request failed."});}});
-server.listen(port,"127.0.0.1",()=>process.stdout.write(`DVCS API listening on 127.0.0.1:${port}\n`));
+const server = createServer(async (request, response) => {
+  try {
+    const url = new URL(request.url ?? "/", "http://localhost");
+    if (request.method === "GET" && url.pathname === "/health")
+      return reply(response, 200, { status: "ok", service: "dvcs-api" });
+    const user = await identity(request);
+    if (request.method === "GET" && url.pathname === "/v1/team")
+      return reply(
+        response,
+        200,
+        await listTeam(
+          user,
+          url.searchParams.get("companyId") ?? "",
+          url.searchParams.get("branchId") ?? "",
+        ),
+      );
+    if (request.method === "GET" && url.pathname === "/v1/jobs/assigned")
+      return reply(
+        response,
+        200,
+        await assignedJobs(
+          user,
+          url.searchParams.get("companyId") ?? "",
+          url.searchParams.get("branchId") ?? "",
+        ),
+      );
+    if (request.method === "POST" && url.pathname === "/v1/team/create")
+      return reply(response, 200, await createStaff(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/team/assign")
+      return reply(response, 200, await assignTeam(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/payments/reverse")
+      return reply(response, 200, await reversePayment(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/communications/configure")
+      return reply(response, 200, await configure(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/communications/send")
+      return reply(response, 200, await send(request, user));
+    throw new ApiError(404, "Route not found.");
+  } catch (reason) {
+    const status = reason instanceof ApiError ? reason.status : 500;
+    reply(response, status, {
+      error:
+        status === 500
+          ? "Internal server error."
+          : reason instanceof Error
+            ? reason.message
+            : "Request failed.",
+    });
+  }
+});
+server.listen(port, "127.0.0.1", () =>
+  process.stdout.write(`DVCS API listening on 127.0.0.1:${port}\n`),
+);

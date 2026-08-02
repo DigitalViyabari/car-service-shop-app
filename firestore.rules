@@ -54,8 +54,10 @@ service cloud.firestore {
         membership(companyId).data.branchRoleKeys.hasAny(["job_creator"]);
     }
     function branchTechnician(companyId, branchId) {
-      return branchMember(companyId, branchId) &&
-        ((membership(companyId).data.branchRoleKeys is list &&
+      return companyMember(companyId) &&
+        (((membership(companyId).data.branchIds is list &&
+          branchId in membership(companyId).data.branchIds) &&
+         membership(companyId).data.branchRoleKeys is list &&
           membership(companyId).data.branchRoleKeys.hasAny(["technician"])) ||
          (membership(companyId).data.branchAssignments is list &&
           membership(companyId).data.branchAssignments.hasAny([
@@ -303,6 +305,23 @@ service cloud.firestore {
         request.resource.data.customerId == resource.data.customerId &&
         request.resource.data.vehicleId == resource.data.vehicleId &&
         request.resource.data.jobNumber == resource.data.jobNumber && validAuditUpdate();
+      allow delete: if false;
+    }
+    match /jobSequences/{sequenceId} {
+      allow read: if resource.data.companyId is string && resource.data.branchId is string &&
+          (operationsManager(resource.data.companyId, resource.data.branchId) ||
+           jobCreator(resource.data.companyId, resource.data.branchId));
+      allow create: if request.resource.data.companyId is string &&
+        request.resource.data.branchId is string &&
+        (operationsManager(request.resource.data.companyId, request.resource.data.branchId) ||
+         jobCreator(request.resource.data.companyId, request.resource.data.branchId)) &&
+        request.resource.data.lastNumber == 1 && validAuditCreate();
+      allow update: if (operationsManager(resource.data.companyId, resource.data.branchId) ||
+        jobCreator(resource.data.companyId, resource.data.branchId)) &&
+        request.resource.data.companyId == resource.data.companyId &&
+        request.resource.data.branchId == resource.data.branchId &&
+        request.resource.data.financialYear == resource.data.financialYear &&
+        request.resource.data.lastNumber == resource.data.lastNumber + 1 && validAuditUpdate();
       allow delete: if false;
     }
     match /serviceTypes/{serviceTypeId} {

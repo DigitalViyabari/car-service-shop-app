@@ -18,6 +18,7 @@ import {
   getDocs,
   increment,
   query,
+  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -113,7 +114,7 @@ function displayDate(value: unknown) {
 }
 
 export default function JobsPage() {
-  const { user, memberships, activeCompanyId, activeBranchId } = useAuth();
+  const { user, memberships, activeCompanyId, activeBranchId, activeBranch } = useAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]),
     [customers, setCustomers] = useState<Customer[]>([]),
     [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -157,20 +158,34 @@ export default function JobsPage() {
     if (!activeCompanyId || !activeBranchId) return;
     setLoading(true);
     try {
-      const jobDocs = await getDocs(
-        isTechnician && user
-          ? query(
-              collection(firebaseClient.db, "jobSheets"),
-              where("companyId", "==", activeCompanyId),
-              where("branchId", "==", activeBranchId),
-              where("assignedTechnicianIds", "array-contains", user.uid),
-            )
-          : query(
+      let assignedJobs: JobSheet[] | null = null;
+      if (isTechnician && user) {
+        const [token, appCheck] = await Promise.all([
+            user.getIdToken(),
+            getFirebaseAppCheckToken(),
+          ]),
+          response = await fetch(
+            `/api/v1/jobs/assigned?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
+            {
+              headers: {
+                authorization: `Bearer ${token}`,
+                "x-firebase-appcheck": appCheck,
+              },
+            },
+          ),
+          result = (await response.json()) as { jobs?: JobSheet[]; error?: string };
+        if (!response.ok) throw new Error(result.error ?? "Unable to load assigned jobs.");
+        assignedJobs = result.jobs ?? [];
+      }
+      const jobDocs = isTechnician
+        ? null
+        : await getDocs(
+            query(
               collection(firebaseClient.db, "jobSheets"),
               where("companyId", "==", activeCompanyId),
               where("branchId", "==", activeBranchId),
             ),
-      );
+          );
       const [customerDocs, vehicleDocs, lineDocs, productDocs, inventoryDocs, serviceDocs] =
         await Promise.all([
           isTechnician
@@ -226,9 +241,11 @@ export default function JobsPage() {
                 ),
               ),
         ]);
-      const nextJobs = jobDocs.docs
-        .map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
-        .sort((a, b) => b.jobNumber.localeCompare(a.jobNumber));
+      const nextJobs = (
+        assignedJobs ??
+        jobDocs?.docs.map((item) => ({ ...item.data(), id: item.id }) as JobSheet) ??
+        []
+      ).sort((a, b) => b.jobNumber.localeCompare(a.jobNumber));
       setJobs(nextJobs);
       setCustomers(
         customerDocs.docs
@@ -433,12 +450,44 @@ export default function JobsPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const ref = doc(collection(firebaseClient.db, "jobSheets"));
-      const now = serverTimestamp();
-      const date = new Date().toISOString().slice(2, 10).replaceAll("-", "");
-      const jobNumber = `JC-${date}-${ref.id.slice(0, 5).toUpperCase()}`;
-      await writeBatch(firebaseClient.db)
-        .set(ref, {
+      const ref = doc(collection(firebaseClient.db, "jobSheets")),
+        nowDate = new Date(),
+        startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
+        financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
+        branchSeries = (activeBranch?.code || "MB")
+          .replace(/[^A-Za-z0-9]/g, "")
+          .slice(0, 2)
+          .toUpperCase()
+          .padEnd(2, "X"),
+        sequenceRef = doc(
+          firebaseClient.db,
+          "jobSequences",
+          `${activeCompanyId}_${activeBranchId}_${financialYear}`,
+        );
+      await runTransaction(firebaseClient.db, async (transaction) => {
+        const sequence = await transaction.get(sequenceRef),
+          serial = sequence.exists() ? Number(sequence.data().lastNumber) + 1 : 1,
+          jobNumber = `${branchSeries}/${financialYear}/${String(serial).padStart(6, "0")}`,
+          now = serverTimestamp();
+        if (sequence.exists()) {
+          transaction.update(sequenceRef, {
+            lastNumber: serial,
+            updatedAt: now,
+            updatedBy: user.uid,
+          });
+        } else {
+          transaction.set(sequenceRef, {
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            financialYear,
+            lastNumber: serial,
+            createdAt: now,
+            createdBy: user.uid,
+            updatedAt: now,
+            updatedBy: user.uid,
+          });
+        }
+        transaction.set(ref, {
           companyId: activeCompanyId,
           branchId: activeBranchId,
           jobNumber,
@@ -466,8 +515,8 @@ export default function JobsPage() {
           createdBy: user.uid,
           updatedAt: now,
           updatedBy: user.uid,
-        })
-        .commit();
+        });
+      });
       setShowForm(false);
       setDraft(emptyDraft);
       await load();

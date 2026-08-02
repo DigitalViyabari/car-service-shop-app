@@ -358,6 +358,9 @@ form .dv-button {
 .nav {
   display: grid;
   gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 3px;
 }
 .nav a,
 .nav span[aria-disabled="true"] {
@@ -3630,7 +3633,8 @@ form .dv-button {
     background: #fff;
   }
   .shell > *:not(.workspace),
-  .workspace > *:not(.receipt-backdrop):not(.invoice-print-backdrop),
+  .workspace > header,
+  .content > *:not(.receipt-backdrop):not(.invoice-print-backdrop),
   .no-print {
     display: none !important;
   }
