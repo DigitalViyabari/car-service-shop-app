@@ -92,6 +92,21 @@ const createCompanySchema = z.object({
 });
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
+type RateWindow = { count: number; resetAt: number };
+
+const rateWindows = new Map<string, RateWindow>();
+const RATE_WINDOW_MS = 60_000;
+
+function enforceRateLimit(key: string, limit: number) {
+  const now = Date.now(),
+    existing = rateWindows.get(key);
+  if (!existing || existing.resetAt <= now) {
+    rateWindows.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return;
+  }
+  if (existing.count >= limit) throw new ApiError(429, "Too many requests. Try again shortly.");
+  existing.count += 1;
+}
 
 function key() {
   const value = Buffer.from(process.env.COMMUNICATION_CREDENTIAL_MASTER_KEY ?? "", "base64");
@@ -129,6 +144,9 @@ function reply(response: ServerResponse, status: number, body: unknown) {
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
+    "x-frame-options": "DENY",
+    "referrer-policy": "no-referrer",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
   });
   response.end(JSON.stringify(body));
 }
@@ -1176,7 +1194,11 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");
     if (request.method === "GET" && url.pathname === "/health")
       return reply(response, 200, { status: "ok", service: "dvcs-api" });
+    if (!request.method || !["GET", "POST"].includes(request.method))
+      throw new ApiError(405, "Method not allowed.");
     const user = await identity(request);
+    enforceRateLimit(`all:${user.uid}`, 120);
+    if (request.method === "POST") enforceRateLimit(`write:${user.uid}`, 30);
     if (request.method === "GET" && url.pathname === "/v1/team")
       return reply(
         response,

@@ -7,7 +7,7 @@
     "./tsconfig/package.json": "./tsconfig/package.json"
   },
   "scripts": {
-    "lint": "eslint .",
+    "lint": "eslint . --no-error-on-unmatched-pattern",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
