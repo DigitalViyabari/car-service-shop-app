@@ -676,77 +676,95 @@ export default function ProcurementPage() {
                       + Add Item
                     </button>
                   </header>
+                  <div className="purchase-column-titles" aria-hidden="true">
+                    <span>Product</span>
+                    <span>Quantity</span>
+                    <span>Unit Cost</span>
+                    <span>GST %</span>
+                    <span>Line Total</span>
+                    <span>Remove</span>
+                  </div>
                   {lines.map((line, index) => (
                     <div className="purchase-line" key={index}>
-                      <select
-                        required
-                        value={line.productId}
-                        onChange={(e) => {
-                          const product = products.find(({ id }) => id === e.target.value);
-                          setLines(
-                            lines.map((item, i) =>
-                              i === index
-                                ? {
-                                    ...item,
-                                    productId: e.target.value,
-                                    gstRate: String(product?.gstRate ?? 18),
-                                  }
-                                : item,
-                            ),
-                          );
-                        }}
-                      >
-                        <option value="">Select Product</option>
-                        {products.map((item) => (
-                          <option key={item.id} value={item.id}>
-                            {item.name} · {item.sku}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        aria-label="Quantity"
-                        type="number"
-                        min="0.01"
-                        step="0.01"
-                        value={line.quantity}
-                        onChange={(e) =>
-                          setLines(
-                            lines.map((item, i) =>
-                              i === index ? { ...item, quantity: e.target.value } : item,
-                            ),
-                          )
-                        }
-                      />
-                      <input
-                        aria-label="Unit cost"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        placeholder="Unit Cost"
-                        value={line.unitCost}
-                        onChange={(e) =>
-                          setLines(
-                            lines.map((item, i) =>
-                              i === index ? { ...item, unitCost: e.target.value } : item,
-                            ),
-                          )
-                        }
-                      />
-                      <input
-                        aria-label="GST rate"
-                        type="number"
-                        min="0"
-                        max="100"
-                        value={line.gstRate}
-                        onChange={(e) =>
-                          setLines(
-                            lines.map((item, i) =>
-                              i === index ? { ...item, gstRate: e.target.value } : item,
-                            ),
-                          )
-                        }
-                      />
-                      <strong>
+                      <label className="purchase-item-field">
+                        <span>Product</span>
+                        <select
+                          required
+                          value={line.productId}
+                          onChange={(e) => {
+                            const product = products.find(({ id }) => id === e.target.value);
+                            setLines(
+                              lines.map((item, i) =>
+                                i === index
+                                  ? {
+                                      ...item,
+                                      productId: e.target.value,
+                                      gstRate: String(product?.gstRate ?? 18),
+                                    }
+                                  : item,
+                              ),
+                            );
+                          }}
+                        >
+                          <option value="">Select Product</option>
+                          {products.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name} · {item.sku}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="purchase-item-field">
+                        <span>Quantity</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={line.quantity}
+                          onChange={(e) =>
+                            setLines(
+                              lines.map((item, i) =>
+                                i === index ? { ...item, quantity: e.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="purchase-item-field">
+                        <span>Unit Cost</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="₹ 0.00"
+                          value={line.unitCost}
+                          onChange={(e) =>
+                            setLines(
+                              lines.map((item, i) =>
+                                i === index ? { ...item, unitCost: e.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="purchase-item-field">
+                        <span>GST %</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max="100"
+                          value={line.gstRate}
+                          onChange={(e) =>
+                            setLines(
+                              lines.map((item, i) =>
+                                i === index ? { ...item, gstRate: e.target.value } : item,
+                              ),
+                            )
+                          }
+                        />
+                      </label>
+                      <strong className="purchase-line-total">
+                        <span>Line Total</span>
                         {money.format(
                           Number(line.quantity || 0) *
                             Number(line.unitCost || 0) *
@@ -756,6 +774,7 @@ export default function ProcurementPage() {
                       <button
                         type="button"
                         aria-label="Remove item"
+                        title="Remove item"
                         onClick={() => setLines(lines.filter((_, i) => i !== index))}
                       >
                         ×

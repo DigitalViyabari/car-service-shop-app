@@ -4361,13 +4361,38 @@ button.platform-row:hover {
   font-weight: 850;
   cursor: pointer;
 }
+.purchase-column-titles {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) 90px 130px 80px 130px 52px;
+  gap: 9px;
+  align-items: center;
+  padding: 10px 12px;
+  border-top: 1px solid #e0e4e8;
+  background: #fafbfc;
+  color: #687381;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+.purchase-column-titles span:nth-last-child(-n + 2) {
+  text-align: right;
+}
 .purchase-line {
   display: grid;
-  grid-template-columns: minmax(220px, 2fr) 90px 130px 80px 130px 36px;
+  grid-template-columns: minmax(220px, 2fr) 90px 130px 80px 130px 52px;
   gap: 9px;
   align-items: center;
   padding: 12px;
   border-top: 1px solid #e5e8ec;
+}
+.purchase-item-field {
+  display: block !important;
+  min-width: 0;
+}
+.purchase-item-field > span,
+.purchase-line-total > span {
+  display: none;
 }
 .purchase-line input,
 .purchase-line select {
@@ -4400,12 +4425,6 @@ button.platform-row:hover {
   .procurement-grid {
     grid-template-columns: 1fr;
   }
-  .purchase-line {
-    grid-template-columns: minmax(180px, 1fr) 80px 110px 70px;
-  }
-  .purchase-line > strong {
-    grid-column: 1/4;
-  }
 }
 @media (max-width: 700px) {
   .procurement-page .compact-header {
@@ -4430,12 +4449,33 @@ button.platform-row:hover {
   }
   .purchase-line {
     grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    padding: 16px;
   }
-  .purchase-line select {
+  .purchase-column-titles {
+    display: none;
+  }
+  .purchase-item-field:first-child {
     grid-column: 1/-1;
   }
-  .purchase-line > strong {
-    grid-column: 1;
+  .purchase-item-field > span,
+  .purchase-line-total > span {
+    display: block;
+    margin-bottom: 6px;
+    color: #687381;
+    font-size: 11px;
+    font-weight: 850;
+    letter-spacing: 0.045em;
+    text-transform: uppercase;
+  }
+  .purchase-line-total {
+    align-self: end;
+  }
+  .purchase-line > button {
+    align-self: end;
+    justify-self: end;
+    min-width: 44px;
+    min-height: 44px;
   }
   .purchase-total {
     display: grid;
