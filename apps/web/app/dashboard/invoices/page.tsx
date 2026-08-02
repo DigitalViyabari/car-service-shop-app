@@ -1,6 +1,13 @@
 "use client";
 
-import type { Invoice, JobLineItem, JobSheet, Payment, PaymentMethod } from "@dvcs/types";
+import type {
+  Invoice,
+  InvoiceLine,
+  JobLineItem,
+  JobSheet,
+  Payment,
+  PaymentMethod,
+} from "@dvcs/types";
 import {
   collection,
   doc,
@@ -47,6 +54,7 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]),
     [jobs, setJobs] = useState<JobSheet[]>([]),
     [lines, setLines] = useState<JobLineItem[]>([]),
+    [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([]),
     [payments, setPayments] = useState<Payment[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
@@ -62,6 +70,7 @@ export default function InvoicesPage() {
     [reference, setReference] = useState(""),
     [paymentNotes, setPaymentNotes] = useState(""),
     [receipt, setReceipt] = useState<Payment | null>(null),
+    [printInvoice, setPrintInvoice] = useState(false),
     [reversalReason, setReversalReason] = useState("");
 
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
@@ -80,7 +89,7 @@ export default function InvoicesPage() {
     setLoading(true);
     setError(null);
     try {
-      const [invoiceDocs, jobDocs, lineDocs, paymentDocs] = await Promise.all([
+      const [invoiceDocs, jobDocs, lineDocs, invoiceLineDocs, paymentDocs] = await Promise.all([
         getDocs(
           query(
             collection(firebaseClient.db, "invoices"),
@@ -104,6 +113,13 @@ export default function InvoicesPage() {
         ),
         getDocs(
           query(
+            collection(firebaseClient.db, "invoiceLines"),
+            where("companyId", "==", activeCompanyId),
+            where("branchId", "==", activeBranchId),
+          ),
+        ),
+        getDocs(
+          query(
             collection(firebaseClient.db, "payments"),
             where("companyId", "==", activeCompanyId),
             where("branchId", "==", activeBranchId),
@@ -119,6 +135,9 @@ export default function InvoicesPage() {
         lineDocs.docs
           .map((item) => ({ ...item.data(), id: item.id }) as JobLineItem)
           .filter(({ status }) => status === "active"),
+      );
+      setInvoiceLines(
+        invoiceLineDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as InvoiceLine),
       );
       setPayments(paymentDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Payment));
       setSelectedId((current) =>
@@ -137,6 +156,7 @@ export default function InvoicesPage() {
   }, [load]);
 
   const selected = invoices.find(({ id }) => id === selectedId) ?? null;
+  const selectedInvoiceLines = invoiceLines.filter(({ invoiceId }) => invoiceId === selectedId);
   const invoiceableJobs = useMemo(
     () =>
       jobs.filter(
@@ -482,9 +502,14 @@ export default function InvoicesPage() {
                     {selected.registrationNumber} · {selected.vehicleLabel}
                   </p>
                 </div>
-                <span className={`invoice-status invoice-status-${selected.status}`}>
-                  {selected.status.replace("_", " ")}
-                </span>
+                <div className="invoice-head-actions">
+                  <span className={`invoice-status invoice-status-${selected.status}`}>
+                    {selected.status.replace("_", " ")}
+                  </span>
+                  <button type="button" onClick={() => setPrintInvoice(true)}>
+                    Print Invoice
+                  </button>
+                </div>
               </div>
               <div className="invoice-amount">
                 <span>Customer Still Needs To Pay</span>
@@ -783,6 +808,99 @@ export default function InvoicesPage() {
               ) : null}
               <button type="button" className="dv-button" onClick={() => window.print()}>
                 Print Receipt
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+      {printInvoice && selected ? (
+        <div className="modal-backdrop invoice-print-backdrop">
+          <section className="module-modal invoice-print-modal" role="dialog" aria-modal="true">
+            <header className="modal-header no-print">
+              <div>
+                <span className="heading-kicker">Customer Invoice</span>
+                <h2>{selected.invoiceNumber}</h2>
+              </div>
+              <button type="button" onClick={() => setPrintInvoice(false)}>
+                ×
+              </button>
+            </header>
+            <div className="invoice-sheet">
+              <header>
+                <div>
+                  <strong>{activeCompany?.name ?? "Digital Viyabari"}</strong>
+                  <span>{activeBranch?.name}</span>
+                </div>
+                <div>
+                  <b>TAX INVOICE</b>
+                  <span>{selected.invoiceNumber}</span>
+                  <small>{shownDate(selected.issuedAt)}</small>
+                </div>
+              </header>
+              <section className="invoice-customer">
+                <div>
+                  <span>Customer</span>
+                  <strong>{selected.customerName}</strong>
+                </div>
+                <div>
+                  <span>Vehicle</span>
+                  <strong>{selected.registrationNumber}</strong>
+                  <small>{selected.vehicleLabel}</small>
+                </div>
+              </section>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Qty</th>
+                    <th>Rate</th>
+                    <th>GST</th>
+                    <th>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedInvoiceLines.map((line) => (
+                    <tr key={line.id}>
+                      <td>{line.description}</td>
+                      <td>
+                        {line.quantity} {line.unit}
+                      </td>
+                      <td>{money.format(line.unitPrice)}</td>
+                      <td>{line.gstRate}%</td>
+                      <td>{money.format(line.totalAmount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <section className="invoice-sheet-totals">
+                <span>
+                  Taxable <strong>{money.format(selected.taxableAmount)}</strong>
+                </span>
+                <span>
+                  GST <strong>{money.format(selected.taxAmount)}</strong>
+                </span>
+                <b>
+                  Total <strong>{money.format(selected.totalAmount)}</strong>
+                </b>
+                <span>
+                  Paid <strong>{money.format(selected.paidAmount)}</strong>
+                </span>
+                <span>
+                  Balance <strong>{money.format(selected.balanceAmount)}</strong>
+                </span>
+              </section>
+              {selected.notes ? <p>{selected.notes}</p> : null}
+            </div>
+            <footer className="modal-footer no-print">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setPrintInvoice(false)}
+              >
+                Close
+              </button>
+              <button type="button" className="dv-button" onClick={() => window.print()}>
+                Print / Save PDF
               </button>
             </footer>
           </section>
