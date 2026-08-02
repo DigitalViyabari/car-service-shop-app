@@ -106,7 +106,14 @@ export interface Customer extends AuditFields {
   status: "active" | "archived";
 }
 
-export type VehicleFuelType = "petrol" | "diesel" | "cng" | "electric" | "hybrid" | "other";
+export type VehicleFuelType =
+  | "petrol"
+  | "diesel"
+  | "cng"
+  | "petrol_cng"
+  | "electric"
+  | "hybrid"
+  | "other";
 export type VehicleTransmission = "manual" | "automatic" | "amt" | "cvt" | "dct" | "other";
 
 export interface Vehicle extends AuditFields {
@@ -118,6 +125,7 @@ export interface Vehicle extends AuditFields {
   make: string;
   model: string;
   variant?: string;
+  colour?: string;
   year?: number;
   fuelType: VehicleFuelType;
   transmission?: VehicleTransmission;

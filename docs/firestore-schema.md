@@ -16,4 +16,6 @@ Current rules are intentionally conservative. Before operational modules launch,
 
 Vehicles reference customers through `customerId`. Future job sheets will reference both IDs so historical service records remain stable. Customer `vehicleCount` is updated in the same batch as vehicle creation. Records are archived through `status` rather than physically deleted.
 
+Vehicle records include colour as a standard field. Supported fuel choices include Petrol, Diesel, CNG, Petrol + CNG, Electric, Hybrid, and Other. Stored enum values remain normalized while all user-facing labels use title case.
+
 Reads require active company membership and branch access. Initial browser writes require `company_owner` or `company_admin`; branch-role write access will be added after role keys are denormalized into a rules-friendly membership field. Every mutation preserves immutable tenant and creation-audit fields and updates actor/timestamp audit fields.
