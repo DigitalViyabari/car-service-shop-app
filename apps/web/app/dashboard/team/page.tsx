@@ -18,6 +18,14 @@ const roles: Array<[BranchRole, string]> = [
   ["inventory_manager", "Inventory Manager"],
   ["job_creator", "Job Sheet Creator"],
 ];
+const managerRoles = roles.filter(([role]) => role !== "branch_manager");
+const roleDescriptions: Partial<Record<BranchRole, string>> = {
+  branch_manager: "All operations for assigned branches.",
+  finance_manager: "Invoices, payments, receipts and reports.",
+  technician: "Assigned workshop tasks, updates and notes.",
+  inventory_manager: "Products, stock, pricing and reorder levels.",
+  job_creator: "Customer vehicle check-in and new job sheets.",
+};
 export default function TeamPage() {
   const { user, memberships, activeCompany, activeCompanyId, activeBranchId, activeBranch } =
       useAuth(),
@@ -32,12 +40,17 @@ export default function TeamPage() {
       role: "job_creator" as BranchRole,
     });
   const own = memberships.find((item) => item.companyId === activeCompanyId),
-    allowed =
-      (own?.companyRoles.some((role) => role === "company_owner" || role === "company_admin") ||
-        own?.branchAssignments.some(
-          (item) => item.branchId === activeBranchId && item.roles.includes("branch_manager"),
-        )) ??
-      false;
+    isOwner =
+      own?.companyRoles.some((role) => role === "company_owner" || role === "company_admin") ??
+      false,
+    ownBranchRoles =
+      own?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
+    isManager = ownBranchRoles.includes("branch_manager"),
+    canManageTeam = isOwner || isManager,
+    assignableRoles = isOwner ? roles : managerRoles,
+    visibleRoles = canManageTeam
+      ? assignableRoles
+      : roles.filter(([role]) => ownBranchRoles.includes(role));
   const call = useCallback(
     async (path: string, options?: RequestInit) => {
       if (!user) throw new Error("Authentication required.");
@@ -57,7 +70,7 @@ export default function TeamPage() {
     [user],
   );
   const load = useCallback(async () => {
-    if (!allowed || !activeCompanyId || !activeBranchId) return;
+    if (!canManageTeam || !activeCompanyId || !activeBranchId) return;
     try {
       const result = (await call(
         `/api/v1/team?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
@@ -66,7 +79,7 @@ export default function TeamPage() {
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to load team.");
     }
-  }, [activeBranchId, activeCompanyId, allowed, call]);
+  }, [activeBranchId, activeCompanyId, canManageTeam, call]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -112,94 +125,72 @@ export default function TeamPage() {
       setSaving(null);
     }
   }
-  if (!allowed)
-    return (
-      <main className="content">
-        <div className="state-card">
-          <h1>Team Administration Restricted</h1>
-          <p>Owner, Administrator or assigned Branch Manager access is required.</p>
-        </div>
-      </main>
-    );
   return (
     <main className="content team-page">
       <div className="dashboard-heading">
         <div>
-          <span className="heading-kicker">Company Access</span>
+          <span className="heading-kicker">{canManageTeam ? "Company Access" : "Your Access"}</span>
           <h1>Team &amp; Roles</h1>
           <p className="muted">
-            Manage {activeCompany?.name} access for {activeBranch?.name}.
+            {canManageTeam
+              ? `Manage ${activeCompany?.name} access for ${activeBranch?.name}.`
+              : `Your assigned role for ${activeBranch?.name}.`}
           </p>
         </div>
-        <button className="quick-action quick-action--enabled" onClick={() => setShowCreate(true)}>
-          <strong>+</strong> Add Staff
-        </button>
+        {canManageTeam ? (
+          <button
+            className="quick-action quick-action--enabled"
+            onClick={() => setShowCreate(true)}
+          >
+            <strong>+</strong> Add Staff
+          </button>
+        ) : null}
       </div>
       {message ? <div className="alert module-alert">{message}</div> : null}
       <section className="role-guide">
-        <div>
-          <strong>Super Admin</strong>
-          <span>Platform companies, subscriptions, add-ons and system controls.</span>
-        </div>
-        <div>
-          <strong>Owner</strong>
-          <span>Company, branches, workshop, inventory, finance and team.</span>
-        </div>
-        <div>
-          <strong>Branch Manager</strong>
-          <span>All operations for assigned branches.</span>
-        </div>
-        <div>
-          <strong>Finance Manager</strong>
-          <span>Invoices, payments, receipts and reports.</span>
-        </div>
-        <div>
-          <strong>Staff / Technician</strong>
-          <span>Assigned workshop tasks, updates and notes.</span>
-        </div>
-        <div>
-          <strong>Inventory Manager</strong>
-          <span>Products, stock, pricing and reorder levels.</span>
-        </div>
-        <div>
-          <strong>Job Sheet Creator</strong>
-          <span>Customer vehicle check-in and new job sheets.</span>
-        </div>
+        {visibleRoles.map(([role, label]) => (
+          <div key={role}>
+            <strong>{label}</strong>
+            <span>{roleDescriptions[role]}</span>
+          </div>
+        ))}
       </section>
-      <section className="team-panel">
-        {members.map((member) => {
-          const assigned =
-            member.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles[0] ??
-            "viewer";
-          return (
-            <article className="team-row" key={member.id}>
-              <div className="team-avatar">{member.displayName.charAt(0).toUpperCase()}</div>
-              <div>
-                <strong>{member.displayName}</strong>
-                <small>{member.email}</small>
-              </div>
-              {member.companyRoles.length ? (
-                <span className="company-access">
-                  {member.companyRoles.join(", ").replaceAll("_", " ")}
-                </span>
-              ) : (
-                <select
-                  value={assigned}
-                  disabled={saving === member.id}
-                  onChange={(event) => void assign(member, event.target.value as BranchRole)}
-                >
-                  {roles.map(([value, label]) => (
-                    <option value={value} key={value}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </article>
-          );
-        })}
-      </section>
-      {showCreate ? (
+      {canManageTeam ? (
+        <section className="team-panel">
+          {members.map((member) => {
+            const assigned =
+              member.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles[0] ??
+              "viewer";
+            return (
+              <article className="team-row" key={member.id}>
+                <div className="team-avatar">{member.displayName.charAt(0).toUpperCase()}</div>
+                <div>
+                  <strong>{member.displayName}</strong>
+                  <small>{member.email}</small>
+                </div>
+                {member.companyRoles.length ? (
+                  <span className="company-access">
+                    {member.companyRoles.join(", ").replaceAll("_", " ")}
+                  </span>
+                ) : (
+                  <select
+                    value={assigned}
+                    disabled={saving === member.id}
+                    onChange={(event) => void assign(member, event.target.value as BranchRole)}
+                  >
+                    {assignableRoles.map(([value, label]) => (
+                      <option value={value} key={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </article>
+            );
+          })}
+        </section>
+      ) : null}
+      {canManageTeam && showCreate ? (
         <div className="modal-backdrop">
           <form className="module-modal" onSubmit={create}>
             <header className="modal-header">
@@ -245,7 +236,7 @@ export default function TeamPage() {
                   value={draft.role}
                   onChange={(e) => setDraft({ ...draft, role: e.target.value as BranchRole })}
                 >
-                  {roles.map(([value, label]) => (
+                  {assignableRoles.map(([value, label]) => (
                     <option value={value} key={value}>
                       {label}
                     </option>
