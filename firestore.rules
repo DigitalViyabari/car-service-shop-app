@@ -53,6 +53,11 @@ service cloud.firestore {
         membership(companyId).data.branchRoleKeys is list &&
         membership(companyId).data.branchRoleKeys.hasAny(["job_creator"]);
     }
+    function branchTechnician(companyId, branchId) {
+      return branchMember(companyId, branchId) &&
+        membership(companyId).data.branchRoleKeys is list &&
+        membership(companyId).data.branchRoleKeys.hasAny(["technician"]);
+    }
     function companyCatalogManager(companyId) {
       return companyMember(companyId) && (
         (membership(companyId).data.companyRoles is list &&
@@ -154,7 +159,18 @@ service cloud.firestore {
         request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 160 &&
         request.resource.data.phone is string && request.resource.data.phone.size() >= 10 && request.resource.data.phone.size() <= 15 &&
         request.resource.data.vehicleCount == 0 && request.resource.data.status == "active" && validAuditCreate();
-      allow update: if operationsManager(resource.data.companyId, resource.data.branchId) &&
+      allow update: if (operationsManager(resource.data.companyId, resource.data.branchId) ||
+        (branchTechnician(resource.data.companyId, resource.data.branchId) &&
+         resource.data.assignedTechnicianIds is list &&
+         request.auth.uid in resource.data.assignedTechnicianIds &&
+         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+           "status", "deliveredAt", "updatedAt", "updatedBy"
+         ]) &&
+         ((resource.data.status == "check_in" && request.resource.data.status == "inspection") ||
+          (resource.data.status == "inspection" && request.resource.data.status == "estimate_pending") ||
+          (resource.data.status == "approved" && request.resource.data.status == "in_progress") ||
+          (resource.data.status == "in_progress" && request.resource.data.status == "quality_check") ||
+          (resource.data.status == "quality_check" && request.resource.data.status == "ready")))) &&
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.vehicleCount >= 0 && validAuditUpdate();

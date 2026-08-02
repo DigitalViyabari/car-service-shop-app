@@ -136,13 +136,17 @@ export default function JobsPage() {
     [newServiceName, setNewServiceName] = useState("");
   const [technicians, setTechnicians] = useState<WorkshopMember[]>([]);
   const membership = memberships.find((item) => item.companyId === activeCompanyId),
+    branchRoles =
+      membership?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
     canAssignTechnician =
       (membership?.companyRoles ?? []).some((role) =>
         ["company_owner", "company_admin"].includes(role),
       ) ||
       (membership?.branchAssignments ?? []).some(
         (item) => item.branchId === activeBranchId && item.roles.includes("branch_manager"),
-      );
+      ),
+    isTechnician = branchRoles.includes("technician"),
+    canCreateJob = canAssignTechnician || branchRoles.includes("job_creator");
   const [showApproval, setShowApproval] = useState(false),
     [approvalMethod, setApprovalMethod] = useState<EstimateApprovalMethod>("whatsapp"),
     [approvalReference, setApprovalReference] = useState(""),
@@ -285,6 +289,9 @@ export default function JobsPage() {
   useEffect(() => {
     void loadTechnicians();
   }, [loadTechnicians]);
+  useEffect(() => {
+    if (isTechnician && !canAssignTechnician && user) setTechnicianFilter(user.uid);
+  }, [canAssignTechnician, isTechnician, user]);
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return jobs.filter((job) => {
@@ -309,6 +316,10 @@ export default function JobsPage() {
     });
   }, [filter, jobs, search, technicianFilter]);
   const selected = jobs.find(({ id }) => id === selectedId) ?? null;
+  useEffect(() => {
+    if (filtered.some(({ id }) => id === selectedId)) return;
+    setSelectedId(filtered[0]?.id ?? null);
+  }, [filtered, selectedId]);
   const customerVehicles = vehicles.filter(({ customerId }) => customerId === draft.customerId);
   const selectedVehicle = vehicles.find(({ id }) => id === draft.vehicleId);
   const selectedCustomer = customers.find(({ id }) => id === draft.customerId);
@@ -640,6 +651,19 @@ export default function JobsPage() {
   const nextStatus = selected
     ? stages[stages.findIndex(([value]) => value === selected.status) + 1]
     : undefined;
+  const technicianNextStages: JobStatus[] = [
+      "inspection",
+      "estimate_pending",
+      "in_progress",
+      "quality_check",
+      "ready",
+    ],
+    assignedToCurrentUser = Boolean(user && selected?.assignedTechnicianIds?.includes(user.uid)),
+    canAdvanceJob = Boolean(
+      nextStatus &&
+      (canAssignTechnician ||
+        (isTechnician && assignedToCurrentUser && technicianNextStages.includes(nextStatus[0]))),
+    );
   const nextInstruction = selected
     ? (
         {
@@ -663,9 +687,11 @@ export default function JobsPage() {
           <h1>Job Cards</h1>
           <p className="muted">Track every vehicle in service.</p>
         </div>
-        <button className="quick-action quick-action--enabled" onClick={openNew}>
-          <strong>+</strong> New Job Card
-        </button>
+        {canCreateJob ? (
+          <button className="quick-action quick-action--enabled" onClick={openNew}>
+            <strong>+</strong> New Job Card
+          </button>
+        ) : null}
       </div>
       {error && !showForm ? (
         <div className="alert alert--error module-alert">
@@ -911,7 +937,7 @@ export default function JobsPage() {
                     <h3>Estimate Items</h3>
                   </div>
                   <button
-                    disabled={selected.estimateLocked}
+                    disabled={selected.estimateLocked || !canAssignTechnician}
                     onClick={() => {
                       setLineDraft(emptyLine);
                       setError(null);
@@ -937,7 +963,7 @@ export default function JobsPage() {
                         </span>
                         <strong>{currency(line.totalAmount)}</strong>
                         <button
-                          disabled={selected.estimateLocked}
+                          disabled={selected.estimateLocked || !canAssignTechnician}
                           onClick={() => void removeLine(line)}
                         >
                           ×
@@ -952,16 +978,17 @@ export default function JobsPage() {
                     {selected.estimateRevision ?? 1}
                   </span>
                   <div>
-                    {!selected.estimateLocked && selectedLines.length > 0 ? (
+                    {canAssignTechnician && !selected.estimateLocked && selectedLines.length > 0 ? (
                       <button onClick={() => void markEstimateSent()}>Mark As Sent</button>
                     ) : null}
-                    {selected.approvalStatus === "sent" ||
-                    selected.approvalStatus === "rejected" ? (
+                    {canAssignTechnician &&
+                    (selected.approvalStatus === "sent" ||
+                      selected.approvalStatus === "rejected") ? (
                       <button onClick={() => setShowApproval(true)}>
                         Record Customer Decision
                       </button>
                     ) : null}
-                    {selected.estimateLocked ? (
+                    {canAssignTechnician && selected.estimateLocked ? (
                       <button onClick={() => void createRevision()}>Create Revision</button>
                     ) : null}
                   </div>
@@ -998,16 +1025,20 @@ export default function JobsPage() {
                 {nextStatus ? <small>Next process stage: {nextStatus[1]}</small> : null}
               </section>
               <div className="job-detail-actions">
-                <button
-                  className="cancel-job"
-                  disabled={
-                    submitting || selected.status === "delivered" || selected.status === "cancelled"
-                  }
-                  onClick={() => void setStatus("cancelled")}
-                >
-                  Cancel Job
-                </button>
-                {nextStatus ? (
+                {canAssignTechnician ? (
+                  <button
+                    className="cancel-job"
+                    disabled={
+                      submitting ||
+                      selected.status === "delivered" ||
+                      selected.status === "cancelled"
+                    }
+                    onClick={() => void setStatus("cancelled")}
+                  >
+                    Cancel Job
+                  </button>
+                ) : null}
+                {nextStatus && canAdvanceJob ? (
                   <button
                     className="advance-job"
                     disabled={submitting}
