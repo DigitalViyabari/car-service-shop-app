@@ -19,7 +19,6 @@ import {
   runTransaction,
   serverTimestamp,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import {
   useCallback,
@@ -236,74 +235,30 @@ export default function InvoicesPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const invoiceRef = doc(firebaseClient.db, "invoices", selectedJob.id);
-      if ((await getDoc(invoiceRef)).exists())
-        throw new Error("An invoice already exists for this job.");
-      const taxable = selectedJobLines.reduce((sum, line) => sum + line.taxableAmount, 0),
-        tax = selectedJobLines.reduce((sum, line) => sum + line.taxAmount, 0),
-        total = selectedJobLines.reduce((sum, line) => sum + line.totalAmount, 0),
-        now = serverTimestamp();
-      const invoiceNumber = selectedJob.jobNumber,
-        batch = writeBatch(firebaseClient.db);
-      batch.set(invoiceRef, {
-        companyId: activeCompanyId,
-        branchId: activeBranchId,
-        jobId: selectedJob.id,
-        invoiceNumber,
-        customerId: selectedJob.customerId,
-        customerName: selectedJob.customerName,
-        vehicleId: selectedJob.vehicleId,
-        vehicleLabel: selectedJob.vehicleLabel,
-        registrationNumber: selectedJob.registrationNumber,
-        taxableAmount: taxable,
-        taxAmount: tax,
-        totalAmount: total,
-        paidAmount: 0,
-        balanceAmount: total,
-        status: "issued",
-        issuedAt: now,
-        dueAt: dueAt || null,
-        notes: notes.trim(),
-        createdAt: now,
-        createdBy: user.uid,
-        updatedAt: now,
-        updatedBy: user.uid,
-      });
-      selectedJobLines.forEach((line) =>
-        batch.set(doc(collection(firebaseClient.db, "invoiceLines")), {
-          companyId: activeCompanyId,
-          branchId: activeBranchId,
-          invoiceId: invoiceRef.id,
-          jobLineItemId: line.id,
-          type: line.type,
-          productId: line.productId ?? null,
-          description: line.description,
-          quantity: line.quantity,
-          unit: line.unit,
-          unitPrice: line.unitPrice,
-          discount: line.discount,
-          gstRate: line.gstRate,
-          taxableAmount: line.taxableAmount,
-          taxAmount: line.taxAmount,
-          totalAmount: line.totalAmount,
-          createdAt: now,
-          createdBy: user.uid,
-          updatedAt: now,
-          updatedBy: user.uid,
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch("/api/v1/invoices/issue", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            "x-firebase-appcheck": appCheck,
+          },
+          body: JSON.stringify({
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            jobId: selectedJob.id,
+            dueAt: dueAt || null,
+            notes: notes.trim(),
+          }),
         }),
-      );
-      batch.update(doc(firebaseClient.db, "jobSheets", selectedJob.id), {
-        invoiceTotal: total,
-        updatedAt: now,
-        updatedBy: user.uid,
-      });
-      await batch.commit();
+        result = (await response.json()) as { invoiceId?: string; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to issue invoice.");
       setShowCreate(false);
       setJobId("");
       setDueAt("");
       setNotes("");
       await load();
-      setSelectedId(invoiceRef.id);
+      setSelectedId(result.invoiceId ?? selectedJob.id);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to issue invoice.");
     } finally {

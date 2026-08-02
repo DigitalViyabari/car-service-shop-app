@@ -73,6 +73,13 @@ const createPlatformAdminSchema = z.object({
   temporaryPassword: z.string().min(8).max(128),
 });
 const impersonationSchema = z.object({ targetUserId: z.string().min(8).max(128) });
+const issueInvoiceSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  jobId: z.string().min(2).max(128),
+  dueAt: z.string().max(40).nullable().optional(),
+  notes: z.string().max(1000).default(""),
+});
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 
@@ -265,6 +272,89 @@ async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken
     impersonationAuditId: audit.id,
   });
   return { token, targetEmail: target.email ?? "" };
+}
+async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = issueInvoiceSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid invoice details.");
+  const input = parsed.data;
+  await financeManager(user.uid, input.companyId, input.branchId);
+  const invoiceRef = db.doc(`invoices/${input.jobId}`),
+    jobRef = db.doc(`jobSheets/${input.jobId}`),
+    [invoice, job, lines] = await Promise.all([
+      invoiceRef.get(),
+      jobRef.get(),
+      db.collection("jobLineItems").where("jobId", "==", input.jobId).get(),
+    ]);
+  if (invoice.exists) throw new ApiError(409, "An invoice already exists for this job.");
+  if (
+    !job.exists ||
+    job.get("companyId") !== input.companyId ||
+    job.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Approved job not found.");
+  if (job.get("approvalStatus") !== "approved")
+    throw new ApiError(409, "Approve and lock the estimate before invoicing.");
+  const activeLines = lines.docs.filter((line) => line.get("status") === "active");
+  if (!activeLines.length) throw new ApiError(409, "Add at least one approved invoice item.");
+  const taxableAmount = activeLines.reduce(
+      (sum, line) => sum + Number(line.get("taxableAmount") ?? 0),
+      0,
+    ),
+    taxAmount = activeLines.reduce((sum, line) => sum + Number(line.get("taxAmount") ?? 0), 0),
+    totalAmount = activeLines.reduce((sum, line) => sum + Number(line.get("totalAmount") ?? 0), 0),
+    invoiceNumber = String(job.get("jobNumber")),
+    now = FieldValue.serverTimestamp(),
+    batch = db.batch();
+  batch.create(invoiceRef, {
+    companyId: input.companyId,
+    branchId: input.branchId,
+    jobId: input.jobId,
+    invoiceNumber,
+    customerId: job.get("customerId"),
+    customerName: job.get("customerName"),
+    vehicleId: job.get("vehicleId"),
+    vehicleLabel: job.get("vehicleLabel"),
+    registrationNumber: job.get("registrationNumber"),
+    taxableAmount,
+    taxAmount,
+    totalAmount,
+    paidAmount: 0,
+    balanceAmount: totalAmount,
+    status: "issued",
+    issuedAt: now,
+    dueAt: input.dueAt || null,
+    notes: input.notes.trim(),
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  for (const line of activeLines) {
+    batch.create(db.collection("invoiceLines").doc(), {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      invoiceId: invoiceRef.id,
+      jobLineItemId: line.id,
+      type: line.get("type"),
+      productId: line.get("productId") ?? null,
+      description: line.get("description"),
+      quantity: line.get("quantity"),
+      unit: line.get("unit"),
+      unitPrice: line.get("unitPrice"),
+      discount: line.get("discount"),
+      gstRate: line.get("gstRate"),
+      taxableAmount: line.get("taxableAmount"),
+      taxAmount: line.get("taxAmount"),
+      totalAmount: line.get("totalAmount"),
+      createdAt: now,
+      createdBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+  }
+  batch.update(jobRef, { invoiceTotal: totalAmount, updatedAt: now, updatedBy: user.uid });
+  await batch.commit();
+  return { issued: true, invoiceId: invoiceRef.id, invoiceNumber };
 }
 async function sender(uid: string, companyId: string, branchId: string) {
   const member = await db.doc(`memberships/${uid}_${companyId}`).get();
@@ -782,6 +872,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await createPlatformAdmin(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")
       return reply(response, 200, await impersonateAccount(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/invoices/issue")
+      return reply(response, 200, await issueInvoice(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")
