@@ -25,6 +25,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const {
     user,
     profile,
+    memberships,
     companies,
     branches,
     subscriptions,
@@ -98,6 +99,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const companyBranches = branches.filter(({ companyId }) => companyId === activeCompanyId);
   const subscription = subscriptions.find(({ branchId }) => branchId === activeBranchId);
   const subscriptionTone = subscription?.status === "active" ? "positive" : "warning";
+  const activeMembership = memberships.find(({ companyId }) => companyId === activeCompanyId);
+  const isCompanyOwner = activeMembership?.companyRoles.includes("company_owner") ?? false;
 
   async function handleSignOut() {
     await signOutUser();
@@ -120,7 +123,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <span aria-disabled="true"><NavIcon name="finance" />Finance</span>
           <span aria-disabled="true"><NavIcon name="reports" />Reports</span>
           <span aria-disabled="true"><NavIcon name="team" />Team</span>
-          <span aria-disabled="true"><NavIcon name="settings" />Settings</span>
+          {isCompanyOwner ? (
+            <Link href="/dashboard/communications" className={pathname.startsWith("/dashboard/communications") ? "is-active" : ""}>
+              <NavIcon name="settings" />Communications
+            </Link>
+          ) : null}
         </nav>
         <div className="sidebar-user">
           <div className="user-avatar" aria-hidden="true">{profile.displayName?.charAt(0).toUpperCase() || "D"}</div>

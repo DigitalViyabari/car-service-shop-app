@@ -71,6 +71,12 @@ service cloud.firestore {
       allow update: if platformSuperAdmin() && request.resource.data.companyId == resource.data.companyId && validAuditUpdate();
       allow delete: if false;
     }
+    match /communicationLedger/{entryId} {
+      allow read: if platformSuperAdmin() ||
+        (resource.data.companyId is string && companyLevelMember(resource.data.companyId));
+      // Ledger entries are written by trusted server processes using the Admin SDK.
+      allow write: if false;
+    }
     match /branches/{branchId} {
       allow read: if branchMember(resource.data.companyId, branchId);
       allow write: if false;

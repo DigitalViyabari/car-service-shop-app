@@ -584,6 +584,43 @@ form .dv-button { width: 100%; margin-top: 24px; }
   .admin-header { align-items:start; flex-direction:column; }
   .channel-grid,.credit-grid { grid-template-columns:repeat(2,1fr); }
 }
+.communications-page { display:grid; gap:22px; }
+.communications-summary { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:18px; }
+.communication-card { position:relative; overflow:hidden; padding:24px; border:1px solid #d9e0e8; border-radius:20px; background:linear-gradient(145deg,#111827,#242a32); color:#f8fafc; box-shadow:0 16px 36px rgba(15,23,42,.12); }
+.communication-card::after { content:""; position:absolute; right:-48px; bottom:-68px; width:180px; height:180px; border:28px solid rgba(255,255,255,.035); border-radius:50%; }
+.communication-card--low { border-color:#e64b3c; box-shadow:0 16px 40px rgba(185,28,28,.16); }
+.communication-card-top { display:flex; align-items:center; justify-content:space-between; }
+.channel-symbol { display:grid; place-items:center; width:46px; height:46px; border-radius:13px; background:#e74836; color:#fff; font-size:.75rem; font-weight:900; letter-spacing:.06em; }
+.communication-card>p { margin:22px 0 4px; color:#aeb8c7; }
+.credit-number { display:block; font-size:clamp(2.2rem,4vw,3.5rem); line-height:1; letter-spacing:-.04em; }
+.communication-meta { display:flex; gap:28px; margin-top:22px; color:#aeb8c7; font-size:.86rem; }
+.communication-meta span { display:grid; gap:4px; }
+.communication-meta strong { color:#fff; font-size:.96rem; }
+.low-credit-warning { position:relative; z-index:1; margin-top:18px; padding:10px 12px; border-radius:10px; background:rgba(231,72,54,.16); color:#ffb4a9; font-weight:700; font-size:.86rem; }
+.communications-empty,.ledger-panel { padding:26px; border:1px solid #dce2e9; border-radius:20px; background:#fff; box-shadow:0 12px 28px rgba(15,23,42,.06); }
+.communications-empty>span { color:#e74836; font-weight:800; text-transform:uppercase; letter-spacing:.08em; font-size:.72rem; }
+.communications-empty h2 { margin:8px 0; }
+.communications-empty p { margin:0; color:#687386; }
+.channel-status-row { display:flex; flex-wrap:wrap; gap:10px; }
+.channel-status-row>span { display:flex; gap:14px; justify-content:space-between; min-width:210px; padding:12px 15px; border:1px solid #dde3ea; border-radius:12px; background:#fff; color:#687386; font-size:.84rem; }
+.channel-status-row strong { color:#172033; }
+.ledger-heading { display:flex; align-items:end; justify-content:space-between; gap:18px; margin-bottom:20px; }
+.ledger-heading h2 { margin:5px 0 0; }
+.ledger-heading small { color:#687386; }
+.ledger-table-wrap { overflow-x:auto; }
+.ledger-panel table { width:100%; border-collapse:collapse; white-space:nowrap; }
+.ledger-panel th,.ledger-panel td { padding:13px 12px; border-bottom:1px solid #edf0f4; text-align:left; font-size:.86rem; }
+.ledger-panel th { color:#687386; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; }
+.ledger-empty { padding:38px; border:1px dashed #cbd3dd; border-radius:14px; color:#687386; text-align:center; }
+.channel-pill { display:inline-flex; padding:5px 9px; border-radius:999px; background:#e7edf4; color:#172033; font-weight:800; font-size:.72rem; }
+.channel-pill--whatsapp { background:#dcf7e8; color:#137344; }
+.channel-pill--sms { background:#e8eefb; color:#294e9b; }
+.capitalize { text-transform:capitalize; }
+@media (max-width:760px) {
+  .communications-summary { grid-template-columns:1fr; }
+  .communication-meta { gap:16px; }
+  .channel-status-row>span { width:100%; }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; }
   .car-loader svg { transform:none; }

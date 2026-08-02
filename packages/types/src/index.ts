@@ -275,3 +275,19 @@ export interface CommunicationEntitlement extends AuditFields {
   provider: "msg91";
   status: "active" | "suspended";
 }
+
+export type CommunicationChannel = "sms" | "whatsapp";
+export type CommunicationLedgerType = "usage" | "recharge" | "adjustment" | "refund";
+
+export interface CommunicationLedgerEntry extends AuditFields {
+  id: string;
+  companyId: string;
+  channel: CommunicationChannel;
+  type: CommunicationLedgerType;
+  units: number;
+  amount: number;
+  balanceAfter: number;
+  description: string;
+  referenceId?: string;
+  status: "completed" | "failed" | "reversed";
+}
