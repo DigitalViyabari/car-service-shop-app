@@ -4,6 +4,7 @@ import { getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import nodemailer from "nodemailer";
 import { z } from "zod";
 
 if (!getApps().length) initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
@@ -830,6 +831,232 @@ async function sendMsg91(
   };
 }
 
+function indiaDate(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${value.year}-${value.month}-${value.day}`;
+}
+function dateDifference(expiry: string, today: string) {
+  return Math.round(
+    (Date.parse(`${expiry}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
+  );
+}
+function customerMobile(value: unknown) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return digits.length === 10 ? `91${digits}` : digits;
+}
+async function automatedPaidReminder(
+  channel: "sms" | "whatsapp",
+  companyId: string,
+  branchId: string,
+  recipient: string,
+  idempotencyKey: string,
+  variables: Record<string, string>,
+) {
+  const templateId =
+    channel === "sms"
+      ? process.env.INSURANCE_SMS_TEMPLATE_ID
+      : process.env.INSURANCE_WHATSAPP_TEMPLATE_ID;
+  if (!templateId || recipient.length < 10) return "not_configured";
+  const entitlementRef = db.doc(`communicationEntitlements/${companyId}`),
+    credentialRef = db.doc(`communicationCredentials/${companyId}_${channel}`),
+    ledgerRef = db.doc(`communicationLedger/${companyId}_${idempotencyKey}`),
+    [entitlement, credential] = await Promise.all([entitlementRef.get(), credentialRef.get()]);
+  if (
+    !entitlement.exists ||
+    entitlement.get("status") !== "active" ||
+    entitlement.get(`${channel}Enabled`) !== true ||
+    !credential.exists
+  )
+    return "disabled";
+  const reserved = await db.runTransaction(async (transaction) => {
+    const [plan, prior] = await Promise.all([
+      transaction.get(entitlementRef),
+      transaction.get(ledgerRef),
+    ]);
+    if (prior.exists) return false;
+    const creditField = `${channel}Credits`,
+      credits = Number(plan.get(creditField) ?? 0),
+      rate = Number(plan.get(`${channel}UnitRate`) ?? 0);
+    if (credits < 1) return false;
+    transaction.update(entitlementRef, {
+      [creditField]: credits - 1,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: "insurance_worker",
+    });
+    transaction.create(ledgerRef, {
+      companyId,
+      branchId,
+      channel,
+      type: "usage",
+      units: 1,
+      amount: rate,
+      balanceAfter: credits - 1,
+      description: "Vehicle insurance expiry reminder",
+      referenceId: idempotencyKey,
+      recipientMasked: `******${recipient.slice(-4)}`,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+      createdBy: "insurance_worker",
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: "insurance_worker",
+    });
+    return true;
+  });
+  if (!reserved) return "no_credit_or_duplicate";
+  const data = credential.data() as Credential;
+  try {
+    const result = await sendMsg91(
+      {
+        companyId,
+        branchId,
+        channel,
+        recipient,
+        templateId,
+        languageCode: "en",
+        variables,
+        idempotencyKey,
+        description: "Vehicle insurance expiry reminder",
+      },
+      decrypt(data.authKey),
+      data.integratedNumber ? decrypt(data.integratedNumber) : undefined,
+    );
+    await ledgerRef.update({
+      status: "completed",
+      providerMessageId: result.messageId,
+      providerResponse: result.summary,
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: "insurance_worker",
+    });
+    return "sent";
+  } catch (reason) {
+    await db.runTransaction(async (transaction) => {
+      const plan = await transaction.get(entitlementRef),
+        field = `${channel}Credits`,
+        credits = Number(plan.get(field) ?? 0);
+      transaction.update(entitlementRef, {
+        [field]: credits + 1,
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: "insurance_worker_refund",
+      });
+      transaction.update(ledgerRef, {
+        status: "failed",
+        failureReason:
+          reason instanceof Error ? reason.message.slice(0, 300) : "Provider rejected reminder.",
+        updatedAt: FieldValue.serverTimestamp(),
+        updatedBy: "insurance_worker_refund",
+      });
+    });
+    return "failed_refunded";
+  }
+}
+async function runInsuranceReminderWorker() {
+  if (!process.env.SMTP_PASSWORD) return;
+  const today = indiaDate(),
+    vehicles = await db.collection("vehicles").where("insuranceReminderEnabled", "==", true).get();
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? "smtp.hostinger.com",
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: {
+      user: process.env.SMTP_USER ?? "noreply@digitalviyabari.com",
+      pass: process.env.SMTP_PASSWORD,
+    },
+  });
+  for (const vehicle of vehicles.docs) {
+    const expiry = String(vehicle.get("insuranceExpiryDate") ?? ""),
+      difference = dateDifference(expiry, today);
+    if (![3, 0, -3].includes(difference)) continue;
+    const deliveryRef = db.doc(`insuranceReminderDeliveries/${vehicle.id}_${expiry}_${difference}`),
+      existing = await deliveryRef.get();
+    if (existing.exists) continue;
+    const [customer, company] = await Promise.all([
+      db.doc(`customers/${String(vehicle.get("customerId"))}`).get(),
+      db.doc(`companies/${String(vehicle.get("companyId"))}`).get(),
+    ]);
+    if (!customer.exists || !company.exists) continue;
+    const workshop = String(company.get("name") ?? "Digital Viyabari"),
+      customerName = String(customer.get("name") ?? "Customer"),
+      registration = String(vehicle.get("registrationNumber") ?? "your vehicle"),
+      timing =
+        difference === 3
+          ? "expires in 3 days"
+          : difference === 0
+            ? "expires today"
+            : "expired 3 days ago",
+      message = `Dear ${customerName}, insurance for ${registration} ${timing} (${expiry}). Please renew it on time. Reminder from ${workshop}.`,
+      now = FieldValue.serverTimestamp();
+    await deliveryRef.create({
+      companyId: vehicle.get("companyId"),
+      branchId: vehicle.get("branchId"),
+      vehicleId: vehicle.id,
+      customerId: customer.id,
+      expiryDate: expiry,
+      offsetDays: difference,
+      status: "processing",
+      createdAt: now,
+      createdBy: "insurance_worker",
+      updatedAt: now,
+      updatedBy: "insurance_worker",
+    });
+    let emailStatus = "no_email";
+    if (customer.get("email")) {
+      try {
+        await transporter.sendMail({
+          from: `"${process.env.SMTP_FROM_NAME ?? "Digital Viyabari"}" <${process.env.SMTP_USER ?? "noreply@digitalviyabari.com"}>`,
+          to: String(customer.get("email")),
+          subject: `${registration} insurance ${timing}`,
+          text: message,
+        });
+        emailStatus = "sent";
+      } catch {
+        emailStatus = "failed";
+      }
+    }
+    const recipient = customerMobile(customer.get("phone")),
+      variables = {
+        customer_name: customerName,
+        registration_number: registration,
+        expiry_date: expiry,
+        workshop_name: workshop,
+        reminder_timing: timing,
+      };
+    const [smsStatus, whatsappStatus] = await Promise.all([
+      automatedPaidReminder(
+        "sms",
+        String(vehicle.get("companyId")),
+        String(vehicle.get("branchId")),
+        recipient,
+        `insurance_${vehicle.id}_${expiry}_${difference}_sms`,
+        variables,
+      ),
+      automatedPaidReminder(
+        "whatsapp",
+        String(vehicle.get("companyId")),
+        String(vehicle.get("branchId")),
+        recipient,
+        `insurance_${vehicle.id}_${expiry}_${difference}_whatsapp`,
+        variables,
+      ),
+    ]);
+    await deliveryRef.update({
+      status: "completed",
+      emailStatus,
+      smsStatus,
+      whatsappStatus,
+      message,
+      completedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: "insurance_worker",
+    });
+  }
+}
+
 const server = createServer(async (request, response) => {
   try {
     const url = new URL(request.url ?? "/", "http://localhost");
@@ -901,4 +1128,22 @@ const server = createServer(async (request, response) => {
 });
 server.listen(port, "127.0.0.1", () =>
   process.stdout.write(`DVCS API listening on 127.0.0.1:${port}\n`),
+);
+setTimeout(
+  () =>
+    void runInsuranceReminderWorker().catch((reason) =>
+      process.stderr.write(
+        `Insurance reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
+      ),
+    ),
+  30_000,
+);
+setInterval(
+  () =>
+    void runInsuranceReminderWorker().catch((reason) =>
+      process.stderr.write(
+        `Insurance reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
+      ),
+    ),
+  6 * 60 * 60 * 1000,
 );
