@@ -293,6 +293,12 @@ export interface JobSheet extends AuditFields {
   checkedInAt: string;
   deliveredAt?: string;
   deliveryNotes?: string;
+  qualityCheckedAt?: string;
+  qualityCheckedBy?: string;
+  qualityCheckNotes?: string;
+  cancelledAt?: string;
+  cancelledBy?: string;
+  cancellationReason?: string;
   nextServiceDueAt?: string;
   nextServiceDueKm?: number | null;
   assignedTechnicianIds: string[];

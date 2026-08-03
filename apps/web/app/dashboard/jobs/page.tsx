@@ -167,6 +167,13 @@ export default function JobsPage() {
   const [delayReason, setDelayReason] = useState("");
   const [showDelivery, setShowDelivery] = useState(false);
   const [deliveryDraft, setDeliveryDraft] = useState({ dueAt: "", dueKm: "", notes: "" });
+  const [showAssignmentGate, setShowAssignmentGate] = useState(false),
+    [gateTechnicianId, setGateTechnicianId] = useState("");
+  const [showQualityCheck, setShowQualityCheck] = useState(false),
+    [qualityNotes, setQualityNotes] = useState("");
+  const [showCancellation, setShowCancellation] = useState(false),
+    [cancellationReason, setCancellationReason] = useState("");
+  const [showInvoiceGate, setShowInvoiceGate] = useState(false);
   const membership = memberships.find((item) => item.companyId === activeCompanyId),
     branchRoles =
       membership?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
@@ -548,17 +555,42 @@ export default function JobsPage() {
       setSubmitting(false);
     }
   }
-  async function setStatus(status: JobStatus) {
+  async function setStatus(
+    status: JobStatus,
+    details: {
+      qualityNotes?: string;
+      cancellationReason?: string;
+      deliveryNotes?: string;
+      nextServiceDueAt?: string | null;
+      nextServiceDueKm?: number | null;
+    } = {},
+  ) {
     if (!user || !selected) return;
     setSubmitting(true);
     setError(null);
     try {
-      await updateDoc(doc(firebaseClient.db, "jobSheets", selected.id), {
-        status,
-        deliveredAt: status === "delivered" ? serverTimestamp() : (selected.deliveredAt ?? null),
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid,
-      });
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch("/api/v1/jobs/status", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            ...(appCheck ? { "x-firebase-appcheck": appCheck } : {}),
+          },
+          body: JSON.stringify({
+            companyId: selected.companyId,
+            branchId: selected.branchId,
+            jobId: selected.id,
+            status,
+            qualityNotes: details.qualityNotes ?? "",
+            cancellationReason: details.cancellationReason ?? "",
+            deliveryNotes: details.deliveryNotes ?? "",
+            nextServiceDueAt: details.nextServiceDueAt ?? null,
+            nextServiceDueKm: details.nextServiceDueKm ?? null,
+          }),
+        }),
+        result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to update job status.");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update job status.");
@@ -567,7 +599,7 @@ export default function JobsPage() {
     }
   }
   async function assignTechnician(technicianId: string) {
-    if (!user || !selected || !canAssignTechnician) return;
+    if (!user || !selected || !canAssignTechnician) return false;
     setSubmitting(true);
     setError(null);
     try {
@@ -587,11 +619,35 @@ export default function JobsPage() {
         });
       }
       await load();
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to assign technician.");
+      return false;
     } finally {
       setSubmitting(false);
     }
+  }
+  async function assignAndStart() {
+    if (!gateTechnicianId) return;
+    const assigned = await assignTechnician(gateTechnicianId);
+    if (!assigned) return;
+    setShowAssignmentGate(false);
+    setGateTechnicianId("");
+    await setStatus("in_progress");
+  }
+  async function confirmQualityCheck(event: FormEvent) {
+    event.preventDefault();
+    if (qualityNotes.trim().length < 3) return;
+    await setStatus("ready", { qualityNotes: qualityNotes.trim() });
+    setShowQualityCheck(false);
+    setQualityNotes("");
+  }
+  async function confirmCancellation(event: FormEvent) {
+    event.preventDefault();
+    if (cancellationReason.trim().length < 3) return;
+    await setStatus("cancelled", { cancellationReason: cancellationReason.trim() });
+    setShowCancellation(false);
+    setCancellationReason("");
   }
   async function reportDelay() {
     if (!user || !selected || !assignedToCurrentUser || delayReason.trim().length < 3) return;
@@ -620,42 +676,22 @@ export default function JobsPage() {
       setSubmitting(false);
     }
   }
-  async function completeDelivery(event?: FormEvent) {
+  async function completeDelivery(event?: FormEvent, invoiceConfirmed = Boolean(selectedInvoice)) {
     event?.preventDefault();
     if (!user || !selected || !canAssignTechnician) return;
     setSubmitting(true);
     setError(null);
     try {
-      const now = serverTimestamp(),
-        batch = writeBatch(firebaseClient.db);
-      batch.update(doc(firebaseClient.db, "jobSheets", selected.id), {
-        status: "delivered",
-        deliveredAt: now,
+      if (!invoiceConfirmed) {
+        setShowDelivery(false);
+        setShowInvoiceGate(true);
+        return;
+      }
+      await setStatus("delivered", {
         deliveryNotes: deliveryDraft.notes.trim(),
-        deliveredWithoutInvoice: !selectedInvoice,
         nextServiceDueAt: deliveryDraft.dueAt || null,
         nextServiceDueKm: deliveryDraft.dueKm ? Number(deliveryDraft.dueKm) : null,
-        updatedAt: now,
-        updatedBy: user.uid,
       });
-      if (deliveryDraft.dueAt || deliveryDraft.dueKm) {
-        batch.set(doc(firebaseClient.db, "serviceReminders", selected.id), {
-          companyId: selected.companyId,
-          branchId: selected.branchId,
-          jobId: selected.id,
-          customerId: selected.customerId,
-          vehicleId: selected.vehicleId,
-          registrationNumber: selected.registrationNumber,
-          dueAt: deliveryDraft.dueAt || null,
-          dueKm: deliveryDraft.dueKm ? Number(deliveryDraft.dueKm) : null,
-          status: "scheduled",
-          createdAt: now,
-          createdBy: user.uid,
-          updatedAt: now,
-          updatedBy: user.uid,
-        });
-      }
-      await batch.commit();
       setShowDelivery(false);
       setDeliveryDraft({ dueAt: "", dueKm: "", notes: "" });
       await load();
@@ -678,9 +714,12 @@ export default function JobsPage() {
         const withoutSelected = current.filter(({ jobId }) => jobId !== selected.id);
         return latestInvoice ? [...withoutSelected, latestInvoice] : withoutSelected;
       });
-      if (latestInvoice && latestInvoice.balanceAmount <= 0) {
+      if (!latestInvoice) {
+        setShowInvoiceGate(true);
         setSubmitting(false);
-        await completeDelivery();
+      } else if (latestInvoice.balanceAmount <= 0) {
+        setSubmitting(false);
+        await completeDelivery(undefined, true);
       } else {
         setShowDelivery(true);
         setSubmitting(false);
@@ -871,7 +910,6 @@ export default function JobsPage() {
       "estimate_pending",
       "in_progress",
       "quality_check",
-      "ready",
     ],
     assignedToCurrentUser = Boolean(user && selected?.assignedTechnicianIds?.includes(user.uid)),
     canAdvanceJob = Boolean(
@@ -1351,7 +1389,7 @@ export default function JobsPage() {
                       selected.status === "delivered" ||
                       selected.status === "cancelled"
                     }
-                    onClick={() => void setStatus("cancelled")}
+                    onClick={() => setShowCancellation(true)}
                   >
                     Cancel Job
                   </button>
@@ -1362,7 +1400,16 @@ export default function JobsPage() {
                     disabled={submitting}
                     onClick={() => {
                       if (nextStatus[0] === "approved") setShowApproval(true);
-                      else if (nextStatus[0] === "delivered") {
+                      else if (
+                        nextStatus[0] === "in_progress" &&
+                        !selected.assignedTechnicianIds?.length
+                      ) {
+                        setGateTechnicianId("");
+                        setShowAssignmentGate(true);
+                      } else if (nextStatus[0] === "ready") {
+                        setQualityNotes("");
+                        setShowQualityCheck(true);
+                      } else if (nextStatus[0] === "delivered") {
                         void checkPaymentAndDeliver();
                       } else void setStatus(nextStatus[0]);
                     }}
@@ -1380,6 +1427,182 @@ export default function JobsPage() {
           )}
         </aside>
       </section>
+      {showAssignmentGate && selected ? (
+        <div className="modal-backdrop">
+          <form
+            className="module-modal workflow-gate-modal"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void assignAndStart();
+            }}
+          >
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Assignment Required</span>
+                <h2>Who Will Work On This Vehicle?</h2>
+              </div>
+              <button type="button" onClick={() => setShowAssignmentGate(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <p className="workflow-gate-copy">
+                Assign a technician before moving {selected.jobNumber} to In Progress.
+              </p>
+              <label>
+                Technician
+                <select
+                  value={gateTechnicianId}
+                  onChange={(event) => setGateTechnicianId(event.target.value)}
+                  required
+                >
+                  <option value="">Select Technician</option>
+                  {technicians.map((technician) => (
+                    <option key={technician.userId} value={technician.userId}>
+                      {technician.displayName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowAssignmentGate(false)}
+              >
+                Not Now
+              </button>
+              <button className="dv-button" disabled={submitting || !gateTechnicianId}>
+                {submitting ? "Assigning…" : "Assign & Start Work"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+      {showQualityCheck && selected ? (
+        <div className="modal-backdrop">
+          <form className="module-modal workflow-gate-modal" onSubmit={confirmQualityCheck}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Quality Sign-Off</span>
+                <h2>Confirm The Vehicle Is Ready</h2>
+              </div>
+              <button type="button" onClick={() => setShowQualityCheck(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <p className="workflow-gate-copy">
+                Record the final check before informing the customer.
+              </p>
+              <label>
+                Quality Check Note
+                <textarea
+                  rows={3}
+                  value={qualityNotes}
+                  onChange={(event) => setQualityNotes(event.target.value)}
+                  placeholder="Example: Road test completed; all approved work verified"
+                  required
+                />
+              </label>
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowQualityCheck(false)}
+              >
+                Go Back
+              </button>
+              <button className="dv-button" disabled={submitting || qualityNotes.trim().length < 3}>
+                {submitting ? "Saving…" : "Confirm Ready"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+      {showCancellation && selected ? (
+        <div className="modal-backdrop">
+          <form className="module-modal workflow-gate-modal" onSubmit={confirmCancellation}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Audit Required</span>
+                <h2>Cancel This Job?</h2>
+              </div>
+              <button type="button" onClick={() => setShowCancellation(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <p className="workflow-gate-copy">The reason will remain in the job history.</p>
+              <label>
+                Cancellation Reason
+                <textarea
+                  rows={3}
+                  value={cancellationReason}
+                  onChange={(event) => setCancellationReason(event.target.value)}
+                  placeholder="Example: Customer declined the estimate"
+                  required
+                />
+              </label>
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowCancellation(false)}
+              >
+                Keep Job
+              </button>
+              <button
+                className="dv-button danger-button"
+                disabled={submitting || cancellationReason.trim().length < 3}
+              >
+                {submitting ? "Cancelling…" : "Confirm Cancellation"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+      {showInvoiceGate && selected ? (
+        <div className="modal-backdrop">
+          <section className="module-modal workflow-gate-modal">
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Invoice Required</span>
+                <h2>Issue The Invoice Before Delivery</h2>
+              </div>
+              <button type="button" onClick={() => setShowInvoiceGate(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <p className="workflow-gate-copy">
+                Every completed job needs an invoice. For warranty or free work, issue a ₹0 invoice.
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowInvoiceGate(false)}
+              >
+                Back To Job
+              </button>
+              <button
+                type="button"
+                className="dv-button"
+                onClick={() => {
+                  window.location.href = "/dashboard/invoices";
+                }}
+              >
+                Go To Invoices
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
       {showDelivery && selected ? (
         <div className="modal-backdrop">
           <form className="module-modal delivery-modal" onSubmit={completeDelivery}>
@@ -1401,24 +1624,18 @@ export default function JobsPage() {
               </div>
               <div
                 className={`delivery-payment-warning ${
-                  !selectedInvoice
-                    ? "is-missing"
-                    : selectedInvoice.paidAmount > 0
-                      ? "is-part-paid"
-                      : "is-unpaid"
+                  selectedInvoice && selectedInvoice.paidAmount > 0 ? "is-part-paid" : "is-unpaid"
                 }`}
               >
                 <strong>
-                  {!selectedInvoice
-                    ? "Invoice Has Not Been Issued"
-                    : selectedInvoice.paidAmount > 0
-                      ? "Customer Has Only Partially Paid"
-                      : "Customer Has Not Paid"}
+                  {selectedInvoice && selectedInvoice.paidAmount > 0
+                    ? "Customer Has Only Partially Paid"
+                    : "Customer Has Not Paid"}
                 </strong>
                 <span>
-                  {!selectedInvoice
-                    ? "Issue the invoice first unless this is approved no-charge or warranty work."
-                    : `${currency(selectedInvoice.paidAmount)} paid · ${currency(selectedInvoice.balanceAmount)} still due.`}
+                  {selectedInvoice
+                    ? `${currency(selectedInvoice.paidAmount)} paid · ${currency(selectedInvoice.balanceAmount)} still due.`
+                    : "An invoice is required before delivery."}
                 </span>
               </div>
               <div className="form-grid">
@@ -1469,11 +1686,7 @@ export default function JobsPage() {
                 Cancel
               </button>
               <button className="dv-button" disabled={submitting}>
-                {submitting
-                  ? "Completing…"
-                  : !selectedInvoice
-                    ? "Confirm No-Charge Delivery"
-                    : "Confirm & Deliver Anyway"}
+                {submitting ? "Completing…" : "Confirm Delivery With Balance"}
               </button>
             </footer>
           </form>

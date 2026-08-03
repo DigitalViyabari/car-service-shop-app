@@ -106,6 +106,31 @@ service cloud.firestore {
         request.resource.data.updatedBy == request.auth.uid &&
         request.resource.data.updatedAt == request.time;
     }
+    function validManagedJobTransition(jobId) {
+      return request.resource.data.status == resource.data.status ||
+        (resource.data.status == "check_in" && request.resource.data.status == "inspection") ||
+        (resource.data.status == "inspection" && request.resource.data.status == "estimate_pending") ||
+        (resource.data.status == "estimate_pending" && request.resource.data.status == "approved" &&
+          request.resource.data.approvalStatus == "approved" &&
+          request.resource.data.estimateLocked == true) ||
+        (resource.data.status == "approved" && request.resource.data.status == "in_progress" &&
+          request.resource.data.assignedTechnicianIds is list &&
+          request.resource.data.assignedTechnicianIds.size() > 0) ||
+        (resource.data.status == "in_progress" && request.resource.data.status == "quality_check") ||
+        (resource.data.status == "quality_check" && request.resource.data.status == "ready" &&
+          request.resource.data.qualityCheckNotes is string &&
+          request.resource.data.qualityCheckNotes.size() >= 3 &&
+          request.resource.data.qualityCheckedAt == request.time &&
+          request.resource.data.qualityCheckedBy == request.auth.uid) ||
+        (resource.data.status == "ready" && request.resource.data.status == "delivered" &&
+          exists(/databases/$(database)/documents/invoices/$(jobId))) ||
+        (resource.data.status != "delivered" && resource.data.status != "cancelled" &&
+          request.resource.data.status == "cancelled" &&
+          request.resource.data.cancellationReason is string &&
+          request.resource.data.cancellationReason.size() >= 3 &&
+          request.resource.data.cancelledAt == request.time &&
+          request.resource.data.cancelledBy == request.auth.uid);
+    }
     match /users/{userId} {
       allow read: if signedIn() && request.auth.uid == userId;
       allow write: if false;
@@ -343,7 +368,8 @@ service cloud.firestore {
         (request.resource.data.fuelLevel == null ||
           (request.resource.data.fuelLevel >= 0 && request.resource.data.fuelLevel <= 100)) &&
         request.resource.data.complaints is list && request.resource.data.complaints.size() > 0 && validAuditCreate();
-      allow update: if (operationsManager(resource.data.companyId, resource.data.branchId) ||
+      allow update: if ((operationsManager(resource.data.companyId, resource.data.branchId) &&
+         validManagedJobTransition(jobId)) ||
         (branchTechnician(resource.data.companyId, resource.data.branchId) &&
          resource.data.assignedTechnicianIds is list &&
          request.auth.uid in resource.data.assignedTechnicianIds &&
@@ -359,9 +385,10 @@ service cloud.firestore {
            request.resource.data.delayReportedBy == request.auth.uid) ||
           (resource.data.status == "check_in" && request.resource.data.status == "inspection") ||
           (resource.data.status == "inspection" && request.resource.data.status == "estimate_pending") ||
-          (resource.data.status == "approved" && request.resource.data.status == "in_progress") ||
-          (resource.data.status == "in_progress" && request.resource.data.status == "quality_check") ||
-          (resource.data.status == "quality_check" && request.resource.data.status == "ready")))) &&
+          (resource.data.status == "approved" && request.resource.data.status == "in_progress" &&
+           request.resource.data.assignedTechnicianIds is list &&
+           request.resource.data.assignedTechnicianIds.size() > 0) ||
+          (resource.data.status == "in_progress" && request.resource.data.status == "quality_check")))) &&
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.branchId == resource.data.branchId &&
         request.resource.data.customerId == resource.data.customerId &&

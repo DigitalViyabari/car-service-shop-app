@@ -119,6 +119,27 @@ const createJobSchema = z.object({
   internalNotes: z.string().max(2000),
   promisedAt: z.string().max(40).nullable(),
 });
+const jobStatusSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  jobId: z.string().min(2).max(128),
+  status: z.enum([
+    "check_in",
+    "inspection",
+    "estimate_pending",
+    "approved",
+    "in_progress",
+    "quality_check",
+    "ready",
+    "delivered",
+    "cancelled",
+  ]),
+  qualityNotes: z.string().max(1000).default(""),
+  cancellationReason: z.string().max(500).default(""),
+  deliveryNotes: z.string().max(1000).default(""),
+  nextServiceDueAt: z.string().max(40).nullable().optional(),
+  nextServiceDueKm: z.number().nonnegative().nullable().optional(),
+});
 const createCompanySchema = z.object({
   companyName: z.string().min(2).max(120),
   branchName: z.string().min(2).max(120).default("Main Branch"),
@@ -739,6 +760,125 @@ async function createJob(request: IncomingMessage, user: DecodedIdToken) {
     return number;
   });
   return { created: true, jobId: jobRef.id, jobNumber };
+}
+async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = jobStatusSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid job status details.");
+  const input = parsed.data,
+    member = await db.doc(`memberships/${user.uid}_${input.companyId}`).get(),
+    companyRoles = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    roles = assignments.find((item) => item.branchId === input.branchId)?.roles ?? [],
+    manager =
+      companyRoles.some((role) => ["company_owner", "company_admin"].includes(role)) ||
+      roles.includes("branch_manager"),
+    technician = roles.includes("technician");
+  if (!member.exists || member.get("status") !== "active" || (!manager && !technician))
+    throw new ApiError(403, "Workshop operation access is required.");
+
+  const jobRef = db.doc(`jobSheets/${input.jobId}`),
+    invoiceRef = db.doc(`invoices/${input.jobId}`),
+    job = await jobRef.get();
+  if (
+    !job.exists ||
+    job.get("companyId") !== input.companyId ||
+    job.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Job card not found in this branch.");
+  const current = String(job.get("status")),
+    ordered = [
+      "check_in",
+      "inspection",
+      "estimate_pending",
+      "approved",
+      "in_progress",
+      "quality_check",
+      "ready",
+      "delivered",
+    ],
+    expected = ordered[ordered.indexOf(current) + 1];
+  if (input.status !== "cancelled" && input.status !== expected)
+    throw new ApiError(409, `Move this job from ${current} to ${expected ?? "its next stage"}.`);
+  if (input.status === "cancelled") {
+    if (!manager) throw new ApiError(403, "Only an Owner or Branch Manager can cancel a job.");
+    if (["delivered", "cancelled"].includes(current))
+      throw new ApiError(409, "This job can no longer be cancelled.");
+    if (input.cancellationReason.trim().length < 3)
+      throw new ApiError(400, "Enter a cancellation reason.");
+  }
+  if (technician && !manager) {
+    const assigned = (job.get("assignedTechnicianIds") as string[] | undefined) ?? [];
+    if (!assigned.includes(user.uid)) throw new ApiError(403, "This job is not assigned to you.");
+    if (
+      !expected ||
+      !["inspection", "estimate_pending", "in_progress", "quality_check"].includes(input.status)
+    )
+      throw new ApiError(403, "A manager must complete this stage.");
+  }
+  if (input.status === "in_progress") {
+    const assigned = (job.get("assignedTechnicianIds") as string[] | undefined) ?? [];
+    if (!assigned.length) throw new ApiError(409, "Assign a technician before starting the work.");
+  }
+  if (input.status === "ready") {
+    if (!manager)
+      throw new ApiError(403, "An Owner or Branch Manager must complete the quality check.");
+    if (input.qualityNotes.trim().length < 3)
+      throw new ApiError(400, "Confirm the quality check and add a short note.");
+  }
+  if (input.status === "delivered") {
+    if (!manager) throw new ApiError(403, "Only an Owner or Branch Manager can deliver a vehicle.");
+    if (!(await invoiceRef.get()).exists)
+      throw new ApiError(409, "Issue an invoice before delivering the vehicle.");
+  }
+
+  const now = FieldValue.serverTimestamp(),
+    update: Record<string, unknown> = {
+      status: input.status,
+      updatedAt: now,
+      updatedBy: user.uid,
+    };
+  if (input.status === "ready") {
+    update.qualityCheckedAt = now;
+    update.qualityCheckedBy = user.uid;
+    update.qualityCheckNotes = input.qualityNotes.trim();
+  }
+  if (input.status === "cancelled") {
+    update.cancelledAt = now;
+    update.cancelledBy = user.uid;
+    update.cancellationReason = input.cancellationReason.trim();
+  }
+  if (input.status === "delivered") {
+    update.deliveredAt = now;
+    update.deliveryNotes = input.deliveryNotes.trim();
+    update.nextServiceDueAt = input.nextServiceDueAt ?? null;
+    update.nextServiceDueKm = input.nextServiceDueKm ?? null;
+  }
+  const batch = db.batch();
+  batch.update(jobRef, update);
+  if (
+    input.status === "delivered" &&
+    (input.nextServiceDueAt || typeof input.nextServiceDueKm === "number")
+  ) {
+    batch.set(db.doc(`serviceReminders/${input.jobId}`), {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      jobId: input.jobId,
+      customerId: job.get("customerId"),
+      vehicleId: job.get("vehicleId"),
+      registrationNumber: job.get("registrationNumber"),
+      dueAt: input.nextServiceDueAt ?? null,
+      dueKm: input.nextServiceDueKm ?? null,
+      status: "scheduled",
+      createdAt: now,
+      createdBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+  }
+  await batch.commit();
+  return { updated: true, status: input.status };
 }
 async function listTeam(user: DecodedIdToken, companyId: string, branchId: string) {
   await teamManager(user.uid, companyId, branchId);
@@ -1610,6 +1750,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await issueInvoice(request, user));
     if (request.method === "POST" && url.pathname === "/v1/jobs/create")
       return reply(response, 200, await createJob(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/jobs/status")
+      return reply(response, 200, await changeJobStatus(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")

@@ -1966,6 +1966,44 @@ button.platform-row:hover {
   cursor: pointer;
   font-weight: 750;
 }
+
+.workflow-gate-modal {
+  width: min(620px, calc(100vw - 32px));
+}
+
+.workflow-gate-modal .modal-body {
+  display: grid;
+  gap: 20px;
+}
+
+.workflow-gate-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1.55;
+}
+
+.workflow-gate-modal label {
+  display: grid;
+  gap: 9px;
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.workflow-gate-modal select,
+.workflow-gate-modal textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  padding: 14px 16px;
+}
+
+.danger-button {
+  background: #d92d38;
+}
 @keyframes fade-in {
   from {
     opacity: 0;
