@@ -18,6 +18,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import {
@@ -55,6 +56,58 @@ function paymentDate(value: unknown) {
     return (value as { toDate: () => Date }).toDate();
   return new Date(String(value));
 }
+type InvoiceDateFilter =
+  | "all"
+  | "today"
+  | "yesterday"
+  | "this_month"
+  | "last_month"
+  | "this_financial_year"
+  | "previous_financial_year"
+  | "custom";
+type InvoicePaymentFilter = "all" | "paid" | "part_paid" | "unpaid";
+function dateBounds(filter: InvoiceDateFilter, customFrom: string, customTo: string) {
+  const now = new Date(),
+    dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+    nextDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1),
+    financialYearStart = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  if (filter === "today") return { start: dayStart, end: nextDay(dayStart) };
+  if (filter === "yesterday") {
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    return { start, end: dayStart };
+  }
+  if (filter === "this_month")
+    return {
+      start: new Date(now.getFullYear(), now.getMonth(), 1),
+      end: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    };
+  if (filter === "last_month")
+    return {
+      start: new Date(now.getFullYear(), now.getMonth() - 1, 1),
+      end: new Date(now.getFullYear(), now.getMonth(), 1),
+    };
+  if (filter === "this_financial_year")
+    return {
+      start: new Date(financialYearStart, 3, 1),
+      end: new Date(financialYearStart + 1, 3, 1),
+    };
+  if (filter === "previous_financial_year")
+    return {
+      start: new Date(financialYearStart - 1, 3, 1),
+      end: new Date(financialYearStart, 3, 1),
+    };
+  if (filter === "custom")
+    return {
+      start: customFrom ? new Date(`${customFrom}T00:00:00`) : null,
+      end: customTo ? nextDay(new Date(`${customTo}T00:00:00`)) : null,
+    };
+  return { start: null, end: null };
+}
+function withinDates(value: unknown, bounds: { start: Date | null; end: Date | null }) {
+  const date = paymentDate(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return (!bounds.start || date >= bounds.start) && (!bounds.end || date < bounds.end);
+}
 
 export default function InvoicesPage() {
   const { user, memberships, activeCompany, activeCompanyId, activeBranchId, activeBranch } =
@@ -82,6 +135,13 @@ export default function InvoicesPage() {
     [receipt, setReceipt] = useState<Payment | null>(null),
     [printInvoice, setPrintInvoice] = useState(false),
     [reversalReason, setReversalReason] = useState("");
+  const [dateFilter, setDateFilter] = useState<InvoiceDateFilter>("all"),
+    [paymentFilter, setPaymentFilter] = useState<InvoicePaymentFilter>("all"),
+    [customFrom, setCustomFrom] = useState(""),
+    [customTo, setCustomTo] = useState("");
+  const [showEdit, setShowEdit] = useState(false),
+    [editDueAt, setEditDueAt] = useState(""),
+    [editNotes, setEditNotes] = useState("");
 
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
     companyFinanceRole = (membership?.companyRoles ?? []).some((role) =>
@@ -208,21 +268,31 @@ export default function InvoicesPage() {
   const selectedPayments = payments
     .filter(({ invoiceId }) => invoiceId === selectedId)
     .sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
-  const todayKey = new Date().toLocaleDateString("en-CA"),
-    collectedToday = payments
-      .filter(
-        ({ receivedAt, status }) =>
-          status === "completed" &&
-          paymentDate(receivedAt).toLocaleDateString("en-CA") === todayKey,
-      )
-      .reduce((sum, item) => sum + item.amount, 0);
+  const bounds = dateBounds(dateFilter, customFrom, customTo),
+    filteredInvoices = invoices.filter((invoice) => {
+      const paymentMatches =
+        paymentFilter === "all" ||
+        (paymentFilter === "paid" && invoice.balanceAmount <= 0) ||
+        (paymentFilter === "part_paid" && invoice.paidAmount > 0 && invoice.balanceAmount > 0) ||
+        (paymentFilter === "unpaid" && invoice.paidAmount <= 0 && invoice.balanceAmount > 0);
+      return withinDates(invoice.issuedAt, bounds) && paymentMatches;
+    }),
+    filteredPayments = payments
+      .filter(({ receivedAt, status }) => status === "completed" && withinDates(receivedAt, bounds))
+      .sort((a, b) => paymentDate(b.receivedAt).getTime() - paymentDate(a.receivedAt).getTime()),
+    collectedInPeriod = filteredPayments.reduce((sum, item) => sum + item.amount, 0);
   const totals = {
-    billed: invoices.reduce((sum, item) => sum + item.totalAmount, 0),
-    collected: invoices.reduce((sum, item) => sum + item.paidAmount, 0),
-    due: invoices.reduce((sum, item) => sum + item.balanceAmount, 0),
-    open: invoices.filter(({ balanceAmount, status }) => balanceAmount > 0 && status !== "void")
-      .length,
+    billed: filteredInvoices.reduce((sum, item) => sum + item.totalAmount, 0),
+    collected: filteredInvoices.reduce((sum, item) => sum + item.paidAmount, 0),
+    due: filteredInvoices.reduce((sum, item) => sum + item.balanceAmount, 0),
+    open: filteredInvoices.filter(
+      ({ balanceAmount, status }) => balanceAmount > 0 && status !== "void",
+    ).length,
   };
+  useEffect(() => {
+    if (filteredInvoices.some(({ id }) => id === selectedId)) return;
+    setSelectedId(filteredInvoices[0]?.id ?? null);
+  }, [filteredInvoices, selectedId]);
 
   async function createInvoice(event: FormEvent) {
     event.preventDefault();
@@ -365,6 +435,27 @@ export default function InvoicesPage() {
     }
   }
 
+  async function editInvoice(event: FormEvent) {
+    event.preventDefault();
+    if (!user || !selected || selected.status === "void") return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(firebaseClient.db, "invoices", selected.id), {
+        dueAt: editDueAt || null,
+        notes: editNotes.trim(),
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      });
+      setShowEdit(false);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to update invoice details.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (!canManageFinance)
     return (
       <main className="content">
@@ -397,7 +488,7 @@ export default function InvoicesPage() {
           <strong>+</strong> Issue Invoice
         </button>
       </div>
-      {error && !showCreate && !showPayment ? (
+      {error && !showCreate && !showPayment && !showEdit ? (
         <div className="alert alert--error module-alert">
           {error}
           <button onClick={() => setError(null)}>×</button>
@@ -418,14 +509,69 @@ export default function InvoicesPage() {
           <i className="is-urgent" /> Outstanding — follow up required
         </span>
       </section>
+      <section className="invoice-filters" aria-label="Invoice filters">
+        <label>
+          Invoice Period
+          <select
+            value={dateFilter}
+            onChange={(event) => setDateFilter(event.target.value as InvoiceDateFilter)}
+          >
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="this_month">This Month</option>
+            <option value="last_month">Last Month</option>
+            <option value="this_financial_year">This Financial Year</option>
+            <option value="previous_financial_year">Previous Financial Year</option>
+            <option value="custom">Custom Date</option>
+          </select>
+        </label>
+        <label>
+          Payment Status
+          <select
+            value={paymentFilter}
+            onChange={(event) => setPaymentFilter(event.target.value as InvoicePaymentFilter)}
+          >
+            <option value="all">All Payments</option>
+            <option value="paid">Fully Paid</option>
+            <option value="part_paid">Partially Paid</option>
+            <option value="unpaid">Not Paid</option>
+          </select>
+        </label>
+        {dateFilter === "custom" ? (
+          <>
+            <label>
+              From Date
+              <input
+                type="date"
+                value={customFrom}
+                onChange={(event) => setCustomFrom(event.target.value)}
+              />
+            </label>
+            <label>
+              To Date
+              <input
+                type="date"
+                min={customFrom || undefined}
+                value={customTo}
+                onChange={(event) => setCustomTo(event.target.value)}
+              />
+            </label>
+          </>
+        ) : null}
+        <div className="invoice-filter-result">
+          <strong>{filteredInvoices.length}</strong>
+          <span>Invoices Found</span>
+        </div>
+      </section>
       <section className="invoice-summary">
         <div className="finance-blue">
           <span>Invoiced</span>
           <strong>{money.format(totals.billed)}</strong>
         </div>
         <div className="finance-green">
-          <span>Today</span>
-          <strong>{money.format(collectedToday)}</strong>
+          <span>Payments In Period</span>
+          <strong>{money.format(collectedInPeriod)}</strong>
         </div>
         <div className="finance-navy">
           <span>Collected</span>
@@ -446,20 +592,24 @@ export default function InvoicesPage() {
         <div className="invoice-directory">
           <div className="invoice-directory-head">
             <strong>Branch Invoices</strong>
-            <span>{invoices.length}</span>
+            <span>{filteredInvoices.length}</span>
           </div>
           {loading ? (
             <div className="list-state">
               <span className="spinner" />
               Loading Invoices…
             </div>
-          ) : invoices.length === 0 ? (
+          ) : filteredInvoices.length === 0 ? (
             <div className="list-state list-state--empty">
-              <strong>No Invoices Yet</strong>
-              <p>Approve an estimate, then issue its invoice.</p>
+              <strong>{invoices.length ? "No Matching Invoices" : "No Invoices Yet"}</strong>
+              <p>
+                {invoices.length
+                  ? "Change the period or payment filter."
+                  : "Approve an estimate, then issue its invoice."}
+              </p>
             </div>
           ) : (
-            invoices.map((invoice) => (
+            filteredInvoices.map((invoice) => (
               <button
                 key={invoice.id}
                 className={`invoice-row ${selectedId === invoice.id ? "is-selected" : ""}`}
@@ -498,6 +648,22 @@ export default function InvoicesPage() {
                   </span>
                   <button type="button" onClick={() => setPrintInvoice(true)}>
                     Print Invoice
+                  </button>
+                  <button
+                    type="button"
+                    disabled={selected.status === "void"}
+                    onClick={() => {
+                      setEditDueAt(
+                        selected.dueAt
+                          ? paymentDate(selected.dueAt).toLocaleDateString("en-CA")
+                          : "",
+                      );
+                      setEditNotes(selected.notes ?? "");
+                      setError(null);
+                      setShowEdit(true);
+                    }}
+                  >
+                    Edit Details
                   </button>
                 </div>
               </div>
@@ -591,6 +757,100 @@ export default function InvoicesPage() {
           )}
         </aside>
       </section>
+      <section className="collection-register">
+        <header>
+          <div>
+            <span className="heading-kicker">Payment Register</span>
+            <h2>Who Paid</h2>
+          </div>
+          <strong>{money.format(collectedInPeriod)}</strong>
+        </header>
+        {filteredPayments.length === 0 ? (
+          <div className="list-state list-state--empty">
+            <strong>No Payments In This Period</strong>
+            <p>Completed customer payments will appear here.</p>
+          </div>
+        ) : (
+          <div className="collection-list">
+            {filteredPayments.map((payment) => {
+              const invoice = invoices.find(({ id }) => id === payment.invoiceId);
+              return (
+                <button
+                  type="button"
+                  key={payment.id}
+                  onClick={() => {
+                    if (!invoice) return;
+                    setDateFilter("all");
+                    setPaymentFilter("all");
+                    setSelectedId(invoice.id);
+                  }}
+                >
+                  <span>
+                    <strong>{invoice?.customerName ?? "Customer"}</strong>
+                    <small>
+                      {invoice?.invoiceNumber ?? payment.receiptNumber} ·{" "}
+                      {invoice?.registrationNumber ?? "—"}
+                    </small>
+                  </span>
+                  <span>
+                    <strong>{money.format(payment.amount)}</strong>
+                    <small>
+                      {methods.find(([value]) => value === payment.method)?.[1]} ·{" "}
+                      {shownDate(payment.receivedAt)}
+                    </small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      {showEdit && selected ? (
+        <div className="modal-backdrop">
+          <form className="module-modal" onSubmit={editInvoice}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">{selected.invoiceNumber}</span>
+                <h2>Edit Invoice Details</h2>
+              </div>
+              <button type="button" onClick={() => setShowEdit(false)}>
+                ×
+              </button>
+            </header>
+            {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
+            <div className="modal-body form-grid">
+              <label>
+                Due Date
+                <input
+                  type="date"
+                  value={editDueAt}
+                  onChange={(event) => setEditDueAt(event.target.value)}
+                />
+              </label>
+              <label className="span-2">
+                Invoice Notes
+                <textarea
+                  rows={4}
+                  value={editNotes}
+                  onChange={(event) => setEditNotes(event.target.value)}
+                  placeholder="Warranty, payment or delivery notes"
+                />
+              </label>
+              <p className="span-2 invoice-edit-note">
+                Invoice number, issued items, GST and totals stay locked for accounting safety.
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="cancel-button" onClick={() => setShowEdit(false)}>
+                Cancel
+              </button>
+              <button className="dv-button" disabled={submitting}>
+                {submitting ? "Saving…" : "Save Details"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
       {showCreate ? (
         <div className="modal-backdrop">
           <form className="module-modal" onSubmit={createInvoice}>
