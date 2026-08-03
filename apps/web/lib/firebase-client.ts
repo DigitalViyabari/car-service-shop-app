@@ -21,11 +21,12 @@ async function configuredAppCheck() {
   const siteKey = process.env.NEXT_PUBLIC_FIREBASE_APP_CHECK_SITE_KEY;
   if (!siteKey || siteKey.startsWith("replace_")) return null;
   if (!appCheckPromise) {
-    appCheckPromise = import("firebase/app-check").then(({ initializeAppCheck, ReCaptchaV3Provider }) =>
-      initializeAppCheck(firebaseClient.app, {
-        provider: new ReCaptchaV3Provider(siteKey),
-        isTokenAutoRefreshEnabled: true,
-      }),
+    appCheckPromise = import("firebase/app-check").then(
+      ({ initializeAppCheck, ReCaptchaV3Provider }) =>
+        initializeAppCheck(firebaseClient.app, {
+          provider: new ReCaptchaV3Provider(siteKey),
+          isTokenAutoRefreshEnabled: true,
+        }),
     );
   }
   return appCheckPromise;
@@ -33,7 +34,7 @@ async function configuredAppCheck() {
 
 export async function getFirebaseAppCheckToken() {
   const appCheck = await configuredAppCheck();
-  if (!appCheck) throw new Error("Firebase App Check is not configured for this website.");
+  if (!appCheck) return "";
   const { getToken } = await import("firebase/app-check");
   return (await getToken(appCheck, false)).token;
 }

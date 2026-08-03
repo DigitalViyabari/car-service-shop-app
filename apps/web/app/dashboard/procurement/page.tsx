@@ -93,6 +93,13 @@ export default function ProcurementPage() {
     gstin: "",
     address: "",
   });
+  const [showInlineSupplier, setShowInlineSupplier] = useState(false);
+  const [inlineSupplierDraft, setInlineSupplierDraft] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    gstin: "",
+  });
   const [purchaseDraft, setPurchaseDraft] = useState({
     supplierId: "",
     billNumber: "",
@@ -228,19 +235,29 @@ export default function ProcurementPage() {
   async function savePurchase(event: FormEvent) {
     event.preventDefault();
     if (!user || !activeCompanyId || !activeBranchId || !canInventory) return;
-    const supplier = suppliers.find(({ id }) => id === purchaseDraft.supplierId);
+    const selectedSupplier = suppliers.find(({ id }) => id === purchaseDraft.supplierId);
+    const inlineSupplierName = inlineSupplierDraft.name.trim();
     const validLines = lines.filter(
       ({ productId, quantity, unitCost }) =>
         productId && Number(quantity) > 0 && Number(unitCost) >= 0,
     );
-    if (!supplier || !purchaseDraft.billNumber.trim() || !validLines.length) {
-      setError("Select a supplier, enter the bill number and add at least one valid item.");
+    if (showInlineSupplier && inlineSupplierName.length < 2) {
+      setError("Enter the new supplier name, or choose No Supplier / Cash Purchase.");
+      return;
+    }
+    if (!purchaseDraft.billNumber.trim() || !validLines.length) {
+      setError("Enter the bill number and add at least one valid item.");
       return;
     }
     setSaving(true);
     setError(null);
     try {
       const purchaseRef = doc(collection(firebaseClient.db, "purchaseBills"));
+      const inlineSupplierRef = showInlineSupplier
+        ? doc(collection(firebaseClient.db, "suppliers"))
+        : null;
+      const supplierId = inlineSupplierRef?.id ?? selectedSupplier?.id ?? "";
+      const supplierName = inlineSupplierName || selectedSupplier?.name || "Cash Purchase";
       await runTransaction(firebaseClient.db, async (transaction) => {
         const stockEntries = await Promise.all(
           validLines.map(async (line) => {
@@ -253,11 +270,27 @@ export default function ProcurementPage() {
             return { line, product, inventoryRef, existing, snapshot };
           }),
         );
+        if (inlineSupplierRef) {
+          transaction.set(inlineSupplierRef, {
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            name: inlineSupplierName,
+            phone: inlineSupplierDraft.phone.replace(/\D/g, ""),
+            email: inlineSupplierDraft.email.trim().toLowerCase(),
+            gstin: inlineSupplierDraft.gstin.trim().toUpperCase(),
+            address: "",
+            status: "active",
+            createdAt: serverTimestamp(),
+            createdBy: user.uid,
+            updatedAt: serverTimestamp(),
+            updatedBy: user.uid,
+          });
+        }
         transaction.set(purchaseRef, {
           companyId: activeCompanyId,
           branchId: activeBranchId,
-          supplierId: supplier.id,
-          supplierName: supplier.name,
+          supplierId,
+          supplierName,
           billNumber: purchaseDraft.billNumber.trim().toUpperCase(),
           billDate: purchaseDraft.billDate,
           taxableAmount: purchaseTotals.taxable,
@@ -317,7 +350,7 @@ export default function ProcurementPage() {
               reservedStock: 0,
               reorderLevel: 0,
               rackLocation: "",
-              preferredSupplier: supplier.name,
+              preferredSupplier: supplierName === "Cash Purchase" ? "" : supplierName,
               status: "active",
               createdAt: serverTimestamp(),
               createdBy: user.uid,
@@ -335,7 +368,7 @@ export default function ProcurementPage() {
             stockBefore: before,
             stockAfter: after,
             unitCost,
-            supplierName: supplier.name,
+            supplierName,
             referenceNumber: purchaseDraft.billNumber.trim().toUpperCase(),
             notes: `Purchase ${purchaseRef.id}`,
             occurredAt: serverTimestamp(),
@@ -353,6 +386,8 @@ export default function ProcurementPage() {
         paymentStatus: "unpaid",
         notes: "",
       });
+      setShowInlineSupplier(false);
+      setInlineSupplierDraft({ name: "", phone: "", email: "", gstin: "" });
       setLines([emptyLine()]);
       setModal(null);
       setNotice("Purchase posted and stock updated.");
@@ -614,21 +649,33 @@ export default function ProcurementPage() {
               <form onSubmit={savePurchase} className="purchase-form">
                 <div className="form-grid">
                   <label>
-                    Supplier
+                    Supplier <small>(Optional)</small>
                     <select
-                      required
+                      disabled={showInlineSupplier}
                       value={purchaseDraft.supplierId}
                       onChange={(e) =>
                         setPurchaseDraft({ ...purchaseDraft, supplierId: e.target.value })
                       }
                     >
-                      <option value="">Select Supplier</option>
+                      <option value="">No Supplier / Cash Purchase</option>
                       {suppliers.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name}
                         </option>
                       ))}
                     </select>
+                    <button
+                      type="button"
+                      className="inline-create-toggle"
+                      onClick={() => {
+                        setShowInlineSupplier((value) => !value);
+                        setPurchaseDraft({ ...purchaseDraft, supplierId: "" });
+                      }}
+                    >
+                      {showInlineSupplier
+                        ? "Use Existing / No Supplier"
+                        : "+ Add New Supplier Here"}
+                    </button>
                   </label>
                   <label>
                     Supplier Bill Number
@@ -665,6 +712,68 @@ export default function ProcurementPage() {
                     </select>
                   </label>
                 </div>
+                {showInlineSupplier ? (
+                  <section className="inline-supplier-panel">
+                    <header>
+                      <div>
+                        <strong>New Supplier</strong>
+                        <small>Saved automatically with this purchase.</small>
+                      </div>
+                    </header>
+                    <div>
+                      <label>
+                        Supplier Name *
+                        <input
+                          required
+                          minLength={2}
+                          value={inlineSupplierDraft.name}
+                          onChange={(e) =>
+                            setInlineSupplierDraft({ ...inlineSupplierDraft, name: e.target.value })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Phone
+                        <input
+                          inputMode="numeric"
+                          value={inlineSupplierDraft.phone}
+                          onChange={(e) =>
+                            setInlineSupplierDraft({
+                              ...inlineSupplierDraft,
+                              phone: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Email
+                        <input
+                          type="email"
+                          value={inlineSupplierDraft.email}
+                          onChange={(e) =>
+                            setInlineSupplierDraft({
+                              ...inlineSupplierDraft,
+                              email: e.target.value,
+                            })
+                          }
+                        />
+                      </label>
+                      <label>
+                        GSTIN
+                        <input
+                          maxLength={15}
+                          value={inlineSupplierDraft.gstin}
+                          onChange={(e) =>
+                            setInlineSupplierDraft({
+                              ...inlineSupplierDraft,
+                              gstin: e.target.value.toUpperCase(),
+                            })
+                          }
+                        />
+                      </label>
+                    </div>
+                  </section>
+                ) : null}
                 <div className="purchase-lines">
                   <header>
                     <strong>Bill Items</strong>
@@ -791,10 +900,7 @@ export default function ProcurementPage() {
                   <button type="button" className="cancel-button" onClick={() => setModal(null)}>
                     Cancel
                   </button>
-                  <button
-                    className="dv-button"
-                    disabled={saving || !suppliers.length || !products.length}
-                  >
+                  <button className="dv-button" disabled={saving || !products.length}>
                     {saving ? "Posting…" : "Post Purchase & Update Stock"}
                   </button>
                 </footer>

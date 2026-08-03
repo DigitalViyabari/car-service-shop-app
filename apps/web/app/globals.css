@@ -4343,6 +4343,48 @@ button.platform-row:hover {
 .purchase-form > .form-grid {
   padding: 0 0 20px;
 }
+.purchase-form label > small {
+  color: #7b8591;
+  font-size: 11px;
+  font-weight: 700;
+}
+.inline-create-toggle {
+  width: max-content;
+  min-height: 0 !important;
+  padding: 2px 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #d93036;
+  font-size: 12px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.inline-supplier-panel {
+  margin: 0 0 20px;
+  overflow: hidden;
+  border: 1px solid #d8dee5;
+  border-left: 4px solid #d93036;
+  border-radius: 14px;
+  background: #fff;
+}
+.inline-supplier-panel > header {
+  padding: 13px 16px;
+  background: #f6f7f9;
+}
+.inline-supplier-panel > header div {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.inline-supplier-panel > header small {
+  color: #77818d;
+}
+.inline-supplier-panel > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 15px;
+}
 .purchase-lines {
   border: 1px solid #d9dee5;
   border-radius: 16px;
@@ -4480,6 +4522,11 @@ button.platform-row:hover {
   .purchase-total {
     display: grid;
     gap: 8px;
+  }
+  .inline-supplier-panel > header div,
+  .inline-supplier-panel > div {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 

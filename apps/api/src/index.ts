@@ -81,6 +81,19 @@ const issueInvoiceSchema = z.object({
   dueAt: z.string().max(40).nullable().optional(),
   notes: z.string().max(1000).default(""),
 });
+const createJobSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  customerId: z.string().min(2).max(128),
+  vehicleId: z.string().min(2).max(128),
+  serviceType: z.string().min(2).max(100),
+  priority: z.enum(["normal", "urgent", "breakdown"]),
+  odometer: z.number().nonnegative().nullable(),
+  fuelLevel: z.number().min(0).max(100).nullable(),
+  complaints: z.array(z.string().min(1).max(500)).min(1).max(20),
+  internalNotes: z.string().max(2000),
+  promisedAt: z.string().max(40).nullable(),
+});
 const createCompanySchema = z.object({
   companyName: z.string().min(2).max(120),
   branchName: z.string().min(2).max(120).default("Main Branch"),
@@ -168,7 +181,7 @@ async function body(request: IncomingMessage) {
 async function identity(request: IncomingMessage): Promise<DecodedIdToken> {
   const bearer = request.headers.authorization;
   if (!bearer?.startsWith("Bearer ")) throw new ApiError(401, "Authentication is required.");
-  if (process.env.REQUIRE_APP_CHECK !== "false") {
+  if (process.env.REQUIRE_APP_CHECK === "true") {
     const token = request.headers["x-firebase-appcheck"];
     if (typeof token !== "string") throw new ApiError(401, "App Check is required.");
     try {
@@ -540,6 +553,106 @@ async function financeManager(uid: string, companyId: string, branchId: string) 
       );
   if (!member.exists || member.get("status") !== "active" || !allowed)
     throw new ApiError(403, "Finance Manager access is required.");
+}
+async function jobManager(uid: string, companyId: string, branchId: string) {
+  const member = await db.doc(`memberships/${uid}_${companyId}`).get(),
+    company = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    allowed =
+      company.some((role) => ["company_owner", "company_admin"].includes(role)) ||
+      assignments.some(
+        (item) =>
+          item.branchId === branchId &&
+          item.roles.some((role) => ["branch_manager", "job_creator"].includes(role)),
+      );
+  if (!member.exists || member.get("status") !== "active" || !allowed)
+    throw new ApiError(403, "Job creation access is required.");
+}
+async function createJob(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = createJobSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid job details.");
+  const input = parsed.data;
+  await jobManager(user.uid, input.companyId, input.branchId);
+  const [customer, vehicle, branch] = await Promise.all([
+    db.doc(`customers/${input.customerId}`).get(),
+    db.doc(`vehicles/${input.vehicleId}`).get(),
+    db.doc(`branches/${input.branchId}`).get(),
+  ]);
+  if (
+    !customer.exists ||
+    customer.get("companyId") !== input.companyId ||
+    customer.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Customer not found in this branch.");
+  if (
+    !vehicle.exists ||
+    vehicle.get("companyId") !== input.companyId ||
+    vehicle.get("branchId") !== input.branchId ||
+    vehicle.get("customerId") !== input.customerId
+  )
+    throw new ApiError(404, "Vehicle not found for this customer.");
+  const nowDate = new Date(),
+    startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
+    financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
+    branchSeries = String(branch.get("code") ?? "MB")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .slice(0, 2)
+      .toUpperCase()
+      .padEnd(2, "X"),
+    sequenceRef = db.doc(`jobSequences/${input.companyId}_${input.branchId}_${financialYear}`),
+    jobRef = db.collection("jobSheets").doc();
+  const jobNumber = await db.runTransaction(async (transaction) => {
+    const sequence = await transaction.get(sequenceRef),
+      serial = sequence.exists ? Number(sequence.get("lastNumber") ?? 0) + 1 : 1,
+      number = `${branchSeries}/${financialYear}/${String(serial).padStart(6, "0")}`,
+      now = FieldValue.serverTimestamp();
+    transaction.set(
+      sequenceRef,
+      {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        financialYear,
+        lastNumber: serial,
+        ...(sequence.exists ? {} : { createdAt: now, createdBy: user.uid }),
+        updatedAt: now,
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    );
+    transaction.create(jobRef, {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      jobNumber: number,
+      customerId: customer.id,
+      vehicleId: vehicle.id,
+      customerName: customer.get("name") ?? "Customer",
+      vehicleLabel: `${vehicle.get("make") ?? ""} ${vehicle.get("model") ?? ""}`.trim(),
+      registrationNumber: vehicle.get("registrationNumber") ?? "",
+      status: "check_in",
+      priority: input.priority,
+      serviceType: input.serviceType,
+      odometer: input.odometer,
+      fuelLevel: input.fuelLevel,
+      complaints: input.complaints,
+      internalNotes: input.internalNotes,
+      promisedAt: input.promisedAt,
+      checkedInAt: now,
+      assignedTechnicianIds: [],
+      estimateTotal: 0,
+      invoiceTotal: 0,
+      approvalStatus: "draft",
+      estimateLocked: false,
+      estimateRevision: 1,
+      createdAt: now,
+      createdBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    return number;
+  });
+  return { created: true, jobId: jobRef.id, jobNumber };
 }
 async function listTeam(user: DecodedIdToken, companyId: string, branchId: string) {
   await teamManager(user.uid, companyId, branchId);
@@ -1239,6 +1352,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await impersonateAccount(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/issue")
       return reply(response, 200, await issueInvoice(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/jobs/create")
+      return reply(response, 200, await createJob(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")

@@ -18,7 +18,6 @@ import {
   getDocs,
   increment,
   query,
-  runTransaction,
   serverTimestamp,
   updateDoc,
   where,
@@ -136,7 +135,7 @@ async function sendJobNotification(
 }
 
 export default function JobsPage() {
-  const { user, memberships, activeCompanyId, activeBranchId, activeBranch } = useAuth();
+  const { user, memberships, activeCompanyId, activeBranchId } = useAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]),
     [customers, setCustomers] = useState<Customer[]>([]),
     [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -474,77 +473,35 @@ export default function JobsPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const ref = doc(collection(firebaseClient.db, "jobSheets")),
-        nowDate = new Date(),
-        startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
-        financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
-        branchSeries = (activeBranch?.code || "MB")
-          .replace(/[^A-Za-z0-9]/g, "")
-          .slice(0, 2)
-          .toUpperCase()
-          .padEnd(2, "X"),
-        sequenceRef = doc(
-          firebaseClient.db,
-          "jobSequences",
-          `${activeCompanyId}_${activeBranchId}_${financialYear}`,
-        );
-      await runTransaction(firebaseClient.db, async (transaction) => {
-        const sequence = await transaction.get(sequenceRef),
-          serial = sequence.exists() ? Number(sequence.data().lastNumber) + 1 : 1,
-          jobNumber = `${branchSeries}/${financialYear}/${String(serial).padStart(6, "0")}`,
-          now = serverTimestamp();
-        if (sequence.exists()) {
-          transaction.update(sequenceRef, {
-            lastNumber: serial,
-            updatedAt: now,
-            updatedBy: user.uid,
-          });
-        } else {
-          transaction.set(sequenceRef, {
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch("/api/v1/jobs/create", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            ...(appCheck ? { "x-firebase-appcheck": appCheck } : {}),
+          },
+          body: JSON.stringify({
             companyId: activeCompanyId,
             branchId: activeBranchId,
-            financialYear,
-            lastNumber: serial,
-            createdAt: now,
-            createdBy: user.uid,
-            updatedAt: now,
-            updatedBy: user.uid,
-          });
-        }
-        transaction.set(ref, {
-          companyId: activeCompanyId,
-          branchId: activeBranchId,
-          jobNumber,
-          customerId: selectedCustomer.id,
-          vehicleId: selectedVehicle.id,
-          customerName: selectedCustomer.name,
-          vehicleLabel: `${selectedVehicle.make} ${selectedVehicle.model}`,
-          registrationNumber: selectedVehicle.registrationNumber,
-          status: "check_in",
-          priority: draft.priority,
-          serviceType: draft.serviceType,
-          odometer: draft.odometer ? Number(draft.odometer) : null,
-          fuelLevel: draft.fuelLevel === "unknown" ? null : Number(draft.fuelLevel),
-          complaints,
-          internalNotes: draft.internalNotes.trim(),
-          promisedAt: draft.promisedAt || null,
-          checkedInAt: now,
-          assignedTechnicianIds: [],
-          estimateTotal: 0,
-          invoiceTotal: 0,
-          approvalStatus: "draft",
-          estimateLocked: false,
-          estimateRevision: 1,
-          createdAt: now,
-          createdBy: user.uid,
-          updatedAt: now,
-          updatedBy: user.uid,
-        });
-      });
+            customerId: selectedCustomer.id,
+            vehicleId: selectedVehicle.id,
+            serviceType: draft.serviceType,
+            priority: draft.priority,
+            odometer: draft.odometer ? Number(draft.odometer) : null,
+            fuelLevel: draft.fuelLevel === "unknown" ? null : Number(draft.fuelLevel),
+            complaints,
+            internalNotes: draft.internalNotes.trim(),
+            promisedAt: draft.promisedAt || null,
+          }),
+        }),
+        result = (await response.json()) as { jobId?: string; error?: string };
+      if (!response.ok || !result.jobId)
+        throw new Error(result.error ?? "Unable to create the job card.");
       setShowForm(false);
       setDraft(emptyDraft);
       await load();
-      setSelectedId(ref.id);
+      setSelectedId(result.jobId);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to create the job card.");
     } finally {
