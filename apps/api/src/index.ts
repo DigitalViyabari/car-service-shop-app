@@ -1,13 +1,19 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { getApp, getApps, initializeApp } from "firebase-admin/app";
+import { applicationDefault, cert, getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAppCheck } from "firebase-admin/app-check";
 import { getAuth, type DecodedIdToken } from "firebase-admin/auth";
 import { FieldValue, getFirestore, Timestamp } from "firebase-admin/firestore";
 import nodemailer from "nodemailer";
 import { z } from "zod";
 
-if (!getApps().length) initializeApp({ projectId: process.env.FIREBASE_PROJECT_ID });
+if (!getApps().length) {
+  const credentialPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+  initializeApp({
+    credential: credentialPath ? cert(credentialPath) : applicationDefault(),
+    projectId: process.env.FIREBASE_PROJECT_ID,
+  });
+}
 const app = getApp();
 const db = getFirestore(app);
 const auth = getAuth(app);
