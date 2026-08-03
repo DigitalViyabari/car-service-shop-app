@@ -822,6 +822,12 @@ export default function JobsPage() {
     }
   }
   async function createRevision() {
+    if (selectedInvoice) {
+      setError(
+        `Invoice ${selectedInvoice.invoiceNumber} is already issued. Issued invoices stay locked; create a separate job for additional work.`,
+      );
+      return;
+    }
     if (
       !user ||
       !selected ||

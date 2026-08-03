@@ -280,6 +280,10 @@ export default function ProductsPage() {
       setError("Enter a Product Name and SKU.");
       return;
     }
+    if (draft.trackInventory && Number(draft.currentStock) < 0) {
+      setError("Current Stock cannot be negative.");
+      return;
+    }
     if (
       products.some(
         (product) =>
@@ -332,9 +336,7 @@ export default function ProductsPage() {
       const inventoryValues = {
         purchasePrice: Number(draft.purchasePrice || 0),
         sellingPrice: Number(draft.sellingPrice || 0),
-        ...(editingId
-          ? {}
-          : { currentStock: draft.trackInventory ? Number(draft.currentStock || 0) : 0 }),
+        currentStock: draft.trackInventory ? Number(draft.currentStock || 0) : 0,
         reservedStock: editingId ? (selectedStock?.reservedStock ?? 0) : 0,
         reorderLevel: draft.trackInventory ? Number(draft.reorderLevel || 0) : 0,
         rackLocation: draft.rackLocation.trim(),
@@ -344,8 +346,33 @@ export default function ProductsPage() {
       };
       if (editingId) {
         batch.update(productRef, productValues);
-        if (selectedStock) batch.update(itemRef, inventoryValues);
-        else
+        if (selectedStock) {
+          batch.update(itemRef, inventoryValues);
+          const nextStock = Number(inventoryValues.currentStock),
+            previousStock = Number(selectedStock.currentStock);
+          if (nextStock !== previousStock) {
+            const difference = nextStock - previousStock;
+            batch.set(doc(collection(firebaseClient.db, "inventoryMovements")), {
+              companyId: activeCompanyId,
+              branchId: activeBranchId,
+              productId: productRef.id,
+              inventoryItemId: selectedStock.id,
+              type: difference > 0 ? "adjustment_in" : "adjustment_out",
+              quantity: Math.abs(difference),
+              stockBefore: previousStock,
+              stockAfter: nextStock,
+              unitCost: Number(draft.purchasePrice || selectedStock.purchasePrice || 0),
+              supplier: draft.preferredSupplier.trim(),
+              reference: "Product Edit",
+              notes: "Current Stock updated from the product form.",
+              occurredAt: now,
+              createdAt: now,
+              createdBy: user.uid,
+              updatedAt: now,
+              updatedBy: user.uid,
+            });
+          }
+        } else
           batch.set(itemRef, {
             companyId: activeCompanyId,
             branchId: activeBranchId,
@@ -992,10 +1019,11 @@ export default function ProductsPage() {
                     type="number"
                     min="0"
                     step="0.001"
-                    disabled={!draft.trackInventory || Boolean(editingId)}
+                    disabled={!draft.trackInventory}
                     value={draft.currentStock}
                     onChange={(e) => setDraft({ ...draft, currentStock: e.target.value })}
                   />
+                  <small>Changes are saved in Stock History as an adjustment.</small>
                 </label>
                 <label>
                   Reorder Level
