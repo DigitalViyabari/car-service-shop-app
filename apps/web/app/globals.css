@@ -6998,3 +6998,155 @@ textarea:focus-visible {
     transform: none;
   }
 }
+
+/* Final readability and alignment guardrails.
+   Keep shared operational screens usable without page-specific font overrides. */
+.content {
+  --readable-caption: 12px;
+  --readable-body: 14px;
+}
+
+.content :is(
+  .heading-kicker,
+  .eyebrow,
+  dt,
+  .summary-label,
+  .status-label,
+  .table-heading,
+  .metric-label
+) {
+  font-size: var(--readable-caption);
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+}
+
+.content :is(small, .muted, .helper-text, .field-help) {
+  font-size: var(--readable-caption);
+  line-height: 1.5;
+}
+
+.content :is(input, select, textarea, button) {
+  font-size: var(--readable-body);
+}
+
+.content :is(input, select, textarea) {
+  min-height: 46px;
+}
+
+.content :is(.form-grid, .purchase-form) label {
+  gap: 8px;
+  color: #303844;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.content :is(.form-grid, .purchase-form) :is(input, select, textarea) {
+  padding: 11px 13px;
+}
+
+.content :is(.modal-alert, .success-banner, .error-banner, .info-banner) {
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.content .module-modal {
+  overscroll-behavior: contain;
+}
+
+.content .modal-body {
+  min-width: 0;
+  padding: 24px;
+}
+
+.content .modal-header h2 {
+  line-height: 1.2;
+}
+
+.content .modal-footer {
+  flex-wrap: wrap;
+}
+
+.content .modal-footer :is(button, .dv-button) {
+  min-height: 46px;
+}
+
+.content :is(
+  .customer-summary,
+  .product-summary,
+  .job-summary,
+  .invoice-summary,
+  .report-kpis
+) small {
+  font-size: var(--readable-caption);
+}
+
+.content :is(.customer-row, .job-row, .invoice-row, .team-row, .product-row) {
+  font-size: var(--readable-body);
+}
+
+.content :is(.customer-row, .job-row, .invoice-row, .team-row, .product-row) * {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .content {
+    --readable-caption: 13px;
+    --readable-body: 16px;
+  }
+
+  .content .dashboard-heading {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .content .dashboard-heading > div:first-child {
+    min-width: 0;
+    flex: 1 1 240px;
+  }
+
+  .content .module-modal {
+    width: 100%;
+    max-height: calc(100dvh - 16px);
+    border-radius: 16px;
+  }
+
+  .content .modal-header {
+    padding: 18px;
+  }
+
+  .content .modal-header h2 {
+    font-size: 22px;
+  }
+
+  .content .modal-body,
+  .content .form-grid,
+  .content .purchase-form {
+    padding: 18px;
+  }
+
+  .content .form-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .content .form-grid :is(.span-2, .full) {
+    grid-column: auto;
+  }
+
+  .content .modal-footer {
+    display: grid;
+    grid-template-columns: minmax(96px, auto) minmax(0, 1fr);
+    padding: 14px 18px max(14px, env(safe-area-inset-bottom));
+  }
+
+  .content .modal-footer :is(button, .dv-button) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .mobile-nav :is(a, span, button) {
+    min-height: 48px;
+    font-size: 12px;
+  }
+}

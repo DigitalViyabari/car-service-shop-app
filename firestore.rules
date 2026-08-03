@@ -285,6 +285,9 @@ service cloud.firestore {
         request.resource.data.quantity > 0 && request.resource.data.stockAfter >= 0 &&
         request.resource.data.unitCost >= 0 &&
         exists(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)) &&
+        get(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.companyId == request.resource.data.companyId &&
+        get(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.branchId == request.resource.data.branchId &&
+        get(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.productId == request.resource.data.productId &&
         get(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.currentStock == request.resource.data.stockBefore &&
         getAfter(/databases/$(database)/documents/inventoryItems/$(request.resource.data.inventoryItemId)).data.currentStock == request.resource.data.stockAfter &&
         request.resource.data.occurredAt == request.time && validAuditCreate();
@@ -328,6 +331,8 @@ service cloud.firestore {
           "createdAt", "createdBy", "updatedAt", "updatedBy"
         ]) && branchInventoryManager(request.resource.data.companyId, request.resource.data.branchId) &&
         existsAfter(/databases/$(database)/documents/purchaseBills/$(request.resource.data.purchaseId)) &&
+        getAfter(/databases/$(database)/documents/purchaseBills/$(request.resource.data.purchaseId)).data.companyId == request.resource.data.companyId &&
+        getAfter(/databases/$(database)/documents/purchaseBills/$(request.resource.data.purchaseId)).data.branchId == request.resource.data.branchId &&
         request.resource.data.quantity > 0 && request.resource.data.unitCost >= 0 &&
         request.resource.data.gstRate >= 0 && request.resource.data.gstRate <= 100 &&
         request.resource.data.totalAmount >= 0 && validAuditCreate();
@@ -498,6 +503,8 @@ service cloud.firestore {
           "taxAmount", "totalAmount", "createdAt", "createdBy", "updatedAt", "updatedBy"
         ]) && branchFinanceManager(request.resource.data.companyId, request.resource.data.branchId) &&
         existsAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)) &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.companyId == request.resource.data.companyId &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.branchId == request.resource.data.branchId &&
         request.resource.data.quantity > 0 && request.resource.data.totalAmount >= 0 && validAuditCreate();
       allow update, delete: if false;
     }
@@ -509,7 +516,11 @@ service cloud.firestore {
           "receivedAt", "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
         ]) && branchFinanceManager(request.resource.data.companyId, request.resource.data.branchId) &&
         request.resource.data.amount > 0 && request.resource.data.status == "completed" &&
-        existsAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)) && validAuditCreate();
+        existsAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)) &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.companyId == request.resource.data.companyId &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.branchId == request.resource.data.branchId &&
+        getAfter(/databases/$(database)/documents/invoices/$(request.resource.data.invoiceId)).data.jobId == request.resource.data.jobId &&
+        validAuditCreate();
       allow update, delete: if false;
     }
     match /{collection}/{documentId} {
