@@ -36,10 +36,19 @@ service cloud.firestore {
          membership(companyId).data.branchRoleKeys.hasAny(["branch_manager", "finance_manager"]))
       );
     }
-    function branchMember(companyId, branchId) {
+    function branchAssignedMember(companyId, branchId) {
       return companyMember(companyId) &&
         (companyLevelMember(companyId) ||
          (membership(companyId).data.branchIds is list && branchId in membership(companyId).data.branchIds));
+    }
+    function branchSubscriptionActive(branchId) {
+      return exists(/databases/$(database)/documents/branchSubscriptions/$(branchId)) &&
+        get(/databases/$(database)/documents/branchSubscriptions/$(branchId)).data.status in ["trialing", "active", "grace_period"] &&
+        get(/databases/$(database)/documents/branchSubscriptions/$(branchId)).data.currentPeriodEnd is timestamp &&
+        request.time <= get(/databases/$(database)/documents/branchSubscriptions/$(branchId)).data.currentPeriodEnd;
+    }
+    function branchMember(companyId, branchId) {
+      return branchAssignedMember(companyId, branchId) && branchSubscriptionActive(branchId);
     }
     function operationsManager(companyId, branchId) {
       return branchMember(companyId, branchId) &&
@@ -172,18 +181,20 @@ service cloud.firestore {
       allow read, write: if false;
     }
     match /branches/{branchId} {
-      allow read: if branchMember(resource.data.companyId, branchId);
+      // Assigned users may load branch and subscription metadata so the UI can show renewal status.
+      // Operational collections still require an active subscription through branchMember().
+      allow read: if branchAssignedMember(resource.data.companyId, branchId);
       allow write: if false;
     }
     match /branchSubscriptions/{branchId} {
       allow get: if signedIn() &&
         exists(/databases/$(database)/documents/branches/$(branchId)) &&
-        branchMember(
+        branchAssignedMember(
           get(/databases/$(database)/documents/branches/$(branchId)).data.companyId,
           branchId
         );
       allow list: if resource.data.companyId is string &&
-        branchMember(resource.data.companyId, branchId);
+        branchAssignedMember(resource.data.companyId, branchId);
       allow write: if false;
     }
     match /customers/{customerId} {

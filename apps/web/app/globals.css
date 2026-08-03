@@ -959,7 +959,7 @@ form .dv-button {
   min-width: 850px;
   width: 100%;
   display: grid;
-  grid-template-columns: 1.25fr 1.2fr 1fr 1fr 0.6fr 0.5fr;
+  grid-template-columns: 1.2fr 1.15fr 0.9fr 0.9fr 0.55fr 0.45fr 1.15fr;
   gap: 14px;
   align-items: center;
   padding: 15px 17px;
@@ -970,14 +970,58 @@ form .dv-button {
   text-align: left;
 }
 .platform-row--support {
-  min-width: 650px;
-  grid-template-columns: 1.4fr 1.3fr 0.7fr 0.5fr;
+  min-width: 780px;
+  grid-template-columns: 1.4fr 1.3fr 0.7fr 0.5fr 1.2fr;
 }
 button.platform-row {
   cursor: pointer;
 }
 button.platform-row:hover {
   background: #f7f9fb;
+}
+.platform-row[role="button"] {
+  cursor: pointer;
+}
+.platform-row[role="button"]:hover,
+.platform-row[role="button"]:focus-visible {
+  background: #f7f9fb;
+}
+.platform-subscription-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+}
+.platform-subscription-cell > b {
+  text-transform: capitalize;
+}
+.platform-subscription-cell > small {
+  color: #74808c;
+  font-size: 11px;
+}
+.platform-subscription-cell > button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 1px solid #cfd7df;
+  border-radius: 9px;
+  background: #fff;
+  color: #17202a;
+  font-weight: 800;
+  cursor: pointer;
+}
+.subscription-modal {
+  width: min(560px, calc(100vw - 24px));
+}
+.subscription-note {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 4px solid #3478c8;
+  border-radius: 9px;
+  background: #eef5fc;
+  color: #526273;
+  line-height: 1.5;
 }
 .platform-row-head {
   background: #111820;
@@ -7006,15 +7050,8 @@ textarea:focus-visible {
   --readable-body: 14px;
 }
 
-.content :is(
-  .heading-kicker,
-  .eyebrow,
-  dt,
-  .summary-label,
-  .status-label,
-  .table-heading,
-  .metric-label
-) {
+.content
+  :is(.heading-kicker, .eyebrow, dt, .summary-label, .status-label, .table-heading, .metric-label) {
   font-size: var(--readable-caption);
   line-height: 1.35;
   letter-spacing: 0.06em;
@@ -7071,13 +7108,9 @@ textarea:focus-visible {
   min-height: 46px;
 }
 
-.content :is(
-  .customer-summary,
-  .product-summary,
-  .job-summary,
-  .invoice-summary,
-  .report-kpis
-) small {
+.content
+  :is(.customer-summary, .product-summary, .job-summary, .invoice-summary, .report-kpis)
+  small {
   font-size: var(--readable-caption);
 }
 

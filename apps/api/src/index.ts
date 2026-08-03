@@ -197,6 +197,11 @@ const createCompanySchema = z.object({
   billingCycle: z.enum(["monthly", "yearly"]),
   trialDays: z.number().int().min(0).max(365).default(30),
 });
+const updateSubscriptionSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  plan: z.enum(["trial", "monthly", "yearly"]),
+  trialDays: z.number().int().min(1).max(365).default(30),
+});
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 type RateWindow = { count: number; resetAt: number };
@@ -312,15 +317,20 @@ async function platformOverview(user: DecodedIdToken) {
   const administratorProfile = await db.doc(`users/${user.uid}`).get(),
     platformRoles = (administratorProfile.get("platformRoles") as string[] | undefined) ?? [],
     exposeFinancials = platformRoles.includes("platform_super_admin");
-  const [companies, memberships, invoices, users] = await Promise.all([
+  const [companies, memberships, subscriptions, invoices, users] = await Promise.all([
       db.collection("companies").get(),
       db.collection("memberships").get(),
+      db.collection("branchSubscriptions").get(),
       exposeFinancials ? db.collection("invoices").get() : Promise.resolve(null),
       db.collection("users").get(),
     ]),
     profiles = new Map(users.docs.map((item) => [item.id, item.data()])),
     companyItems = companies.docs.map((company) => {
       const companyId = company.id,
+        companySubscriptions = subscriptions.docs.filter(
+          (item) => item.get("companyId") === companyId,
+        ),
+        primarySubscription = companySubscriptions[0],
         companyInvoices =
           invoices?.docs.filter((item) => item.get("companyId") === companyId) ?? [],
         companyMembers = memberships.docs.filter((item) => item.get("companyId") === companyId),
@@ -354,6 +364,26 @@ async function platformOverview(user: DecodedIdToken) {
             }
           : {}),
         memberCount: companyMembers.length,
+        subscription: primarySubscription
+          ? (() => {
+              const periodEnd = primarySubscription.get("currentPeriodEnd")?.toDate?.() as
+                  Date | undefined,
+                storedStatus = String(primarySubscription.get("status") ?? "active"),
+                effectiveStatus =
+                  periodEnd && periodEnd.getTime() < Date.now() ? "expired" : storedStatus;
+              return {
+                plan:
+                  storedStatus === "trialing"
+                    ? "trial"
+                    : (primarySubscription.get("billingCycle") ??
+                      primarySubscription.get("planId") ??
+                      "monthly"),
+                status: effectiveStatus,
+                currentPeriodEnd: periodEnd?.toISOString() ?? null,
+                branchCount: companySubscriptions.length,
+              };
+            })()
+          : null,
         owners,
       };
     }),
@@ -497,6 +527,64 @@ async function createCompany(request: IncomingMessage, user: DecodedIdToken) {
     branchId,
     ownerUserId: owner.uid,
     subscriptionStatus: input.trialDays > 0 ? "trialing" : "active",
+    currentPeriodEnd: periodEnd.toISOString(),
+  };
+}
+async function updateCompanySubscription(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await platformAdministrator(user.uid)))
+    throw new ApiError(403, "Platform Admin access is required.");
+  const parsed = updateSubscriptionSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Select a valid subscription plan.");
+  const input = parsed.data,
+    company = await db.doc(`companies/${input.companyId}`).get();
+  if (!company.exists) throw new ApiError(404, "Company not found.");
+  const branches = await db.collection("branches").where("companyId", "==", input.companyId).get();
+  if (branches.empty) throw new ApiError(409, "This company has no branch to subscribe.");
+  const periodStart = new Date(),
+    periodEnd = new Date(periodStart);
+  if (input.plan === "trial") periodEnd.setDate(periodEnd.getDate() + input.trialDays);
+  if (input.plan === "monthly") periodEnd.setMonth(periodEnd.getMonth() + 1);
+  if (input.plan === "yearly") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+  const now = FieldValue.serverTimestamp(),
+    batch = db.batch(),
+    status = input.plan === "trial" ? "trialing" : "active",
+    billingCycle = input.plan === "trial" ? "monthly" : input.plan;
+  for (const branch of branches.docs) {
+    batch.set(
+      db.doc(`branchSubscriptions/${branch.id}`),
+      {
+        companyId: input.companyId,
+        branchId: branch.id,
+        planId: input.plan,
+        billingCycle,
+        status,
+        trialDays: input.plan === "trial" ? input.trialDays : 0,
+        currentPeriodStart: Timestamp.fromDate(periodStart),
+        currentPeriodEnd: Timestamp.fromDate(periodEnd),
+        updatedAt: now,
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    );
+  }
+  batch.set(db.collection("platformAuditLogs").doc(), {
+    action: "company_subscription_updated",
+    actorUserId: user.uid,
+    companyId: input.companyId,
+    plan: input.plan,
+    status,
+    branchIds: branches.docs.map((branch) => branch.id),
+    currentPeriodStart: Timestamp.fromDate(periodStart),
+    currentPeriodEnd: Timestamp.fromDate(periodEnd),
+    createdAt: now,
+  });
+  await batch.commit();
+  return {
+    updated: true,
+    companyId: input.companyId,
+    plan: input.plan,
+    status,
+    branchCount: branches.size,
     currentPeriodEnd: periodEnd.toISOString(),
   };
 }
@@ -1060,7 +1148,20 @@ async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
   });
   return { amended: true, invoiceId: input.invoiceId, ...amendmentResult };
 }
+async function requireActiveSubscription(companyId: string, branchId: string) {
+  const subscription = await db.doc(`branchSubscriptions/${branchId}`).get(),
+    periodEnd = subscription.get("currentPeriodEnd")?.toDate?.() as Date | undefined;
+  if (
+    !subscription.exists ||
+    subscription.get("companyId") !== companyId ||
+    !["trialing", "active", "grace_period"].includes(String(subscription.get("status") ?? "")) ||
+    !periodEnd ||
+    periodEnd.getTime() < Date.now()
+  )
+    throw new ApiError(402, "The company subscription has ended. Contact Digital Viyabari.");
+}
 async function sender(uid: string, companyId: string, branchId: string) {
+  await requireActiveSubscription(companyId, branchId);
   const member = await db.doc(`memberships/${uid}_${companyId}`).get();
   if (!member.exists || member.get("status") !== "active")
     throw new ApiError(403, "No active company membership.");
@@ -1081,6 +1182,7 @@ async function sender(uid: string, companyId: string, branchId: string) {
     throw new ApiError(403, "Messaging permission is required.");
 }
 async function teamManager(uid: string, companyId: string, branchId: string) {
+  await requireActiveSubscription(companyId, branchId);
   const member = await db.doc(`memberships/${uid}_${companyId}`).get(),
     company = (member.get("companyRoles") as string[] | undefined) ?? [],
     assignments =
@@ -1095,6 +1197,7 @@ async function teamManager(uid: string, companyId: string, branchId: string) {
   return { owner, manager };
 }
 async function financeManager(uid: string, companyId: string, branchId: string) {
+  await requireActiveSubscription(companyId, branchId);
   const member = await db.doc(`memberships/${uid}_${companyId}`).get(),
     company = (member.get("companyRoles") as string[] | undefined) ?? [],
     assignments =
@@ -1113,6 +1216,7 @@ async function financeManager(uid: string, companyId: string, branchId: string) 
     throw new ApiError(403, "Finance Manager access is required.");
 }
 async function jobManager(uid: string, companyId: string, branchId: string) {
+  await requireActiveSubscription(companyId, branchId);
   const member = await db.doc(`memberships/${uid}_${companyId}`).get(),
     company = (member.get("companyRoles") as string[] | undefined) ?? [],
     assignments =
@@ -1543,6 +1647,7 @@ async function changeStaffStatus(request: IncomingMessage, user: DecodedIdToken)
   return { updated: true, action };
 }
 async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: string) {
+  await requireActiveSubscription(companyId, branchId);
   const member = await db.doc(`memberships/${user.uid}_${companyId}`).get(),
     assignments =
       (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
@@ -1563,6 +1668,7 @@ async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: s
   };
 }
 async function listNotifications(user: DecodedIdToken, companyId: string, branchId: string) {
+  await requireActiveSubscription(companyId, branchId);
   const member = await db.doc(`memberships/${user.uid}_${companyId}`).get(),
     companyRoles = (member.get("companyRoles") as string[] | undefined) ?? [],
     assignments =
@@ -1596,8 +1702,9 @@ async function listNotifications(user: DecodedIdToken, companyId: string, branch
 async function createNotification(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = notificationSchema.safeParse(await body(request));
   if (!parsed.success) throw new ApiError(400, "Invalid notification.");
-  const input = parsed.data,
-    member = await db.doc(`memberships/${user.uid}_${input.companyId}`).get(),
+  const input = parsed.data;
+  await requireActiveSubscription(input.companyId, input.branchId);
+  const member = await db.doc(`memberships/${user.uid}_${input.companyId}`).get(),
     companyRoles = (member.get("companyRoles") as string[] | undefined) ?? [],
     assignments =
       (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
@@ -2339,6 +2446,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await createPlatformAdmin(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/companies")
       return reply(response, 200, await createCompany(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/subscriptions")
+      return reply(response, 200, await updateCompanySubscription(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")
       return reply(response, 200, await impersonateAccount(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/issue")

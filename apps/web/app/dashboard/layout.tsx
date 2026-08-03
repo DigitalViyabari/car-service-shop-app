@@ -242,7 +242,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   const companyBranches = branches.filter(({ companyId }) => companyId === activeCompanyId);
   const subscription = subscriptions.find(({ branchId }) => branchId === activeBranchId);
-  const subscriptionTone = subscription?.status === "active" ? "positive" : "warning";
+  const subscriptionEndValue = subscription?.currentPeriodEnd as unknown,
+    subscriptionEnd =
+      typeof subscriptionEndValue === "string"
+        ? new Date(subscriptionEndValue)
+        : subscriptionEndValue &&
+            typeof subscriptionEndValue === "object" &&
+            "toDate" in subscriptionEndValue
+          ? (subscriptionEndValue as { toDate: () => Date }).toDate()
+          : null,
+    subscriptionExpired =
+      !subscription ||
+      ["expired", "suspended", "cancelled", "past_due"].includes(subscription.status) ||
+      Boolean(subscriptionEnd && subscriptionEnd.getTime() < Date.now()),
+    subscriptionTone =
+      !subscriptionExpired && subscription?.status === "active" ? "positive" : "warning";
   const activeMembership = memberships.find(({ companyId }) => companyId === activeCompanyId);
   const isCompanyOwner = activeMembership?.companyRoles.includes("company_owner") ?? false;
   const activeBranchRoles =
@@ -270,6 +284,24 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         branchId === activeBranchId &&
         roles.some((role) => role === "branch_manager" || role === "inventory_manager"),
     );
+
+  if (subscriptionExpired) {
+    return (
+      <main className="state-page">
+        <div className="state-card">
+          <StatusBadge tone="warning">Subscription Ended</StatusBadge>
+          <h1>Workshop access is paused</h1>
+          <p>The company subscription needs to be renewed by Digital Viyabari.</p>
+          {subscriptionEnd ? (
+            <p className="muted">Access ended on {subscriptionEnd.toLocaleDateString("en-IN")}.</p>
+          ) : null}
+          <button className="link-button" onClick={() => void signOutUser()}>
+            Sign out
+          </button>
+        </div>
+      </main>
+    );
+  }
 
   async function handleSignOut() {
     setShowLogoutConfirmation(false);

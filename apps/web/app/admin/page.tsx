@@ -13,6 +13,12 @@ type Business = {
   collected?: number;
   invoiceCount?: number;
   memberCount: number;
+  subscription: {
+    plan: "trial" | "monthly" | "yearly";
+    status: string;
+    currentPeriodEnd: string | null;
+    branchCount: number;
+  } | null;
   owners: { userId: string; displayName: string; email: string }[];
 };
 type Account = {
@@ -48,6 +54,12 @@ export default function PlatformAdminPage() {
       billingCycle: "monthly",
       trialDays: 30,
     }),
+    [subscriptionDraft, setSubscriptionDraft] = useState<{
+      companyId: string;
+      companyName: string;
+      plan: "trial" | "monthly" | "yearly";
+      trialDays: number;
+    } | null>(null),
     [busy, setBusy] = useState(false);
   const allowed = platformRoles.some((role) =>
       ["platform_super_admin", "platform_support_admin"].includes(role),
@@ -123,6 +135,36 @@ export default function PlatformAdminPage() {
       setAccounts(overview.accounts ?? []);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to create company.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function refreshOverview() {
+    const overview = await api("/api/v1/admin/overview");
+    setBusinesses(overview.companies ?? []);
+    setAccounts(overview.accounts ?? []);
+  }
+  async function updateSubscription() {
+    if (!subscriptionDraft) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await api("/api/v1/admin/subscriptions", {
+        method: "POST",
+        body: JSON.stringify({
+          companyId: subscriptionDraft.companyId,
+          plan: subscriptionDraft.plan,
+          trialDays: Number(subscriptionDraft.trialDays),
+        }),
+      });
+      const companyName = subscriptionDraft.companyName;
+      setSubscriptionDraft(null);
+      await refreshOverview();
+      setMessage(
+        `${companyName} changed to ${result.plan}. Access is valid until ${new Date(result.currentPeriodEnd).toLocaleDateString("en-IN")}.`,
+      );
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to update subscription.");
     } finally {
       setBusy(false);
     }
@@ -351,12 +393,18 @@ export default function PlatformAdminPage() {
             {superAdmin ? <span>Collected</span> : null}
             {superAdmin ? <span>Invoices</span> : null}
             <span>Team</span>
+            <span>Subscription</span>
           </div>
           {businesses.map((item) => (
-            <button
+            <div
               key={item.id}
               className={`platform-row ${superAdmin ? "" : "platform-row--support"}`}
+              role="button"
+              tabIndex={0}
               onClick={() => setSelectedCompany(item.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") setSelectedCompany(item.id);
+              }}
             >
               <strong>{item.name}</strong>
               <span>
@@ -366,7 +414,29 @@ export default function PlatformAdminPage() {
               {superAdmin ? <span>{money.format(item.collected ?? 0)}</span> : null}
               {superAdmin ? <span>{item.invoiceCount ?? 0}</span> : null}
               <span>{item.memberCount}</span>
-            </button>
+              <span className="platform-subscription-cell">
+                <b>{item.subscription?.plan ?? "Not Set"}</b>
+                <small>
+                  {item.subscription?.currentPeriodEnd
+                    ? `Until ${new Date(item.subscription.currentPeriodEnd).toLocaleDateString("en-IN")}`
+                    : "No billing period"}
+                </small>
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setSubscriptionDraft({
+                      companyId: item.id,
+                      companyName: item.name,
+                      plan: item.subscription?.plan ?? "trial",
+                      trialDays: 30,
+                    });
+                  }}
+                >
+                  Manage
+                </button>
+              </span>
+            </div>
           ))}
         </div>
       </section>
@@ -455,6 +525,76 @@ export default function PlatformAdminPage() {
             </button>
           </div>
         </section>
+      ) : null}
+      {subscriptionDraft ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="module-modal subscription-modal" role="dialog" aria-modal="true">
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Manual Subscription</span>
+                <h2>{subscriptionDraft.companyName}</h2>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => setSubscriptionDraft(null)}>
+                ×
+              </button>
+            </header>
+            <div className="form-grid">
+              <label className="span-2">
+                Subscription Type
+                <select
+                  value={subscriptionDraft.plan}
+                  onChange={(event) =>
+                    setSubscriptionDraft({
+                      ...subscriptionDraft,
+                      plan: event.target.value as "trial" | "monthly" | "yearly",
+                    })
+                  }
+                >
+                  <option value="trial">Trial</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </label>
+              {subscriptionDraft.plan === "trial" ? (
+                <label className="span-2">
+                  Trial Days
+                  <input
+                    type="number"
+                    min="1"
+                    max="365"
+                    value={subscriptionDraft.trialDays}
+                    onChange={(event) =>
+                      setSubscriptionDraft({
+                        ...subscriptionDraft,
+                        trialDays: Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+              ) : null}
+              <p className="span-2 subscription-note">
+                Updates every branch and starts a new billing period today.
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button
+                className="cancel-button"
+                type="button"
+                onClick={() => setSubscriptionDraft(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="dv-button"
+                type="button"
+                disabled={busy}
+                onClick={() => void updateSubscription()}
+              >
+                {busy ? "Updating…" : "Apply Subscription"}
+              </button>
+            </footer>
+          </section>
+        </div>
       ) : null}
     </main>
   );
