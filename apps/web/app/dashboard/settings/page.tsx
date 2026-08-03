@@ -290,6 +290,10 @@ export default function BusinessSettingsPage() {
                 FY {financialYearStart}–{String(financialYearStart + 1).slice(-2)} · Consecutive and
                 unique within this financial year.
               </small>
+              <small>
+                On 1 April, the FY code changes automatically and a new sequence starts from the
+                configured starting number. The invoice prefix remains unchanged.
+              </small>
             </label>
             {field("upiId", "UPI ID")}
             {field("bankName", "Bank Name")}

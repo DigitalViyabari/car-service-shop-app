@@ -5666,6 +5666,37 @@ button.platform-row:hover {
   color: #77570f;
   line-height: 1.5;
 }
+.invoice-payment-entry {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) repeat(3, minmax(150px, 0.8fr));
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #b9d7c8;
+  border-left: 4px solid #25a66f;
+  border-radius: 12px;
+  background: #f3fbf7;
+}
+.invoice-payment-entry > div:first-child,
+.invoice-payment-entry label {
+  display: grid;
+  gap: 6px;
+}
+.invoice-payment-entry small {
+  color: #6f7882;
+}
+.payment-full-amount {
+  display: grid;
+  gap: 5px;
+  min-height: 42px;
+  align-content: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #e3f5eb;
+}
+.payment-full-amount strong {
+  color: #13764d;
+}
 @media (max-width: 900px) {
   .invoice-builder-lines article {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -5678,6 +5709,9 @@ button.platform-row:hover {
   .invoice-customer-grid,
   .invoice-builder-meta,
   .invoice-builder-tools {
+    grid-template-columns: 1fr;
+  }
+  .invoice-payment-entry {
     grid-template-columns: 1fr;
   }
 }

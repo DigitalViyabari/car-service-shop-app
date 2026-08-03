@@ -76,6 +76,15 @@ const correctPaymentSchema = z.object({
   notes: z.string().max(500).default(""),
   reason: z.string().min(3).max(300),
 });
+const recordPaymentSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  invoiceId: z.string().min(2).max(128),
+  amount: z.number().positive().max(100000000),
+  method: z.enum(["cash", "upi", "card", "bank_transfer", "cheque", "other"]),
+  reference: z.string().max(200).default(""),
+  notes: z.string().max(500).default(""),
+});
 const supplierPaymentSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -109,6 +118,13 @@ const invoiceLineInputSchema = z.object({
   discount: z.number().nonnegative().max(100000000).default(0),
   gstRate: z.number().min(0).max(100),
 });
+const invoicePaymentInputSchema = z.object({
+  status: z.enum(["unpaid", "part_paid", "full_paid"]).default("unpaid"),
+  amount: z.number().nonnegative().max(100000000).default(0),
+  method: z.enum(["cash", "upi", "card", "bank_transfer", "cheque", "other"]).default("cash"),
+  reference: z.string().max(200).default(""),
+  notes: z.string().max(500).default(""),
+});
 const issueInvoiceSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -119,6 +135,7 @@ const issueInvoiceSchema = z.object({
   dueAt: z.string().max(40).nullable().optional(),
   notes: z.string().max(1000).default(""),
   lines: z.array(invoiceLineInputSchema).min(1).max(100).optional(),
+  payment: invoicePaymentInputSchema.optional(),
 });
 const amendInvoiceSchema = z.object({
   companyId: z.string().min(2).max(128),
@@ -128,6 +145,7 @@ const amendInvoiceSchema = z.object({
   dueAt: z.string().max(40).nullable().optional(),
   notes: z.string().max(1000).default(""),
   lines: z.array(invoiceLineInputSchema).min(1).max(100),
+  payment: invoicePaymentInputSchema.optional(),
 });
 const createJobSchema = z.object({
   companyId: z.string().min(2).max(128),
@@ -577,10 +595,23 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     nowDate = new Date(),
     startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
-    sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`);
-  const invoiceNumber = await db.runTransaction(async (transaction) => {
+    sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`),
+    receiptSequenceRef = db.doc(`receiptSequences/${input.companyId}_${financialYear}`),
+    paymentRef = input.payment?.status !== "unpaid" ? db.collection("payments").doc() : null,
+    requestedPayment =
+      input.payment?.status === "full_paid"
+        ? totalAmount
+        : input.payment?.status === "part_paid"
+          ? input.payment.amount
+          : 0;
+  if (requestedPayment < 0.01 && input.payment?.status !== "unpaid")
+    throw new ApiError(400, "Enter the amount received.");
+  if (requestedPayment > totalAmount + 0.001)
+    throw new ApiError(400, "Payment cannot exceed the invoice total.");
+  const issueResult = await db.runTransaction(async (transaction) => {
     const currentInvoice = await transaction.get(invoiceRef),
       sequence = await transaction.get(sequenceRef),
+      receiptSequence = paymentRef ? await transaction.get(receiptSequenceRef) : null,
       serial = sequence.exists ? Number(sequence.get("lastNumber") ?? 0) + 1 : configuredStart;
     if (currentInvoice.exists) throw new ApiError(409, "An invoice already exists for this job.");
     if (serial > 999999) throw new ApiError(409, "Invoice series limit reached. Contact support.");
@@ -623,7 +654,15 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
         }
       }
     }
-    const now = FieldValue.serverTimestamp();
+    const now = FieldValue.serverTimestamp(),
+      receiptSerial = receiptSequence
+        ? receiptSequence.exists
+          ? Number(receiptSequence.get("lastNumber") ?? 0) + 1
+          : 1
+        : 0,
+      receiptNumber = paymentRef
+        ? `RCPT/${financialYear}/${String(receiptSerial).padStart(6, "0")}`
+        : "";
     transaction.set(
       sequenceRef,
       {
@@ -652,9 +691,14 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       taxableAmount,
       taxAmount,
       totalAmount,
-      paidAmount: 0,
-      balanceAmount: totalAmount,
-      status: "issued",
+      paidAmount: requestedPayment,
+      balanceAmount: Math.max(0, totalAmount - requestedPayment),
+      status:
+        requestedPayment >= totalAmount - 0.001
+          ? "paid"
+          : requestedPayment > 0
+            ? "part_paid"
+            : "issued",
       issuedAt: now,
       dueAt: input.dueAt || null,
       notes: input.notes.trim(),
@@ -663,6 +707,37 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       updatedAt: now,
       updatedBy: user.uid,
     });
+    if (paymentRef && input.payment) {
+      transaction.set(
+        receiptSequenceRef,
+        {
+          companyId: input.companyId,
+          financialYear,
+          lastNumber: receiptSerial,
+          ...(receiptSequence?.exists ? {} : { createdAt: now, createdBy: user.uid }),
+          updatedAt: now,
+          updatedBy: user.uid,
+        },
+        { merge: true },
+      );
+      transaction.create(paymentRef, {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        invoiceId: invoiceRef.id,
+        jobId: input.jobId ?? "",
+        receiptNumber,
+        amount: requestedPayment,
+        method: input.payment.method,
+        reference: input.payment.reference.trim(),
+        notes: input.payment.notes.trim(),
+        receivedAt: now,
+        status: "completed",
+        createdAt: now,
+        createdBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    }
     for (const line of calculatedLines) {
       transaction.create(db.collection("invoiceLines").doc(), {
         companyId: input.companyId,
@@ -720,9 +795,9 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
         updatedAt: now,
         updatedBy: user.uid,
       });
-    return number;
+    return { invoiceNumber: number, receiptNumber };
   });
-  return { issued: true, invoiceId: invoiceRef.id, invoiceNumber };
+  return { issued: true, invoiceId: invoiceRef.id, ...issueResult };
 }
 async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = amendInvoiceSchema.safeParse(await body(request));
@@ -750,9 +825,14 @@ async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
     }),
     taxableAmount = calculatedLines.reduce((sum, line) => sum + line.taxableAmount, 0),
     taxAmount = calculatedLines.reduce((sum, line) => sum + line.taxAmount, 0),
-    totalAmount = calculatedLines.reduce((sum, line) => sum + line.totalAmount, 0);
+    totalAmount = calculatedLines.reduce((sum, line) => sum + line.totalAmount, 0),
+    today = new Date(),
+    startYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1,
+    financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
+    receiptSequenceRef = db.doc(`receiptSequences/${input.companyId}_${financialYear}`),
+    paymentRef = input.payment?.status !== "unpaid" ? db.collection("payments").doc() : null;
 
-  await db.runTransaction(async (transaction) => {
+  const amendmentResult = await db.runTransaction(async (transaction) => {
     const invoice = await transaction.get(invoiceRef);
     if (
       !invoice.exists ||
@@ -763,9 +843,8 @@ async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
     if (invoice.get("status") === "void")
       throw new ApiError(409, "A void invoice cannot be edited.");
 
-    const oldLineSnapshots = await Promise.all(
-        activeLineDocs.map((line) => transaction.get(line.ref)),
-      ),
+    const receiptSequence = paymentRef ? await transaction.get(receiptSequenceRef) : null,
+      oldLineSnapshots = await Promise.all(activeLineDocs.map((line) => transaction.get(line.ref))),
       sourceType = String(invoice.get("sourceType") ?? "job"),
       oldProducts = new Map<string, number>(),
       newProducts = new Map<string, number>();
@@ -822,11 +901,31 @@ async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
     }
 
     const now = FieldValue.serverTimestamp(),
-      paidAmount = Number(invoice.get("paidAmount") ?? 0),
+      previousPaid = Number(invoice.get("paidAmount") ?? 0),
+      availableBalance = Math.max(0, totalAmount - previousPaid),
+      paymentAmount =
+        input.payment?.status === "full_paid"
+          ? availableBalance
+          : input.payment?.status === "part_paid"
+            ? input.payment.amount
+            : 0;
+    if (paymentRef && paymentAmount < 0.01)
+      throw new ApiError(400, "Enter the additional amount received.");
+    if (paymentAmount > availableBalance + 0.001)
+      throw new ApiError(400, "Payment cannot exceed the revised balance.");
+    const paidAmount = previousPaid + paymentAmount,
       balanceAmount = Math.max(0, totalAmount - paidAmount),
       overpaidAmount = Math.max(0, paidAmount - totalAmount),
       amendmentNumber = Number(invoice.get("amendmentCount") ?? 0) + 1,
-      nextStatus = balanceAmount <= 0 ? "paid" : paidAmount > 0 ? "part_paid" : "issued";
+      nextStatus = balanceAmount <= 0 ? "paid" : paidAmount > 0 ? "part_paid" : "issued",
+      receiptSerial = receiptSequence
+        ? receiptSequence.exists
+          ? Number(receiptSequence.get("lastNumber") ?? 0) + 1
+          : 1
+        : 0,
+      receiptNumber = paymentRef
+        ? `RCPT/${financialYear}/${String(receiptSerial).padStart(6, "0")}`
+        : "";
     transaction.create(db.collection("invoiceAmendments").doc(), {
       companyId: input.companyId,
       branchId: input.branchId,
@@ -893,6 +992,37 @@ async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
       updatedAt: now,
       updatedBy: user.uid,
     });
+    if (paymentRef && input.payment) {
+      transaction.set(
+        receiptSequenceRef,
+        {
+          companyId: input.companyId,
+          financialYear,
+          lastNumber: receiptSerial,
+          ...(receiptSequence?.exists ? {} : { createdAt: now, createdBy: user.uid }),
+          updatedAt: now,
+          updatedBy: user.uid,
+        },
+        { merge: true },
+      );
+      transaction.create(paymentRef, {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        invoiceId: invoice.id,
+        jobId: String(invoice.get("jobId") ?? ""),
+        receiptNumber,
+        amount: paymentAmount,
+        method: input.payment.method,
+        reference: input.payment.reference.trim(),
+        notes: input.payment.notes.trim(),
+        receivedAt: now,
+        status: "completed",
+        createdAt: now,
+        createdBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    }
     const jobId = String(invoice.get("jobId") ?? "");
     if (jobId)
       transaction.update(db.doc(`jobSheets/${jobId}`), {
@@ -926,8 +1056,9 @@ async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
         updatedBy: user.uid,
       });
     }
+    return { receiptNumber };
   });
-  return { amended: true, invoiceId: input.invoiceId };
+  return { amended: true, invoiceId: input.invoiceId, ...amendmentResult };
 }
 async function sender(uid: string, companyId: string, branchId: string) {
   const member = await db.doc(`memberships/${uid}_${companyId}`).get();
@@ -1548,6 +1679,78 @@ async function reversePayment(request: IncomingMessage, user: DecodedIdToken) {
   });
 }
 
+async function recordInvoicePayment(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = recordPaymentSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid payment details.");
+  const input = parsed.data;
+  await financeManager(user.uid, input.companyId, input.branchId);
+  const invoiceRef = db.doc(`invoices/${input.invoiceId}`),
+    paymentRef = db.collection("payments").doc(),
+    today = new Date(),
+    startYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1,
+    financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
+    sequenceRef = db.doc(`receiptSequences/${input.companyId}_${financialYear}`);
+  return db.runTransaction(async (transaction) => {
+    const [invoice, sequence] = await Promise.all([
+      transaction.get(invoiceRef),
+      transaction.get(sequenceRef),
+    ]);
+    if (
+      !invoice.exists ||
+      invoice.get("companyId") !== input.companyId ||
+      invoice.get("branchId") !== input.branchId
+    )
+      throw new ApiError(404, "Invoice not found.");
+    if (invoice.get("status") === "void") throw new ApiError(409, "A void invoice cannot be paid.");
+    const balance = Number(invoice.get("balanceAmount") ?? 0),
+      paid = Number(invoice.get("paidAmount") ?? 0);
+    if (input.amount > balance + 0.001)
+      throw new ApiError(409, "Payment exceeds the latest invoice balance.");
+    const serial = sequence.exists ? Number(sequence.get("lastNumber") ?? 0) + 1 : 1,
+      receiptNumber = `RCPT/${financialYear}/${String(serial).padStart(6, "0")}`,
+      nextPaid = paid + input.amount,
+      nextBalance = Math.max(0, balance - input.amount),
+      now = FieldValue.serverTimestamp();
+    transaction.set(
+      sequenceRef,
+      {
+        companyId: input.companyId,
+        financialYear,
+        lastNumber: serial,
+        ...(sequence.exists ? {} : { createdAt: now, createdBy: user.uid }),
+        updatedAt: now,
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    );
+    transaction.update(invoiceRef, {
+      paidAmount: nextPaid,
+      balanceAmount: nextBalance,
+      status: nextBalance <= 0.001 ? "paid" : "part_paid",
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    transaction.create(paymentRef, {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      invoiceId: invoice.id,
+      jobId: String(invoice.get("jobId") ?? ""),
+      receiptNumber,
+      amount: input.amount,
+      method: input.method,
+      reference: input.reference.trim(),
+      notes: input.notes.trim(),
+      receivedAt: now,
+      status: "completed",
+      createdAt: now,
+      createdBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    return { recorded: true, paymentId: paymentRef.id, receiptNumber };
+  });
+}
+
 async function correctPayment(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = correctPaymentSchema.safeParse(await body(request));
   if (!parsed.success) throw new ApiError(400, "Enter a valid payment correction.");
@@ -2158,6 +2361,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await changeStaffStatus(request, user));
     if (request.method === "POST" && url.pathname === "/v1/payments/reverse")
       return reply(response, 200, await reversePayment(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/payments/record")
+      return reply(response, 200, await recordInvoicePayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/payments/correct")
       return reply(response, 200, await correctPayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/purchases/payments")

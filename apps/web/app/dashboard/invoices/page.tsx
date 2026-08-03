@@ -12,16 +12,7 @@ import type {
   PaymentMethod,
   Product,
 } from "@dvcs/types";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  runTransaction,
-  serverTimestamp,
-  where,
-} from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import {
   useCallback,
   useEffect,
@@ -78,6 +69,7 @@ type InvoiceBuilderLine = {
   discount: number;
   gstRate: number;
 };
+type InvoicePaymentChoice = "unpaid" | "part_paid" | "full_paid";
 function dateBounds(filter: InvoiceDateFilter, customFrom: string, customTo: string) {
   const now = new Date(),
     dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()),
@@ -144,7 +136,11 @@ export default function InvoicesPage() {
     [counterCustomerName, setCounterCustomerName] = useState("Walk-In Customer"),
     [builderLines, setBuilderLines] = useState<InvoiceBuilderLine[]>([]),
     [dueAt, setDueAt] = useState(""),
-    [notes, setNotes] = useState("");
+    [notes, setNotes] = useState(""),
+    [createPaymentChoice, setCreatePaymentChoice] = useState<InvoicePaymentChoice>("unpaid"),
+    [createPaidAmount, setCreatePaidAmount] = useState(""),
+    [createPaymentMethod, setCreatePaymentMethod] = useState<PaymentMethod>("cash"),
+    [createPaymentReference, setCreatePaymentReference] = useState("");
   const [showPayment, setShowPayment] = useState(false),
     [paymentAmount, setPaymentAmount] = useState(""),
     [method, setMethod] = useState<PaymentMethod>("upi"),
@@ -163,7 +159,12 @@ export default function InvoicesPage() {
     [editDueAt, setEditDueAt] = useState(""),
     [editNotes, setEditNotes] = useState(""),
     [editLines, setEditLines] = useState<InvoiceBuilderLine[]>([]),
-    [amendmentReason, setAmendmentReason] = useState("");
+    [amendmentReason, setAmendmentReason] = useState(""),
+    [editPaymentChoice, setEditPaymentChoice] = useState<InvoicePaymentChoice>("unpaid"),
+    [editPaidAmount, setEditPaidAmount] = useState(""),
+    [editPaymentMethod, setEditPaymentMethod] = useState<PaymentMethod>("cash"),
+    [editPaymentReference, setEditPaymentReference] = useState(""),
+    [lastReceiptNumber, setLastReceiptNumber] = useState("");
   const [editPayment, setEditPayment] = useState<Payment | null>(null),
     [correctionAmount, setCorrectionAmount] = useState(""),
     [correctionMethod, setCorrectionMethod] = useState<PaymentMethod>("upi"),
@@ -494,6 +495,13 @@ export default function InvoicesPage() {
       (invoiceMode === "job" && !selectedJob)
     )
       return;
+    if (
+      createPaymentChoice === "part_paid" &&
+      (Number(createPaidAmount) <= 0 || Number(createPaidAmount) >= builderTotals.total)
+    ) {
+      setError("Enter the partial amount received. It must be below the invoice total.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -524,15 +532,33 @@ export default function InvoicesPage() {
               discount: line.discount,
               gstRate: line.gstRate,
             })),
+            payment: {
+              status: createPaymentChoice,
+              amount:
+                createPaymentChoice === "full_paid"
+                  ? builderTotals.total
+                  : Number(createPaidAmount || 0),
+              method: createPaymentMethod,
+              reference: createPaymentReference.trim(),
+              notes: "Payment recorded while issuing invoice",
+            },
           }),
         }),
-        result = (await response.json()) as { invoiceId?: string; error?: string };
+        result = (await response.json()) as {
+          invoiceId?: string;
+          receiptNumber?: string;
+          error?: string;
+        };
       if (!response.ok) throw new Error(result.error ?? "Unable to issue invoice.");
       setShowCreate(false);
       setJobId("");
       setBuilderLines([]);
       setDueAt("");
       setNotes("");
+      setCreatePaymentChoice("unpaid");
+      setCreatePaidAmount("");
+      setCreatePaymentReference("");
+      setLastReceiptNumber(result.receiptNumber ?? "");
       await load();
       setSelectedId(result.invoiceId ?? selectedJob?.id ?? null);
     } catch (reason) {
@@ -553,49 +579,34 @@ export default function InvoicesPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const paymentRef = doc(collection(firebaseClient.db, "payments")),
-        date = new Date().toISOString().slice(2, 10).replaceAll("-", ""),
-        receiptNumber = `RCPT-${date}-${paymentRef.id.slice(0, 5).toUpperCase()}`;
-      await runTransaction(firebaseClient.db, async (transaction) => {
-        const invoiceRef = doc(firebaseClient.db, "invoices", selected.id),
-          snapshot = await transaction.get(invoiceRef);
-        if (!snapshot.exists()) throw new Error("Invoice no longer exists.");
-        const current = snapshot.data() as Invoice,
-          balance = Number(current.balanceAmount),
-          paid = Number(current.paidAmount);
-        if (amount > balance + 0.001) throw new Error("Payment exceeds the latest balance.");
-        const nextPaid = paid + amount,
-          nextBalance = Math.max(0, balance - amount),
-          now = serverTimestamp();
-        transaction.update(invoiceRef, {
-          paidAmount: nextPaid,
-          balanceAmount: nextBalance,
-          status: nextBalance <= 0.001 ? "paid" : "part_paid",
-          updatedAt: now,
-          updatedBy: user.uid,
-        });
-        transaction.set(paymentRef, {
-          companyId: activeCompanyId,
-          branchId: activeBranchId,
-          invoiceId: selected.id,
-          jobId: selected.jobId,
-          receiptNumber,
-          amount,
-          method,
-          reference: reference.trim(),
-          notes: paymentNotes.trim(),
-          receivedAt: now,
-          status: "completed",
-          createdAt: now,
-          createdBy: user.uid,
-          updatedAt: now,
-          updatedBy: user.uid,
-        });
-      });
+      const [idToken, appCheck] = await Promise.all([
+          user.getIdToken(),
+          getFirebaseAppCheckToken(),
+        ]),
+        response = await fetch("/api/v1/payments/record", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${idToken}`,
+            "x-firebase-appcheck": appCheck,
+          },
+          body: JSON.stringify({
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            invoiceId: selected.id,
+            amount,
+            method,
+            reference: reference.trim(),
+            notes: paymentNotes.trim(),
+          }),
+        }),
+        result = (await response.json()) as { receiptNumber?: string; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to record payment.");
       setShowPayment(false);
       setPaymentAmount("");
       setReference("");
       setPaymentNotes("");
+      setLastReceiptNumber(result.receiptNumber ?? "");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to record payment.");
@@ -651,6 +662,18 @@ export default function InvoicesPage() {
       setError("Enter why this issued invoice is being edited.");
       return;
     }
+    const revisedBalance = Math.max(0, editTotals.total - selected.paidAmount);
+    if (
+      editPaymentChoice === "part_paid" &&
+      (Number(editPaidAmount) <= 0 || Number(editPaidAmount) >= revisedBalance)
+    ) {
+      setError("Enter the additional partial payment below the revised balance.");
+      return;
+    }
+    if (editPaymentChoice !== "unpaid" && revisedBalance <= 0) {
+      setError("This revised invoice is already fully covered by recorded payments.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
@@ -682,12 +705,24 @@ export default function InvoicesPage() {
               discount: line.discount,
               gstRate: line.gstRate,
             })),
+            payment: {
+              status: editPaymentChoice,
+              amount:
+                editPaymentChoice === "full_paid" ? revisedBalance : Number(editPaidAmount || 0),
+              method: editPaymentMethod,
+              reference: editPaymentReference.trim(),
+              notes: "Payment recorded while editing invoice",
+            },
           }),
         }),
-        result = (await response.json()) as { error?: string };
+        result = (await response.json()) as { receiptNumber?: string; error?: string };
       if (!response.ok) throw new Error(result.error ?? "Unable to edit invoice.");
       setShowEdit(false);
       setAmendmentReason("");
+      setEditPaymentChoice("unpaid");
+      setEditPaidAmount("");
+      setEditPaymentReference("");
+      setLastReceiptNumber(result.receiptNumber ?? "");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to edit invoice.");
@@ -788,6 +823,12 @@ export default function InvoicesPage() {
         <div className="alert alert--error module-alert">
           {error}
           <button onClick={() => setError(null)}>×</button>
+        </div>
+      ) : null}
+      {lastReceiptNumber ? (
+        <div className="alert alert--success module-alert">
+          Payment recorded · Receipt {lastReceiptNumber}
+          <button onClick={() => setLastReceiptNumber("")}>×</button>
         </div>
       ) : null}
       <nav className="finance-view-tabs" aria-label="Invoice views">
@@ -1063,6 +1104,10 @@ export default function InvoicesPage() {
                         })),
                       );
                       setAmendmentReason("");
+                      setEditPaymentChoice("unpaid");
+                      setEditPaidAmount("");
+                      setEditPaymentMethod("cash");
+                      setEditPaymentReference("");
                       setError(null);
                       setShowEdit(true);
                     }}
@@ -1364,6 +1409,74 @@ export default function InvoicesPage() {
                   />
                 </label>
               </div>
+              <section className="invoice-payment-entry">
+                <div>
+                  <strong>Payment Received</strong>
+                  <small>A receipt number is generated automatically.</small>
+                </div>
+                <label>
+                  Payment Status
+                  <select
+                    value={editPaymentChoice}
+                    onChange={(event) => {
+                      setEditPaymentChoice(event.target.value as InvoicePaymentChoice);
+                      setEditPaidAmount("");
+                    }}
+                  >
+                    <option value="unpaid">Unpaid</option>
+                    <option value="part_paid">Part Paid</option>
+                    <option value="full_paid">Full Paid</option>
+                  </select>
+                </label>
+                {editPaymentChoice !== "unpaid" ? (
+                  <>
+                    {editPaymentChoice === "part_paid" ? (
+                      <label>
+                        Additional Amount Received
+                        <input
+                          type="number"
+                          min="0.01"
+                          max={Math.max(0, editTotals.total - selected.paidAmount)}
+                          step="0.01"
+                          value={editPaidAmount}
+                          onChange={(event) => setEditPaidAmount(event.target.value)}
+                          required
+                        />
+                      </label>
+                    ) : (
+                      <div className="payment-full-amount">
+                        <small>Amount Received Now</small>
+                        <strong>
+                          {money.format(Math.max(0, editTotals.total - selected.paidAmount))}
+                        </strong>
+                      </div>
+                    )}
+                    <label>
+                      Payment Method
+                      <select
+                        value={editPaymentMethod}
+                        onChange={(event) =>
+                          setEditPaymentMethod(event.target.value as PaymentMethod)
+                        }
+                      >
+                        {methods.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Reference (Optional)
+                      <input
+                        value={editPaymentReference}
+                        onChange={(event) => setEditPaymentReference(event.target.value)}
+                        placeholder="UPI / Bank / Cheque reference"
+                      />
+                    </label>
+                  </>
+                ) : null}
+              </section>
               <label>
                 Reason For Edit *
                 <input
@@ -1622,6 +1735,72 @@ export default function InvoicesPage() {
                   />
                 </label>
               </div>
+              <section className="invoice-payment-entry">
+                <div>
+                  <strong>Payment Received</strong>
+                  <small>Choose once. The receipt number is automatic.</small>
+                </div>
+                <label>
+                  Payment Status
+                  <select
+                    value={createPaymentChoice}
+                    onChange={(event) => {
+                      setCreatePaymentChoice(event.target.value as InvoicePaymentChoice);
+                      setCreatePaidAmount("");
+                    }}
+                  >
+                    <option value="unpaid">Unpaid</option>
+                    <option value="part_paid">Part Paid</option>
+                    <option value="full_paid">Full Paid</option>
+                  </select>
+                </label>
+                {createPaymentChoice !== "unpaid" ? (
+                  <>
+                    {createPaymentChoice === "part_paid" ? (
+                      <label>
+                        Amount Received
+                        <input
+                          type="number"
+                          min="0.01"
+                          max={builderTotals.total}
+                          step="0.01"
+                          value={createPaidAmount}
+                          onChange={(event) => setCreatePaidAmount(event.target.value)}
+                          required
+                        />
+                      </label>
+                    ) : (
+                      <div className="payment-full-amount">
+                        <small>Amount Received</small>
+                        <strong>{money.format(builderTotals.total)}</strong>
+                      </div>
+                    )}
+                    <label>
+                      Payment Method
+                      <select
+                        value={createPaymentMethod}
+                        onChange={(event) =>
+                          setCreatePaymentMethod(event.target.value as PaymentMethod)
+                        }
+                      >
+                        {methods.map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Reference (Optional)
+                      <input
+                        value={createPaymentReference}
+                        onChange={(event) => setCreatePaymentReference(event.target.value)}
+                        placeholder="UPI / Bank / Cheque reference"
+                      />
+                    </label>
+                  </>
+                ) : null}
+              </section>
               <div className="invoice-preview">
                 <span>
                   Items <strong>{builderLines.length}</strong>
