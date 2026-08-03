@@ -70,6 +70,15 @@ const correctPaymentSchema = z.object({
   notes: z.string().max(500).default(""),
   reason: z.string().min(3).max(300),
 });
+const supplierPaymentSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  purchaseId: z.string().min(8).max(128),
+  amount: z.number().positive().max(100000000),
+  method: z.enum(["cash", "upi", "card", "bank_transfer", "cheque", "other"]),
+  reference: z.string().max(200).default(""),
+  notes: z.string().max(500).default(""),
+});
 const notificationSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -998,6 +1007,70 @@ async function correctPayment(request: IncomingMessage, user: DecodedIdToken) {
   });
 }
 
+async function recordSupplierPayment(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = supplierPaymentSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid supplier payment details.");
+  const { companyId, branchId, purchaseId, amount, method, reference, notes } = parsed.data;
+  await financeManager(user.uid, companyId, branchId);
+  const purchaseRef = db.doc(`purchaseBills/${purchaseId}`),
+    paymentRef = db.collection("purchasePayments").doc();
+  return db.runTransaction(async (transaction) => {
+    const purchase = await transaction.get(purchaseRef);
+    if (
+      !purchase.exists ||
+      purchase.get("companyId") !== companyId ||
+      purchase.get("branchId") !== branchId
+    )
+      throw new ApiError(404, "Purchase bill not found.");
+    const total = Number(purchase.get("totalAmount") ?? 0),
+      previousPaid =
+        purchase.get("paymentStatus") === "paid" ? total : Number(purchase.get("paidAmount") ?? 0),
+      balanceBefore = Math.max(0, total - previousPaid);
+    if (amount > balanceBefore + 0.001)
+      throw new ApiError(409, "Supplier payment cannot exceed the outstanding bill balance.");
+    const paid = previousPaid + amount,
+      balance = Math.max(0, total - paid),
+      status = balance <= 0.001 ? "paid" : "part_paid",
+      now = FieldValue.serverTimestamp(),
+      date = new Date().toISOString().slice(2, 10).replaceAll("-", ""),
+      paymentNumber = `SP-${date}-${paymentRef.id.slice(0, 5).toUpperCase()}`;
+    transaction.create(paymentRef, {
+      companyId,
+      branchId,
+      purchaseId,
+      supplierId: String(purchase.get("supplierId") ?? ""),
+      supplierName: String(purchase.get("supplierName") ?? "Supplier"),
+      billNumber: String(purchase.get("billNumber") ?? ""),
+      paymentNumber,
+      amount,
+      method,
+      reference: reference.trim(),
+      notes: notes.trim(),
+      paidAt: now,
+      status: "completed",
+      createdAt: now,
+      createdBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    transaction.update(purchaseRef, {
+      paidAmount: paid,
+      balanceAmount: balance,
+      paymentStatus: status,
+      lastPaidAt: now,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    return {
+      recorded: true,
+      paymentId: paymentRef.id,
+      paymentNumber,
+      paidAmount: paid,
+      balanceAmount: balance,
+    };
+  });
+}
+
 async function configure(request: IncomingMessage, user: DecodedIdToken) {
   if (!(await superAdmin(user.uid)))
     throw new ApiError(403, "Platform Super Admin access is required.");
@@ -1480,6 +1553,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await reversePayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/payments/correct")
       return reply(response, 200, await correctPayment(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/purchases/payments")
+      return reply(response, 200, await recordSupplierPayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/communications/configure")
       return reply(response, 200, await configure(request, user));
     if (request.method === "POST" && url.pathname === "/v1/communications/send")

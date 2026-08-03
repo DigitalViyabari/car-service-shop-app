@@ -258,7 +258,7 @@ export default function InvoicesPage() {
   const selectedCustomer = customers.find(({ id }) => id === selected?.customerId);
   const invoicedJob = jobs.find(({ id }) => id === selected?.jobId);
   const invoicedJobNumber = selected?.jobNumber || invoicedJob?.jobNumber || "—";
-  const invoiceableJobs = useMemo(
+  const eligibleJobs = useMemo(
     () =>
       jobs.filter(
         (job) =>
@@ -267,11 +267,17 @@ export default function InvoicesPage() {
               job.status,
             )) &&
           job.estimateLocked &&
-          job.estimateTotal > 0 &&
-          !invoices.some(({ jobId: item }) => item === job.id),
+          job.estimateTotal > 0,
       ),
-    [invoices, jobs],
+    [jobs],
   );
+  const invoiceableJobs = useMemo(
+      () => eligibleJobs.filter((job) => !invoices.some(({ jobId }) => jobId === job.id)),
+      [eligibleJobs, invoices],
+    ),
+    alreadyInvoicedJobs = eligibleJobs.filter((job) =>
+      invoices.some(({ jobId }) => jobId === job.id),
+    );
   const selectedJob = jobs.find(({ id }) => id === jobId),
     selectedJobLines = lines.filter((line) => line.jobId === jobId);
   const selectedPayments = payments
@@ -943,7 +949,24 @@ export default function InvoicesPage() {
             <div className="form-grid">
               {invoiceableJobs.length === 0 ? (
                 <div className="span-2 invoice-edit-note">
-                  No invoice-ready job found. Approve and lock an estimate first.
+                  {alreadyInvoicedJobs.length
+                    ? "All approved jobs already have invoices. A duplicate invoice cannot be issued."
+                    : "No invoice-ready job found. Approve and lock an estimate first."}
+                  {alreadyInvoicedJobs.length ? (
+                    <button
+                      type="button"
+                      className="inline-create-toggle"
+                      onClick={() => {
+                        const invoice = invoices.find(
+                          ({ jobId }) => jobId === alreadyInvoicedJobs[0]?.id,
+                        );
+                        setShowCreate(false);
+                        if (invoice) setSelectedId(invoice.id);
+                      }}
+                    >
+                      Open Existing Invoice
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
               <label className="span-2">

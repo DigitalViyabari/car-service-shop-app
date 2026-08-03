@@ -4434,6 +4434,47 @@ button.platform-row:hover {
   color: #9a6600;
   background: #fff0ca;
 }
+.record-supplier-payment {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d5ad55;
+  border-radius: 8px;
+  background: #fff8e9;
+  color: #7a560b;
+  font-size: 10px;
+  font-weight: 850;
+  cursor: pointer;
+}
+.record-supplier-payment:hover {
+  border-color: #e6a225;
+  background: #fff2d2;
+}
+.supplier-payment-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid #dde3e8;
+  border-radius: 12px;
+  background: #dde3e8;
+}
+.supplier-payment-summary > span {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  background: #f8fafb;
+}
+.supplier-payment-summary small {
+  color: #77828d;
+  font-size: 9px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.supplier-payment-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .empty-inline {
   display: grid;
   gap: 6px;
@@ -6289,6 +6330,9 @@ textarea:focus-visible {
   }
   .invoice-filters label {
     flex-basis: auto;
+  }
+  .supplier-payment-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .collection-list button {
     align-items: flex-start;

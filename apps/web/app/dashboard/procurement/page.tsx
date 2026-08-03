@@ -11,7 +11,7 @@ import {
 } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { firebaseClient } from "@/lib/firebase-client";
+import { firebaseClient, getFirebaseAppCheckToken } from "@/lib/firebase-client";
 
 type Supplier = {
   id: string;
@@ -31,6 +31,8 @@ type Purchase = {
   billDate: string;
   totalAmount: number;
   paymentStatus: string;
+  paidAmount?: number;
+  balanceAmount?: number;
 };
 type Expense = {
   id: string;
@@ -84,7 +86,9 @@ export default function ProcurementPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [modal, setModal] = useState<"supplier" | "purchase" | "expense" | null>(null);
+  const [modal, setModal] = useState<
+    "supplier" | "purchase" | "expense" | "supplier_payment" | null
+  >(null);
   const [saving, setSaving] = useState(false);
   const [supplierDraft, setSupplierDraft] = useState({
     name: "",
@@ -115,6 +119,13 @@ export default function ProcurementPage() {
     expenseDate: today(),
     paymentMethod: "upi",
     reference: "",
+  });
+  const [selectedPurchase, setSelectedPurchase] = useState<Purchase | null>(null);
+  const [supplierPaymentDraft, setSupplierPaymentDraft] = useState({
+    amount: "",
+    method: "upi",
+    reference: "",
+    notes: "",
   });
 
   const load = useCallback(async () => {
@@ -194,9 +205,11 @@ export default function ProcurementPage() {
   );
   const totalPurchases = purchases.reduce((sum, item) => sum + item.totalAmount, 0);
   const totalExpenses = expenses.reduce((sum, item) => sum + item.amount, 0);
-  const unpaidPurchases = purchases
-    .filter(({ paymentStatus }) => paymentStatus !== "paid")
-    .reduce((sum, item) => sum + item.totalAmount, 0);
+  const purchasePaid = (purchase: Purchase) =>
+    purchase.paymentStatus === "paid" ? purchase.totalAmount : Number(purchase.paidAmount ?? 0);
+  const purchaseBalance = (purchase: Purchase) =>
+    Math.max(0, Number(purchase.balanceAmount ?? purchase.totalAmount - purchasePaid(purchase)));
+  const unpaidPurchases = purchases.reduce((sum, item) => sum + purchaseBalance(item), 0);
 
   async function saveSupplier(event: FormEvent) {
     event.preventDefault();
@@ -297,6 +310,8 @@ export default function ProcurementPage() {
           taxAmount: purchaseTotals.tax,
           totalAmount: purchaseTotals.grand,
           paymentStatus: purchaseDraft.paymentStatus,
+          paidAmount: purchaseDraft.paymentStatus === "paid" ? purchaseTotals.grand : 0,
+          balanceAmount: purchaseDraft.paymentStatus === "paid" ? 0 : purchaseTotals.grand,
           notes: purchaseDraft.notes.trim(),
           status: "posted",
           createdAt: serverTimestamp(),
@@ -441,6 +456,55 @@ export default function ProcurementPage() {
     }
   }
 
+  async function recordSupplierPayment(event: FormEvent) {
+    event.preventDefault();
+    if (!user || !activeCompanyId || !activeBranchId || !selectedPurchase || !canFinance) return;
+    const amount = Number(supplierPaymentDraft.amount),
+      balance = purchaseBalance(selectedPurchase);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > balance + 0.001) {
+      setError("Enter an amount greater than zero and not above the supplier balance.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const [idToken, appCheck] = await Promise.all([
+          user.getIdToken(),
+          getFirebaseAppCheckToken(),
+        ]),
+        response = await fetch("/api/v1/purchases/payments", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${idToken}`,
+            "x-firebase-appcheck": appCheck,
+          },
+          body: JSON.stringify({
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            purchaseId: selectedPurchase.id,
+            amount,
+            method: supplierPaymentDraft.method,
+            reference: supplierPaymentDraft.reference.trim(),
+            notes: supplierPaymentDraft.notes.trim(),
+          }),
+        }),
+        result = (await response.json()) as { paymentNumber?: string; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to record supplier payment.");
+      setModal(null);
+      setSelectedPurchase(null);
+      setSupplierPaymentDraft({ amount: "", method: "upi", reference: "", notes: "" });
+      setNotice(
+        `Supplier payment recorded${result.paymentNumber ? ` · ${result.paymentNumber}` : ""}.`,
+      );
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to record supplier payment.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   if (!canInventory && !canFinance)
     return (
       <main className="content">
@@ -524,6 +588,29 @@ export default function ProcurementPage() {
                   <span className={`mini-status ${item.paymentStatus}`}>
                     {item.paymentStatus.replaceAll("_", " ")}
                   </span>
+                  <small>
+                    Paid {money.format(purchasePaid(item))} · Due{" "}
+                    {money.format(purchaseBalance(item))}
+                  </small>
+                  {canFinance && purchaseBalance(item) > 0 ? (
+                    <button
+                      type="button"
+                      className="record-supplier-payment"
+                      onClick={() => {
+                        setSelectedPurchase(item);
+                        setSupplierPaymentDraft({
+                          amount: "",
+                          method: "upi",
+                          reference: "",
+                          notes: "",
+                        });
+                        setError(null);
+                        setModal("supplier_payment");
+                      }}
+                    >
+                      Record Payment
+                    </button>
+                  ) : null}
                 </div>
               </div>
             ))
@@ -575,14 +662,22 @@ export default function ProcurementPage() {
             <header className="modal-header">
               <div>
                 <span className="heading-kicker">
-                  {modal === "purchase" ? "Stock In" : modal === "expense" ? "Money Out" : "Vendor"}
+                  {modal === "purchase"
+                    ? "Stock In"
+                    : modal === "expense"
+                      ? "Money Out"
+                      : modal === "supplier_payment"
+                        ? "Supplier Settlement"
+                        : "Vendor"}
                 </span>
                 <h2>
                   {modal === "purchase"
                     ? "New Purchase Bill"
                     : modal === "expense"
                       ? "Record Expense"
-                      : "Add Supplier"}
+                      : modal === "supplier_payment"
+                        ? "Record Supplier Payment"
+                        : "Add Supplier"}
                 </h2>
               </div>
               <button onClick={() => setModal(null)} aria-label="Close">
@@ -707,7 +802,6 @@ export default function ProcurementPage() {
                       }
                     >
                       <option value="unpaid">Unpaid</option>
-                      <option value="part_paid">Part Paid</option>
                       <option value="paid">Paid</option>
                     </select>
                   </label>
@@ -982,6 +1076,120 @@ export default function ProcurementPage() {
                   </button>
                   <button className="dv-button" disabled={saving}>
                     {saving ? "Saving…" : "Record Expense"}
+                  </button>
+                </footer>
+              </form>
+            ) : null}
+            {modal === "supplier_payment" && selectedPurchase ? (
+              <form onSubmit={recordSupplierPayment} className="form-grid">
+                <div className="full supplier-payment-summary">
+                  <span>
+                    <small>Supplier</small>
+                    <strong>{selectedPurchase.supplierName}</strong>
+                  </span>
+                  <span>
+                    <small>Bill</small>
+                    <strong>{selectedPurchase.billNumber}</strong>
+                  </span>
+                  <span>
+                    <small>Bill Total</small>
+                    <strong>{money.format(selectedPurchase.totalAmount)}</strong>
+                  </span>
+                  <span>
+                    <small>Balance Due</small>
+                    <strong>{money.format(purchaseBalance(selectedPurchase))}</strong>
+                  </span>
+                </div>
+                <label>
+                  Amount Paid Now
+                  <input
+                    type="number"
+                    min="0.01"
+                    max={purchaseBalance(selectedPurchase)}
+                    step="0.01"
+                    required
+                    autoFocus
+                    value={supplierPaymentDraft.amount}
+                    onChange={(event) =>
+                      setSupplierPaymentDraft({
+                        ...supplierPaymentDraft,
+                        amount: event.target.value,
+                      })
+                    }
+                    placeholder={`Up to ${money.format(purchaseBalance(selectedPurchase))}`}
+                  />
+                </label>
+                <label>
+                  Payment Method
+                  <select
+                    value={supplierPaymentDraft.method}
+                    onChange={(event) =>
+                      setSupplierPaymentDraft({
+                        ...supplierPaymentDraft,
+                        method: event.target.value,
+                      })
+                    }
+                  >
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="bank_transfer">Bank Transfer</option>
+                    <option value="card">Card</option>
+                    <option value="cheque">Cheque</option>
+                    <option value="other">Other</option>
+                  </select>
+                </label>
+                <label className="full">
+                  Transaction / Reference
+                  <input
+                    value={supplierPaymentDraft.reference}
+                    onChange={(event) =>
+                      setSupplierPaymentDraft({
+                        ...supplierPaymentDraft,
+                        reference: event.target.value,
+                      })
+                    }
+                    placeholder="UPI, bank, cheque or cash reference"
+                  />
+                </label>
+                <label className="full">
+                  Notes
+                  <textarea
+                    rows={2}
+                    value={supplierPaymentDraft.notes}
+                    onChange={(event) =>
+                      setSupplierPaymentDraft({
+                        ...supplierPaymentDraft,
+                        notes: event.target.value,
+                      })
+                    }
+                  />
+                </label>
+                {Number(supplierPaymentDraft.amount) > 0 ? (
+                  <div
+                    className={`full payment-entry-summary ${Number(supplierPaymentDraft.amount) >= purchaseBalance(selectedPurchase) ? "is-full" : "is-partial"}`}
+                  >
+                    <strong>
+                      {Number(supplierPaymentDraft.amount) >= purchaseBalance(selectedPurchase)
+                        ? "Supplier Bill Fully Paid"
+                        : "Supplier Bill Partially Paid"}
+                    </strong>
+                    <span>
+                      Remaining{" "}
+                      {money.format(
+                        Math.max(
+                          0,
+                          purchaseBalance(selectedPurchase) - Number(supplierPaymentDraft.amount),
+                        ),
+                      )}
+                    </span>
+                  </div>
+                ) : null}
+                <footer className="modal-footer full">
+                  <button type="button" className="cancel-button" onClick={() => setModal(null)}>
+                    Cancel
+                  </button>
+                  <button className="dv-button" disabled={saving}>
+                    {saving ? "Recording…" : "Record Supplier Payment"}
                   </button>
                 </footer>
               </form>
