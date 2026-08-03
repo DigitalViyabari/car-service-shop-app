@@ -190,6 +190,8 @@ export default function InvoicesPage() {
   const selected = invoices.find(({ id }) => id === selectedId) ?? null;
   const selectedInvoiceLines = invoiceLines.filter(({ invoiceId }) => invoiceId === selectedId);
   const selectedCustomer = customers.find(({ id }) => id === selected?.customerId);
+  const invoicedJob = jobs.find(({ id }) => id === selected?.jobId);
+  const invoicedJobNumber = selected?.jobNumber || invoicedJob?.jobNumber || "—";
   const invoiceableJobs = useMemo(
     () =>
       jobs.filter(
@@ -850,6 +852,7 @@ export default function InvoicesPage() {
                 <div>
                   <b>TAX INVOICE</b>
                   <span>{selected.invoiceNumber}</span>
+                  <small>Job Card: {invoicedJobNumber}</small>
                   <small>{shownDate(selected.issuedAt)}</small>
                 </div>
               </header>

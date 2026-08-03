@@ -232,6 +232,7 @@ export interface BusinessTaxProfile extends AuditFields {
   stateCode: string;
   postalCode: string;
   invoicePrefix: string;
+  invoiceStartNumber?: number;
   invoiceTerms?: string;
   authorizedSignatory?: string;
   phone?: string;
@@ -348,6 +349,7 @@ export interface Invoice extends AuditFields {
   branchId: string;
   jobId: string;
   invoiceNumber: string;
+  jobNumber?: string;
   customerId: string;
   customerName: string;
   vehicleId: string;

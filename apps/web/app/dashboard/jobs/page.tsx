@@ -4,6 +4,7 @@ import type {
   Customer,
   EstimateApprovalMethod,
   InventoryItem,
+  Invoice,
   JobLineItem,
   JobPriority,
   JobSheet,
@@ -153,7 +154,8 @@ export default function JobsPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [lines, setLines] = useState<JobLineItem[]>([]),
     [products, setProducts] = useState<Product[]>([]),
-    [inventory, setInventory] = useState<InventoryItem[]>([]);
+    [inventory, setInventory] = useState<InventoryItem[]>([]),
+    [invoices, setInvoices] = useState<Invoice[]>([]);
   const [showLineForm, setShowLineForm] = useState(false),
     [lineDraft, setLineDraft] = useState<LineDraft>(emptyLine);
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>([]),
@@ -212,61 +214,77 @@ export default function JobsPage() {
               where("branchId", "==", activeBranchId),
             ),
           );
-      const [customerDocs, vehicleDocs, lineDocs, productDocs, inventoryDocs, serviceDocs] =
-        await Promise.all([
-          isTechnician
-            ? Promise.resolve({ docs: [] })
-            : getDocs(
-                query(
-                  collection(firebaseClient.db, "customers"),
-                  where("companyId", "==", activeCompanyId),
-                  where("branchId", "==", activeBranchId),
-                ),
+      const [
+        customerDocs,
+        vehicleDocs,
+        lineDocs,
+        productDocs,
+        inventoryDocs,
+        serviceDocs,
+        invoiceDocs,
+      ] = await Promise.all([
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "customers"),
+                where("companyId", "==", activeCompanyId),
+                where("branchId", "==", activeBranchId),
               ),
-          isTechnician
-            ? Promise.resolve({ docs: [] })
-            : getDocs(
-                query(
-                  collection(firebaseClient.db, "vehicles"),
-                  where("companyId", "==", activeCompanyId),
-                  where("branchId", "==", activeBranchId),
-                ),
+            ),
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "vehicles"),
+                where("companyId", "==", activeCompanyId),
+                where("branchId", "==", activeBranchId),
               ),
-          isTechnician
-            ? Promise.resolve({ docs: [] })
-            : getDocs(
-                query(
-                  collection(firebaseClient.db, "jobLineItems"),
-                  where("companyId", "==", activeCompanyId),
-                  where("branchId", "==", activeBranchId),
-                ),
+            ),
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "jobLineItems"),
+                where("companyId", "==", activeCompanyId),
+                where("branchId", "==", activeBranchId),
               ),
-          isTechnician
-            ? Promise.resolve({ docs: [] })
-            : getDocs(
-                query(
-                  collection(firebaseClient.db, "products"),
-                  where("companyId", "==", activeCompanyId),
-                ),
+            ),
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "products"),
+                where("companyId", "==", activeCompanyId),
               ),
-          isTechnician
-            ? Promise.resolve({ docs: [] })
-            : getDocs(
-                query(
-                  collection(firebaseClient.db, "inventoryItems"),
-                  where("companyId", "==", activeCompanyId),
-                  where("branchId", "==", activeBranchId),
-                ),
+            ),
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "inventoryItems"),
+                where("companyId", "==", activeCompanyId),
+                where("branchId", "==", activeBranchId),
               ),
-          isTechnician
-            ? Promise.resolve({ docs: [] })
-            : getDocs(
-                query(
-                  collection(firebaseClient.db, "serviceTypes"),
-                  where("companyId", "==", activeCompanyId),
-                ),
+            ),
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "serviceTypes"),
+                where("companyId", "==", activeCompanyId),
               ),
-        ]);
+            ),
+        isTechnician
+          ? Promise.resolve({ docs: [] })
+          : getDocs(
+              query(
+                collection(firebaseClient.db, "invoices"),
+                where("companyId", "==", activeCompanyId),
+                where("branchId", "==", activeBranchId),
+              ),
+            ),
+      ]);
       const nextJobs = (
         assignedJobs ??
         jobDocs?.docs.map((item) => ({ ...item.data(), id: item.id }) as JobSheet) ??
@@ -304,6 +322,7 @@ export default function JobsPage() {
           .filter(({ status }) => status === "active")
           .sort((a, b) => a.name.localeCompare(b.name)),
       );
+      setInvoices(invoiceDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Invoice));
       setSelectedId((current) =>
         current && nextJobs.some(({ id }) => id === current) ? current : (nextJobs[0]?.id ?? null),
       );
@@ -397,6 +416,7 @@ export default function JobsPage() {
     });
   }, [filter, isTechnician, jobs, priorityFilter, search, technicianFilter]);
   const selected = jobs.find(({ id }) => id === selectedId) ?? null;
+  const selectedInvoice = invoices.find(({ jobId }) => jobId === selectedId) ?? null;
   useEffect(() => {
     if (filtered.some(({ id }) => id === selectedId)) return;
     setSelectedId(filtered[0]?.id ?? null);
@@ -589,8 +609,8 @@ export default function JobsPage() {
       setSubmitting(false);
     }
   }
-  async function completeDelivery(event: FormEvent) {
-    event.preventDefault();
+  async function completeDelivery(event?: FormEvent) {
+    event?.preventDefault();
     if (!user || !selected || !canAssignTechnician) return;
     setSubmitting(true);
     setError(null);
@@ -1100,6 +1120,52 @@ export default function JobsPage() {
                   </select>
                 ) : null}
               </section>
+              {canAssignTechnician ? (
+                <section
+                  className={`job-payment-status ${
+                    !selectedInvoice
+                      ? "is-missing"
+                      : selectedInvoice.balanceAmount <= 0
+                        ? "is-paid"
+                        : selectedInvoice.paidAmount > 0
+                          ? "is-part-paid"
+                          : "is-unpaid"
+                  }`}
+                >
+                  <div>
+                    <span>Payment Status</span>
+                    <strong>
+                      {!selectedInvoice
+                        ? "Invoice Not Issued"
+                        : selectedInvoice.balanceAmount <= 0
+                          ? "Fully Paid"
+                          : selectedInvoice.paidAmount > 0
+                            ? "Partially Paid"
+                            : "Not Paid"}
+                    </strong>
+                  </div>
+                  {selectedInvoice ? (
+                    <dl>
+                      <div>
+                        <dt>Invoice</dt>
+                        <dd>{selectedInvoice.invoiceNumber}</dd>
+                      </div>
+                      <div>
+                        <dt>Invoice Total</dt>
+                        <dd>{currency(selectedInvoice.totalAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Paid</dt>
+                        <dd>{currency(selectedInvoice.paidAmount)}</dd>
+                      </div>
+                      <div>
+                        <dt>Balance</dt>
+                        <dd>{currency(selectedInvoice.balanceAmount)}</dd>
+                      </div>
+                    </dl>
+                  ) : null}
+                </section>
+              ) : null}
               {!isTechnician ? (
                 <section className="estimate-panel">
                   <div className="estimate-heading">
@@ -1248,8 +1314,13 @@ export default function JobsPage() {
                     disabled={submitting}
                     onClick={() => {
                       if (nextStatus[0] === "approved") setShowApproval(true);
-                      else if (nextStatus[0] === "delivered") setShowDelivery(true);
-                      else void setStatus(nextStatus[0]);
+                      else if (nextStatus[0] === "delivered") {
+                        if (selectedInvoice && selectedInvoice.balanceAmount <= 0) {
+                          void completeDelivery();
+                        } else {
+                          setShowDelivery(true);
+                        }
+                      } else void setStatus(nextStatus[0]);
                     }}
                   >
                     Move To {nextStatus[1]} <span>→</span>
@@ -1282,6 +1353,28 @@ export default function JobsPage() {
                 <strong>{selected.registrationNumber}</strong>
                 <span>
                   {selected.customerName} · {selected.vehicleLabel}
+                </span>
+              </div>
+              <div
+                className={`delivery-payment-warning ${
+                  !selectedInvoice
+                    ? "is-missing"
+                    : selectedInvoice.paidAmount > 0
+                      ? "is-part-paid"
+                      : "is-unpaid"
+                }`}
+              >
+                <strong>
+                  {!selectedInvoice
+                    ? "Invoice Has Not Been Issued"
+                    : selectedInvoice.paidAmount > 0
+                      ? "Customer Has Only Partially Paid"
+                      : "Customer Has Not Paid"}
+                </strong>
+                <span>
+                  {!selectedInvoice
+                    ? "Issue the invoice before delivery, or confirm delivery without an invoice."
+                    : `${currency(selectedInvoice.paidAmount)} paid · ${currency(selectedInvoice.balanceAmount)} still due.`}
                 </span>
               </div>
               <div className="form-grid">
@@ -1332,7 +1425,7 @@ export default function JobsPage() {
                 Cancel
               </button>
               <button className="dv-button" disabled={submitting}>
-                {submitting ? "Completing…" : "Deliver Vehicle"}
+                {submitting ? "Completing…" : "Confirm & Deliver Anyway"}
               </button>
             </footer>
           </form>

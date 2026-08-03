@@ -24,6 +24,7 @@ const emptyDraft: Draft = {
   stateCode: "33",
   postalCode: "",
   invoicePrefix: "INV",
+  invoiceStartNumber: 1,
   invoiceTerms: "",
   authorizedSignatory: "",
   phone: "",
@@ -97,6 +98,19 @@ export default function BusinessSettingsPage() {
       setMessage("Enter a valid PAN.");
       return;
     }
+    const invoicePrefix = draft.invoicePrefix.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+    if (!invoicePrefix || invoicePrefix.length > 4) {
+      setMessage("Invoice Prefix must contain 1 to 4 letters or numbers.");
+      return;
+    }
+    if (
+      !Number.isInteger(Number(draft.invoiceStartNumber)) ||
+      Number(draft.invoiceStartNumber) < 1 ||
+      Number(draft.invoiceStartNumber) > 999999
+    ) {
+      setMessage("Invoice Starting Number must be between 1 and 999999.");
+      return;
+    }
     setSaving(true);
     setMessage("");
     try {
@@ -106,7 +120,8 @@ export default function BusinessSettingsPage() {
           ...draft,
           gstin,
           pan,
-          invoicePrefix: draft.invoicePrefix.trim().toUpperCase(),
+          invoicePrefix,
+          invoiceStartNumber: Number(draft.invoiceStartNumber),
           companyId: activeCompanyId,
           updatedAt: now,
           updatedBy: user.uid,
@@ -246,7 +261,19 @@ export default function BusinessSettingsPage() {
             </div>
           </header>
           <div className="form-grid">
-            {field("invoicePrefix", "Invoice Prefix", { required: true })}
+            {field("invoicePrefix", "Invoice Prefix (Maximum 4 Characters)", { required: true })}
+            <label>
+              Invoice Starting Number
+              <input
+                type="number"
+                min="1"
+                max="999999"
+                value={draft.invoiceStartNumber ?? 1}
+                disabled={!isOwner}
+                onChange={(event) => update("invoiceStartNumber", Number(event.target.value))}
+              />
+              <small>Used only when a new financial-year series starts.</small>
+            </label>
             {field("upiId", "UPI ID")}
             {field("bankName", "Bank Name")}
             {field("accountName", "Account Name")}

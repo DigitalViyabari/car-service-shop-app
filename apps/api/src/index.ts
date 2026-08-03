@@ -448,58 +448,96 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     ),
     taxAmount = activeLines.reduce((sum, line) => sum + Number(line.get("taxAmount") ?? 0), 0),
     totalAmount = activeLines.reduce((sum, line) => sum + Number(line.get("totalAmount") ?? 0), 0),
-    invoiceNumber = String(job.get("jobNumber")),
-    now = FieldValue.serverTimestamp(),
-    batch = db.batch();
-  batch.create(invoiceRef, {
-    companyId: input.companyId,
-    branchId: input.branchId,
-    jobId: input.jobId,
-    invoiceNumber,
-    customerId: job.get("customerId"),
-    customerName: job.get("customerName"),
-    vehicleId: job.get("vehicleId"),
-    vehicleLabel: job.get("vehicleLabel"),
-    registrationNumber: job.get("registrationNumber"),
-    taxableAmount,
-    taxAmount,
-    totalAmount,
-    paidAmount: 0,
-    balanceAmount: totalAmount,
-    status: "issued",
-    issuedAt: now,
-    dueAt: input.dueAt || null,
-    notes: input.notes.trim(),
-    createdAt: now,
-    createdBy: user.uid,
-    updatedAt: now,
-    updatedBy: user.uid,
-  });
-  for (const line of activeLines) {
-    batch.create(db.collection("invoiceLines").doc(), {
+    settings = await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
+    prefix =
+      String(settings.get("invoicePrefix") ?? "INV")
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, 4) || "INV",
+    configuredStart = Math.max(
+      1,
+      Math.min(999999, Number(settings.get("invoiceStartNumber") ?? 1)),
+    ),
+    nowDate = new Date(),
+    startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
+    financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
+    sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`);
+  const invoiceNumber = await db.runTransaction(async (transaction) => {
+    const [currentInvoice, sequence] = await Promise.all([
+        transaction.get(invoiceRef),
+        transaction.get(sequenceRef),
+      ]),
+      serial = sequence.exists ? Number(sequence.get("lastNumber") ?? 0) + 1 : configuredStart;
+    if (currentInvoice.exists) throw new ApiError(409, "An invoice already exists for this job.");
+    if (serial > 999999) throw new ApiError(409, "Invoice series limit reached. Contact support.");
+    const number = `${prefix}/${financialYear}/${String(serial).padStart(6, "0")}`;
+    if (number.length > 16)
+      throw new ApiError(409, "Invoice number exceeds the 16-character GST limit.");
+    const now = FieldValue.serverTimestamp();
+    transaction.set(
+      sequenceRef,
+      {
+        companyId: input.companyId,
+        financialYear,
+        prefix,
+        lastNumber: serial,
+        ...(sequence.exists ? {} : { createdAt: now, createdBy: user.uid }),
+        updatedAt: now,
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    );
+    transaction.create(invoiceRef, {
       companyId: input.companyId,
       branchId: input.branchId,
-      invoiceId: invoiceRef.id,
-      jobLineItemId: line.id,
-      type: line.get("type"),
-      productId: line.get("productId") ?? null,
-      description: line.get("description"),
-      quantity: line.get("quantity"),
-      unit: line.get("unit"),
-      unitPrice: line.get("unitPrice"),
-      discount: line.get("discount"),
-      gstRate: line.get("gstRate"),
-      taxableAmount: line.get("taxableAmount"),
-      taxAmount: line.get("taxAmount"),
-      totalAmount: line.get("totalAmount"),
+      jobId: input.jobId,
+      jobNumber: job.get("jobNumber"),
+      invoiceNumber: number,
+      customerId: job.get("customerId"),
+      customerName: job.get("customerName"),
+      vehicleId: job.get("vehicleId"),
+      vehicleLabel: job.get("vehicleLabel"),
+      registrationNumber: job.get("registrationNumber"),
+      taxableAmount,
+      taxAmount,
+      totalAmount,
+      paidAmount: 0,
+      balanceAmount: totalAmount,
+      status: "issued",
+      issuedAt: now,
+      dueAt: input.dueAt || null,
+      notes: input.notes.trim(),
       createdAt: now,
       createdBy: user.uid,
       updatedAt: now,
       updatedBy: user.uid,
     });
-  }
-  batch.update(jobRef, { invoiceTotal: totalAmount, updatedAt: now, updatedBy: user.uid });
-  await batch.commit();
+    for (const line of activeLines) {
+      transaction.create(db.collection("invoiceLines").doc(), {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        invoiceId: invoiceRef.id,
+        jobLineItemId: line.id,
+        type: line.get("type"),
+        productId: line.get("productId") ?? null,
+        description: line.get("description"),
+        quantity: line.get("quantity"),
+        unit: line.get("unit"),
+        unitPrice: line.get("unitPrice"),
+        discount: line.get("discount"),
+        gstRate: line.get("gstRate"),
+        taxableAmount: line.get("taxableAmount"),
+        taxAmount: line.get("taxAmount"),
+        totalAmount: line.get("totalAmount"),
+        createdAt: now,
+        createdBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    }
+    transaction.update(jobRef, { invoiceTotal: totalAmount, updatedAt: now, updatedBy: user.uid });
+    return number;
+  });
   return { issued: true, invoiceId: invoiceRef.id, invoiceNumber };
 }
 async function sender(uid: string, companyId: string, branchId: string) {

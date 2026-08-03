@@ -2851,6 +2851,85 @@ button.platform-row:hover {
   background: #fff;
   font-size: 10px;
 }
+.job-payment-status {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.65fr) minmax(0, 2fr);
+  gap: 16px;
+  margin-top: 12px;
+  padding: 13px 14px;
+  border: 1px solid #dfe4e8;
+  border-left: 4px solid #2878d0;
+  border-radius: 11px;
+  background: #f5f9fd;
+}
+.job-payment-status.is-paid {
+  border-left-color: #21a66f;
+  background: #f0faf6;
+}
+.job-payment-status.is-part-paid {
+  border-left-color: #e6a225;
+  background: #fff8e9;
+}
+.job-payment-status.is-unpaid,
+.job-payment-status.is-missing {
+  border-left-color: #df3d46;
+  background: #fff3f4;
+}
+.job-payment-status > div {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+}
+.job-payment-status span,
+.job-payment-status dt {
+  color: #75808b;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.job-payment-status strong {
+  font-size: 12px;
+}
+.job-payment-status dl {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.job-payment-status dl div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.job-payment-status dd {
+  overflow: hidden;
+  margin: 0;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.delivery-payment-warning {
+  display: grid;
+  gap: 5px;
+  padding: 14px 16px;
+  border-left: 4px solid #df3d46;
+  border-radius: 10px;
+  background: #fff3f4;
+  color: #97262c;
+}
+.delivery-payment-warning.is-part-paid {
+  border-left-color: #e6a225;
+  background: #fff8e9;
+  color: #805a0c;
+}
+.delivery-payment-warning strong {
+  font-size: 12px;
+}
+.delivery-payment-warning span {
+  font-size: 10px;
+}
 .delay-alert {
   display: grid;
   gap: 4px;
