@@ -170,7 +170,7 @@ export interface Product extends AuditFields {
   manufacturerPartNumber?: string;
   brand?: string;
   category?: string;
-  type: ProductType;
+  type: ProductType | string;
   description?: string;
   hsnCode?: string;
   gstRate: number;

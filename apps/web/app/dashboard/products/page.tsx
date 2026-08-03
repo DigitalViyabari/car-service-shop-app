@@ -30,7 +30,7 @@ type Draft = {
   manufacturerPartNumber: string;
   brand: string;
   category: string;
-  type: ProductType;
+  type: string;
   description: string;
   hsnCode: string;
   gstRate: string;
@@ -96,6 +96,75 @@ const money = (value: number) =>
     currency: "INR",
     maximumFractionDigits: 2,
   }).format(value || 0);
+const stockDate = (value: unknown) => {
+  const date =
+    value && typeof value === "object" && "toDate" in value
+      ? (value as { toDate: () => Date }).toDate()
+      : new Date(String(value));
+  return Number.isNaN(date.getTime())
+    ? "Date unavailable"
+    : date.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+};
+const csvColumns = [
+  "name",
+  "sku",
+  "product_type",
+  "unit",
+  "purchase_price",
+  "selling_price",
+  "current_stock",
+  "reorder_level",
+  "gst_rate",
+  "barcode",
+  "brand",
+  "category",
+  "hsn_code",
+  "rack_location",
+  "track_inventory",
+] as const;
+const csvCell = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+const csvNumber = (value: unknown) => {
+  const number = Number(value || 0);
+  return Number.isFinite(number) ? number : 0;
+};
+function parseCsv(text: string) {
+  const rows: string[][] = [];
+  let row: string[] = [],
+    value = "",
+    quoted = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"') {
+      if (quoted && text[index + 1] === '"') {
+        value += '"';
+        index += 1;
+      } else quoted = !quoted;
+    } else if (character === "," && !quoted) {
+      row.push(value.trim());
+      value = "";
+    } else if ((character === "\n" || character === "\r") && !quoted) {
+      if (character === "\r" && text[index + 1] === "\n") index += 1;
+      row.push(value.trim());
+      if (row.some(Boolean)) rows.push(row);
+      row = [];
+      value = "";
+    } else value += character;
+  }
+  row.push(value.trim());
+  if (row.some(Boolean)) rows.push(row);
+  return rows;
+}
+function downloadCsv(filename: string, rows: unknown[][]) {
+  const blob = new Blob([rows.map((row) => row.map(csvCell).join(",")).join("\n")], {
+      type: "text/csv;charset=utf-8",
+    }),
+    url = URL.createObjectURL(blob),
+    link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function ProductsPage() {
   const { user, memberships, activeCompanyId, activeBranchId, activeBranch } = useAuth();
@@ -112,6 +181,10 @@ export default function ProductsPage() {
   const [error, setError] = useState<string | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[]>([]);
   const [showMovement, setShowMovement] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [customTypeName, setCustomTypeName] = useState("");
+  const [addingType, setAddingType] = useState(false);
   const [movementType, setMovementType] = useState<InventoryMovementType>("purchase");
   const [movementQuantity, setMovementQuantity] = useState("");
   const [movementCost, setMovementCost] = useState("");
@@ -220,12 +293,233 @@ export default function ProductsPage() {
   const selectedMovements = movements
     .filter(({ productId }) => productId === selectedId)
     .slice(0, 8);
+  const availableProductTypes = useMemo(() => {
+    const labels = new Map<string, string>(productTypes);
+    for (const product of products) {
+      if (!labels.has(product.type))
+        labels.set(
+          product.type,
+          product.type.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()),
+        );
+    }
+    return [...labels];
+  }, [products]);
   const totalStock = inventory.reduce((sum, item) => sum + item.currentStock, 0);
   const lowStock = inventory.filter((item) => item.currentStock <= item.reorderLevel).length;
   const stockValue = inventory.reduce(
     (sum, item) => sum + item.currentStock * item.purchasePrice,
     0,
   );
+
+  function addCustomType() {
+    const label = customTypeName.trim();
+    if (label.length < 2) return setError("Enter a Product Type name.");
+    const value = label
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_|_$/g, "")
+      .slice(0, 50);
+    if (!value) return setError("Enter a valid Product Type name.");
+    setDraft((current) => ({ ...current, type: value }));
+    setAddingType(false);
+    setCustomTypeName("");
+    setError(null);
+  }
+
+  function downloadSampleCsv() {
+    downloadCsv("product-import-sample.csv", [
+      [...csvColumns],
+      [
+        "Engine Oil 5W30",
+        "OIL-5W30-1L",
+        "Lubricant",
+        "LTR",
+        450,
+        650,
+        24,
+        6,
+        18,
+        "8901234567890",
+        "Sample Brand",
+        "Engine Oil",
+        "2710",
+        "Rack A1",
+        "Yes",
+      ],
+      [
+        "Labour Material",
+        "MAT-001",
+        "Workshop Material",
+        "NOS",
+        0,
+        0,
+        0,
+        0,
+        0,
+        "",
+        "",
+        "General",
+        "",
+        "",
+        "No",
+      ],
+    ]);
+  }
+
+  function exportInventory() {
+    downloadCsv(`inventory-${activeBranch?.name ?? "branch"}.csv`, [
+      [
+        "Product Name",
+        "SKU",
+        "Product Type",
+        "Barcode",
+        "Unit",
+        "Purchase Price",
+        "Selling Price",
+        "Current Stock",
+        "Reserved Stock",
+        "Available Stock",
+        "Reorder Level",
+        "Stock Value",
+        "GST Rate",
+        "HSN Code",
+        "Rack / Bin",
+      ],
+      ...products.map((product) => {
+        const item = inventoryFor(product.id),
+          current = item?.currentStock ?? 0,
+          reserved = item?.reservedStock ?? 0;
+        return [
+          product.name,
+          product.sku,
+          product.type.replaceAll("_", " "),
+          product.barcode ?? "",
+          product.unit,
+          item?.purchasePrice ?? 0,
+          item?.sellingPrice ?? 0,
+          current,
+          reserved,
+          Math.max(0, current - reserved),
+          item?.reorderLevel ?? 0,
+          current * (item?.purchasePrice ?? 0),
+          product.gstRate,
+          product.hsnCode ?? "",
+          item?.rackLocation ?? "",
+        ];
+      }),
+    ]);
+  }
+
+  async function importProducts(event: FormEvent) {
+    event.preventDefault();
+    if (!user || !activeCompanyId || !activeBranchId || !importFile) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const rows = parseCsv(await importFile.text());
+      if (rows.length < 2) throw new Error("The CSV does not contain any product rows.");
+      const headers = rows[0]!.map((header) => header.toLowerCase().replaceAll(" ", "_")),
+        missing = ["name", "sku"].filter((header) => !headers.includes(header));
+      if (missing.length) throw new Error(`Missing required column: ${missing.join(", ")}.`);
+      if (rows.length - 1 > 100) throw new Error("Upload a maximum of 100 products at a time.");
+      const records = rows.slice(1).map((row, rowIndex) => {
+        const record = Object.fromEntries(
+            headers.map((header, index) => [header, row[index] ?? ""]),
+          ),
+          name = String(record.name).trim(),
+          sku = String(record.sku).trim().toUpperCase();
+        if (name.length < 2 || !sku)
+          throw new Error(`Row ${rowIndex + 2}: Name and SKU are required.`);
+        return { record, name, sku, rowNumber: rowIndex + 2 };
+      });
+      const seen = new Set(products.map((product) => product.sku.toUpperCase()));
+      for (const item of records) {
+        if (seen.has(item.sku))
+          throw new Error(`Row ${item.rowNumber}: SKU ${item.sku} already exists.`);
+        seen.add(item.sku);
+      }
+      const batch = writeBatch(firebaseClient.db),
+        now = serverTimestamp();
+      for (const { record, name, sku } of records) {
+        const productRef = doc(collection(firebaseClient.db, "products")),
+          inventoryRef = doc(
+            firebaseClient.db,
+            "inventoryItems",
+            `${activeBranchId}_${productRef.id}`,
+          ),
+          typeLabel = String(record.product_type || "Spare Part").trim(),
+          type =
+            productTypes.find(
+              ([, label]) => label.toLowerCase() === typeLabel.toLowerCase(),
+            )?.[0] ??
+            typeLabel
+              .toLowerCase()
+              .replace(/[^a-z0-9]+/g, "_")
+              .replace(/^_|_$/g, ""),
+          unit = String(record.unit || "NOS")
+            .trim()
+            .toUpperCase(),
+          currentStock = Math.max(0, csvNumber(record.current_stock)),
+          purchasePrice = Math.max(0, csvNumber(record.purchase_price)),
+          sellingPrice = Math.max(0, csvNumber(record.selling_price)),
+          trackInventory = !["no", "false", "0"].includes(
+            String(record.track_inventory || "yes")
+              .trim()
+              .toLowerCase(),
+          );
+        batch.set(productRef, {
+          companyId: activeCompanyId,
+          name,
+          nickname: "",
+          sku,
+          barcode: String(record.barcode || "").trim(),
+          oemPartNumber: "",
+          manufacturerPartNumber: "",
+          brand: String(record.brand || "").trim(),
+          category: String(record.category || "").trim(),
+          type: type || "spare_part",
+          description: "",
+          hsnCode: String(record.hsn_code || "").replace(/\D/g, ""),
+          gstRate: Math.min(100, Math.max(0, csvNumber(record.gst_rate))),
+          unit,
+          mrp: null,
+          trackInventory,
+          compatibilityNotes: "",
+          searchText: `${name} ${sku} ${record.barcode || ""} ${record.brand || ""}`.toLowerCase(),
+          status: "active",
+          createdAt: now,
+          createdBy: user.uid,
+          updatedAt: now,
+          updatedBy: user.uid,
+        });
+        batch.set(inventoryRef, {
+          companyId: activeCompanyId,
+          branchId: activeBranchId,
+          productId: productRef.id,
+          purchasePrice,
+          sellingPrice,
+          currentStock: trackInventory ? currentStock : 0,
+          reservedStock: 0,
+          reorderLevel: trackInventory ? Math.max(0, csvNumber(record.reorder_level)) : 0,
+          rackLocation: String(record.rack_location || "").trim(),
+          preferredSupplier: "",
+          status: "active",
+          createdAt: now,
+          createdBy: user.uid,
+          updatedAt: now,
+          updatedBy: user.uid,
+        });
+      }
+      await batch.commit();
+      setShowImport(false);
+      setImportFile(null);
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to import products.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   function openNew() {
     setEditingId(null);
@@ -524,13 +818,28 @@ export default function ProductsPage() {
           <h1>Product Catalogue</h1>
           <p className="muted">Products, pricing and live stock.</p>
         </div>
-        <button
-          className="quick-action quick-action--enabled"
-          onClick={openNew}
-          disabled={!canManageInventory}
-        >
-          <strong>+</strong> Add Product
-        </button>
+        <div className="product-heading-actions">
+          <button type="button" className="catalogue-secondary-action" onClick={exportInventory}>
+            Export Inventory
+          </button>
+          <button
+            type="button"
+            className="catalogue-secondary-action"
+            onClick={() => {
+              setError(null);
+              setShowImport(true);
+            }}
+          >
+            Bulk Upload CSV
+          </button>
+          <button
+            className="quick-action quick-action--enabled"
+            onClick={openNew}
+            disabled={!canManageInventory}
+          >
+            <strong>+</strong> Add Product
+          </button>
+        </div>
       </div>
       {error && !showForm ? (
         <div className="alert alert--error module-alert">
@@ -649,7 +958,8 @@ export default function ProductsPage() {
               <div className="product-detail-head">
                 <div>
                   <span className="heading-kicker">
-                    {productTypes.find(([value]) => value === selected.type)?.[1]}
+                    {availableProductTypes.find(([value]) => value === selected.type)?.[1] ??
+                      selected.type.replaceAll("_", " ")}
                   </span>
                   <h2>{selected.name}</h2>
                   <p>{selected.nickname || selected.brand || "Company Product"}</p>
@@ -811,16 +1121,13 @@ export default function ProductsPage() {
                   <p>{selected.compatibilityNotes}</p>
                 </div>
               ) : null}
-              <div className="detail-footer">
+              <div className="detail-footer product-detail-footer">
                 <button
                   className="text-action"
                   onClick={() => void archive()}
                   disabled={!canManageInventory}
                 >
                   Archive Product
-                </button>
-                <button className="job-action" disabled>
-                  Add To Job Card <span>→</span>
                 </button>
               </div>
             </>
@@ -853,7 +1160,7 @@ export default function ProductsPage() {
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
             <div className="form-section">
-              <h3>Product Identity</h3>
+              <h3>Essential Product Details</h3>
               <div className="form-grid">
                 <label>
                   Product Name *
@@ -865,13 +1172,6 @@ export default function ProductsPage() {
                   />
                 </label>
                 <label>
-                  Product Nickname
-                  <input
-                    value={draft.nickname}
-                    onChange={(e) => setDraft({ ...draft, nickname: e.target.value })}
-                  />
-                </label>
-                <label>
                   SKU *
                   <input
                     value={draft.sku}
@@ -880,57 +1180,47 @@ export default function ProductsPage() {
                   />
                 </label>
                 <label>
-                  Barcode
-                  <input
-                    value={draft.barcode}
-                    onChange={(e) => setDraft({ ...draft, barcode: e.target.value })}
-                  />
-                </label>
-                <label>
-                  OEM Part Number
-                  <input
-                    value={draft.oemPartNumber}
-                    onChange={(e) =>
-                      setDraft({ ...draft, oemPartNumber: e.target.value.toUpperCase() })
-                    }
-                  />
-                </label>
-                <label>
-                  Manufacturer Part Number
-                  <input
-                    value={draft.manufacturerPartNumber}
-                    onChange={(e) =>
-                      setDraft({ ...draft, manufacturerPartNumber: e.target.value.toUpperCase() })
-                    }
-                  />
-                </label>
-                <label>
-                  Brand
-                  <input
-                    value={draft.brand}
-                    onChange={(e) => setDraft({ ...draft, brand: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Category
-                  <input
-                    value={draft.category}
-                    onChange={(e) => setDraft({ ...draft, category: e.target.value })}
-                  />
-                </label>
-                <label>
                   Product Type
                   <select
                     value={draft.type}
-                    onChange={(e) => setDraft({ ...draft, type: e.target.value as ProductType })}
+                    onChange={(e) => {
+                      if (e.target.value === "__add_new__") {
+                        setAddingType(true);
+                        return;
+                      }
+                      setDraft({ ...draft, type: e.target.value });
+                    }}
                   >
-                    {productTypes.map(([value, label]) => (
+                    {!availableProductTypes.some(([value]) => value === draft.type) ? (
+                      <option value={draft.type}>
+                        {draft.type
+                          .replaceAll("_", " ")
+                          .replace(/\b\w/g, (letter) => letter.toUpperCase())}
+                      </option>
+                    ) : null}
+                    {availableProductTypes.map(([value, label]) => (
                       <option value={value} key={value}>
                         {label}
                       </option>
                     ))}
+                    <option value="__add_new__">+ Add New Product Type</option>
                   </select>
                 </label>
+                {addingType ? (
+                  <div className="inline-product-type span-2">
+                    <label>
+                      New Product Type
+                      <input
+                        value={customTypeName}
+                        onChange={(event) => setCustomTypeName(event.target.value)}
+                        placeholder="Example: Car Care Chemical"
+                      />
+                    </label>
+                    <button type="button" onClick={addCustomType}>
+                      Add Type
+                    </button>
+                  </div>
+                ) : null}
                 <label>
                   Unit
                   <select
@@ -944,15 +1234,84 @@ export default function ProductsPage() {
                     ))}
                   </select>
                 </label>
-                <label className="span-2">
-                  Description
-                  <textarea
-                    rows={2}
-                    value={draft.description}
-                    onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-                  />
-                </label>
               </div>
+              <details className="product-advanced-fields">
+                <summary>More Product Details (Optional)</summary>
+                <div className="form-grid">
+                  <label>
+                    Product Nickname
+                    <input
+                      value={draft.nickname}
+                      onChange={(e) => setDraft({ ...draft, nickname: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Brand
+                    <input
+                      value={draft.brand}
+                      onChange={(e) => setDraft({ ...draft, brand: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Barcode
+                    <input
+                      value={draft.barcode}
+                      onChange={(e) => setDraft({ ...draft, barcode: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Category
+                    <input
+                      value={draft.category}
+                      onChange={(e) => setDraft({ ...draft, category: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    OEM Part Number
+                    <input
+                      value={draft.oemPartNumber}
+                      onChange={(e) =>
+                        setDraft({ ...draft, oemPartNumber: e.target.value.toUpperCase() })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Manufacturer Part Number
+                    <input
+                      value={draft.manufacturerPartNumber}
+                      onChange={(e) =>
+                        setDraft({ ...draft, manufacturerPartNumber: e.target.value.toUpperCase() })
+                      }
+                    />
+                  </label>
+                  <label>
+                    MRP
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={draft.mrp}
+                      onChange={(e) => setDraft({ ...draft, mrp: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    HSN Code
+                    <input
+                      inputMode="numeric"
+                      value={draft.hsnCode}
+                      onChange={(e) => setDraft({ ...draft, hsnCode: e.target.value })}
+                    />
+                  </label>
+                  <label className="span-2">
+                    Description
+                    <textarea
+                      rows={2}
+                      value={draft.description}
+                      onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+                    />
+                  </label>
+                </div>
+              </details>
             </div>
             <div className="form-section">
               <h3>Price &amp; Tax</h3>
@@ -978,16 +1337,6 @@ export default function ProductsPage() {
                   />
                 </label>
                 <label>
-                  MRP
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={draft.mrp}
-                    onChange={(e) => setDraft({ ...draft, mrp: e.target.value })}
-                  />
-                </label>
-                <label>
                   GST Rate
                   <select
                     value={draft.gstRate}
@@ -999,14 +1348,6 @@ export default function ProductsPage() {
                       </option>
                     ))}
                   </select>
-                </label>
-                <label>
-                  HSN Code
-                  <input
-                    inputMode="numeric"
-                    value={draft.hsnCode}
-                    onChange={(e) => setDraft({ ...draft, hsnCode: e.target.value })}
-                  />
                 </label>
               </div>
             </div>
@@ -1036,43 +1377,46 @@ export default function ProductsPage() {
                     onChange={(e) => setDraft({ ...draft, reorderLevel: e.target.value })}
                   />
                 </label>
-                <label>
-                  Rack / Bin Location
-                  <input
-                    value={draft.rackLocation}
-                    onChange={(e) => setDraft({ ...draft, rackLocation: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Preferred Supplier
-                  <input
-                    value={draft.preferredSupplier}
-                    onChange={(e) => setDraft({ ...draft, preferredSupplier: e.target.value })}
-                  />
-                </label>
-                <label className="span-2 inline-catalogue-option">
-                  <input
-                    type="checkbox"
-                    checked={draft.trackInventory}
-                    onChange={(e) => setDraft({ ...draft, trackInventory: e.target.checked })}
-                  />
-                  <span>
-                    <strong>Track Inventory For This Product</strong>
-                    <small>
-                      Disable for workshop materials that do not need quantity tracking.
-                    </small>
-                  </span>
-                </label>
-                <label className="span-2">
-                  Vehicle Compatibility
-                  <textarea
-                    rows={2}
-                    value={draft.compatibilityNotes}
-                    onChange={(e) => setDraft({ ...draft, compatibilityNotes: e.target.value })}
-                    placeholder="Example: Maruti Suzuki Swift 2018–2024 Petrol"
-                  />
-                </label>
               </div>
+              <details className="product-advanced-fields inventory-options">
+                <summary>More Inventory Details (Optional)</summary>
+                <div className="form-grid">
+                  <label>
+                    Rack / Bin Location
+                    <input
+                      value={draft.rackLocation}
+                      onChange={(e) => setDraft({ ...draft, rackLocation: e.target.value })}
+                    />
+                  </label>
+                  <label>
+                    Preferred Supplier
+                    <input
+                      value={draft.preferredSupplier}
+                      onChange={(e) => setDraft({ ...draft, preferredSupplier: e.target.value })}
+                    />
+                  </label>
+                  <label className="span-2 inline-catalogue-option">
+                    <input
+                      type="checkbox"
+                      checked={draft.trackInventory}
+                      onChange={(e) => setDraft({ ...draft, trackInventory: e.target.checked })}
+                    />
+                    <span>
+                      <strong>Track Inventory For This Product</strong>
+                      <small>Disable only when quantity tracking is not needed.</small>
+                    </span>
+                  </label>
+                  <label className="span-2">
+                    Vehicle Compatibility
+                    <textarea
+                      rows={2}
+                      value={draft.compatibilityNotes}
+                      onChange={(e) => setDraft({ ...draft, compatibilityNotes: e.target.value })}
+                      placeholder="Example: Maruti Suzuki Swift 2018–2024 Petrol"
+                    />
+                  </label>
+                </div>
+              </details>
             </div>
             <footer className="modal-footer">
               <button type="button" className="cancel-button" onClick={close}>
@@ -1080,6 +1424,56 @@ export default function ProductsPage() {
               </button>
               <button className="dv-button" disabled={submitting}>
                 {submitting ? "Saving…" : editingId ? "Save Changes" : "Add Product"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+      {showImport ? (
+        <div className="modal-backdrop">
+          <form className="module-modal csv-import-modal" onSubmit={importProducts}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Bulk Catalogue</span>
+                <h2>Upload Products From CSV</h2>
+              </div>
+              <button type="button" onClick={() => setShowImport(false)}>
+                ×
+              </button>
+            </header>
+            {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
+            <div className="modal-body csv-import-body">
+              <div className="csv-step">
+                <span>1</span>
+                <div>
+                  <strong>Download The Sample</strong>
+                  <small>It includes headings and two example product rows.</small>
+                </div>
+                <button type="button" onClick={downloadSampleCsv}>
+                  Download Sample CSV
+                </button>
+              </div>
+              <label className="csv-file-field">
+                <span>2</span>
+                <div>
+                  <strong>Select Your Completed CSV</strong>
+                  <small>Maximum 100 products per upload. Product Name and SKU are required.</small>
+                </div>
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={(event) => setImportFile(event.target.files?.[0] ?? null)}
+                  required
+                />
+              </label>
+              {importFile ? <p className="csv-selected-file">Ready: {importFile.name}</p> : null}
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="cancel-button" onClick={() => setShowImport(false)}>
+                Cancel
+              </button>
+              <button className="dv-button" disabled={!importFile || submitting}>
+                {submitting ? "Uploading…" : "Upload Products"}
               </button>
             </footer>
           </form>
@@ -1100,6 +1494,31 @@ export default function ProductsPage() {
               </button>
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
+            <div className="movement-history-preview">
+              <div>
+                <span>Current Stock</span>
+                <strong>
+                  {selectedStock.currentStock} {selected.unit}
+                </strong>
+              </div>
+              <div className="movement-history-list">
+                <strong>Previous Stock Changes</strong>
+                {selectedMovements.length ? (
+                  selectedMovements.slice(0, 4).map((movement) => (
+                    <span key={movement.id}>
+                      <b>{movement.type.replaceAll("_", " ")}</b>
+                      <small>
+                        {movement.stockBefore} → {movement.stockAfter} ·{" "}
+                        {stockDate(movement.occurredAt)}
+                        {movement.reference ? ` · ${movement.reference}` : ""}
+                      </small>
+                    </span>
+                  ))
+                ) : (
+                  <small>No previous stock changes.</small>
+                )}
+              </div>
+            </div>
             <div className="form-grid">
               <label>
                 Movement Type

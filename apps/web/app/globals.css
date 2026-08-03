@@ -2576,7 +2576,86 @@ button.platform-row:hover {
   line-height: 1.5;
 }
 .product-modal {
-  width: min(760px, 100%);
+  width: min(820px, 100%);
+}
+.product-modal .form-grid {
+  gap: 14px 16px;
+  padding: 16px 24px 20px;
+}
+.product-modal .form-grid input,
+.product-modal .form-grid select {
+  min-height: 44px;
+}
+.product-modal .form-section > h3 {
+  margin: 16px 24px 0;
+}
+.product-modal .form-grid .inline-catalogue-option input {
+  width: 19px;
+  height: 19px;
+  min-height: 0;
+  padding: 0;
+  flex: 0 0 19px;
+}
+.product-advanced-fields {
+  margin: 0 24px 16px;
+  overflow: hidden;
+  border: 1px solid #d9dde2;
+  border-radius: 12px;
+  background: #f4f6f8;
+}
+.product-advanced-fields summary {
+  padding: 13px 15px;
+  color: #4b5561;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 850;
+}
+.product-advanced-fields[open] summary {
+  border-bottom: 1px solid #d9dde2;
+}
+.product-advanced-fields .form-grid {
+  padding: 16px;
+}
+.inline-product-type {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 11px;
+  background: #eef2f6;
+}
+.inline-product-type button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  background: #171c22;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+.product-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.catalogue-secondary-action {
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #cfd5db;
+  border-radius: 10px;
+  background: #fff;
+  color: #313943;
+  cursor: pointer;
+  font-weight: 800;
+}
+.catalogue-secondary-action:hover {
+  border-color: #20262d;
+  background: #f4f5f6;
+}
+.product-detail-footer {
+  justify-content: flex-start;
 }
 .form-section {
   padding: 4px 0 20px;
@@ -5821,6 +5900,100 @@ button.platform-row:hover {
 }
 .stock-movement-button {
   margin: 18px 0 0 auto;
+}
+.movement-history-preview {
+  display: grid;
+  grid-template-columns: 0.6fr 1.4fr;
+  gap: 14px;
+  margin: 18px 24px 0;
+  padding: 14px;
+  border-radius: 13px;
+  background: #151a20;
+  color: #fff;
+}
+.movement-history-preview > div:first-child {
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  padding: 12px;
+  border-right: 1px solid #343b44;
+}
+.movement-history-preview span {
+  color: #adb5bf;
+  font-size: 11px;
+}
+.movement-history-preview > div:first-child strong {
+  font-size: 22px;
+}
+.movement-history-list {
+  display: grid;
+  gap: 7px;
+}
+.movement-history-list > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.movement-history-list b {
+  color: #fff;
+  font-size: 10px;
+  text-transform: capitalize;
+}
+.csv-import-body {
+  display: grid;
+  gap: 14px;
+}
+.csv-step,
+.csv-file-field {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  padding: 16px;
+  border: 1px solid #d8dde2;
+  border-radius: 13px;
+  background: #fff;
+}
+.csv-step > span,
+.csv-file-field > span {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #171c22;
+  color: #fff;
+  font-weight: 900;
+}
+.csv-step > div,
+.csv-file-field > div {
+  display: grid;
+  gap: 4px;
+}
+.csv-step small,
+.csv-file-field small {
+  color: #727c87;
+}
+.csv-step button {
+  min-height: 40px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 9px;
+  background: #ed3035;
+  color: #fff;
+  cursor: pointer;
+  font-weight: 800;
+}
+.csv-file-field input {
+  max-width: 220px;
+}
+.csv-selected-file {
+  margin: 0;
+  padding: 10px 13px;
+  border-radius: 10px;
+  background: #eaf7f0;
+  color: #1d704d;
+  font-weight: 750;
 }
 .stock-history {
   margin-top: 18px;
