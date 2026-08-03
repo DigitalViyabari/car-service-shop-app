@@ -39,6 +39,7 @@ export default function CommunicationsAdmin() {
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [selectedCompany, setSelectedCompany] = useState("all");
+  const [testEmail, setTestEmail] = useState("cometomeetme@gmail.com");
   const allowed = profile?.platformRoles?.includes("platform_super_admin");
 
   useEffect(() => {
@@ -178,6 +179,33 @@ export default function CommunicationsAdmin() {
       setSaving(null);
     }
   }
+  async function sendEmailTest() {
+    if (!user || !testEmail.trim()) return;
+    setSaving("test_email");
+    setMessage("");
+    try {
+      const [idToken, appCheckToken] = await Promise.all([
+          user.getIdToken(),
+          getFirebaseAppCheckToken(),
+        ]),
+        response = await fetch("/api/v1/communications/test-email", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${idToken}`,
+            "x-firebase-appcheck": appCheckToken,
+          },
+          body: JSON.stringify({ recipient: testEmail.trim() }),
+        }),
+        result = (await response.json()) as { error?: string; recipient?: string };
+      if (!response.ok) throw new Error(result.error ?? "Test email could not be sent.");
+      setMessage(`Test email sent to ${result.recipient}. Check the inbox and spam folder.`);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Test email could not be sent.");
+    } finally {
+      setSaving(null);
+    }
+  }
 
   const visibleCompanies = companies.filter(
     (company) => selectedCompany === "all" || company.id === selectedCompany,
@@ -212,6 +240,28 @@ export default function CommunicationsAdmin() {
           </select>
         </label>
         <p>Every card below has its own channels, rates, credentials and credit balance.</p>
+      </section>
+      <section className="communications-email-test">
+        <div>
+          <span className="heading-kicker">Production Check</span>
+          <h2>Email Notification Test</h2>
+          <p>Sends through the configured Hostinger SMTP account.</p>
+        </div>
+        <label>
+          Recipient Email
+          <input
+            type="email"
+            value={testEmail}
+            onChange={(event) => setTestEmail(event.target.value)}
+          />
+        </label>
+        <button
+          className="dv-button"
+          disabled={saving === "test_email" || !testEmail.trim()}
+          onClick={() => void sendEmailTest()}
+        >
+          {saving === "test_email" ? "Sending…" : "Send Test Email"}
+        </button>
       </section>
       <section className="admin-company-list">
         {visibleCompanies.map((company) => {

@@ -1112,10 +1112,43 @@ button.platform-row:hover {
   margin: 0;
   color: #68737f;
 }
+.communications-email-test {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(260px, 0.8fr) auto;
+  gap: 20px;
+  align-items: end;
+  padding: 20px;
+  border: 1px solid #b9d8c8;
+  border-left: 5px solid #22a06b;
+  border-radius: 14px;
+  background: #f3fbf7;
+}
+.communications-email-test h2,
+.communications-email-test p {
+  margin: 4px 0 0;
+}
+.communications-email-test p {
+  color: #68737f;
+}
+.communications-email-test label {
+  display: grid;
+  gap: 7px;
+  font-weight: 800;
+}
+.communications-email-test input {
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid #c7d7cf;
+  border-radius: 10px;
+  background: #fff;
+}
 @media (max-width: 760px) {
   .communications-company-filter {
     align-items: stretch;
     flex-direction: column;
+  }
+  .communications-email-test {
+    grid-template-columns: 1fr;
   }
 }
 .platform-admin-create {

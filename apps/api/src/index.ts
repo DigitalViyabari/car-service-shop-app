@@ -28,6 +28,7 @@ const configureSchema = z.object({
     .regex(/^\d{10,15}$/)
     .optional(),
 });
+const testEmailSchema = z.object({ recipient: z.email() });
 const sendSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -2041,6 +2042,38 @@ async function configure(request: IncomingMessage, user: DecodedIdToken) {
   ]);
   return { configured: true, companyId, channel };
 }
+async function sendTestEmail(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await superAdmin(user.uid)))
+    throw new ApiError(403, "Platform Super Admin access is required.");
+  const parsed = testEmailSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter a valid test email address.");
+  const password = process.env.SMTP_PASSWORD;
+  if (!password) throw new ApiError(503, "SMTP password is not configured on the VPS.");
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST ?? "smtp.hostinger.com",
+    port: Number(process.env.SMTP_PORT ?? 465),
+    secure: true,
+    auth: {
+      user: process.env.SMTP_USER ?? "noreply@digitalviyabari.com",
+      pass: password,
+    },
+  });
+  const sent = await transporter.sendMail({
+    from: `"${process.env.SMTP_FROM_NAME ?? "Digital Viyabari"}" <${process.env.SMTP_USER ?? "noreply@digitalviyabari.com"}>`,
+    to: parsed.data.recipient,
+    subject: "Digital Viyabari Email Test",
+    text: "Your Digital Viyabari production email notification connection is working correctly.",
+    html: '<div style="font-family:Arial,sans-serif;padding:24px;color:#111820"><h2 style="margin:0 0 12px">Email connection successful</h2><p>Your Digital Viyabari production email notification connection is working correctly.</p></div>',
+  });
+  await db.collection("platformAuditLogs").add({
+    action: "test_email_sent",
+    actorUserId: user.uid,
+    recipient: parsed.data.recipient,
+    providerMessageId: sent.messageId,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return { sent: true, recipient: parsed.data.recipient };
+}
 
 async function send(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = sendSchema.safeParse(await body(request));
@@ -2506,6 +2539,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await recordSupplierPayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/communications/configure")
       return reply(response, 200, await configure(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/communications/test-email")
+      return reply(response, 200, await sendTestEmail(request, user));
     if (request.method === "POST" && url.pathname === "/v1/communications/send")
       return reply(response, 200, await send(request, user));
     throw new ApiError(404, "Route not found.");
