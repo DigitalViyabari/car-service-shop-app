@@ -3300,9 +3300,36 @@ button.platform-row:hover {
   width: min(630px, 100%);
 }
 .estimate-heading button:disabled,
-.estimate-lines button:disabled {
+.estimate-lines button:disabled,
+.approval-strip button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
+}
+.vehicle-in-shop-warning {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 14px;
+  align-items: center;
+  padding: 14px 16px;
+  border-left: 5px solid #df3d46;
+  border-radius: 12px;
+  background: #fff1f2;
+  color: #8f272c;
+}
+.vehicle-in-shop-warning span {
+  font-size: 0.82rem;
+}
+.vehicle-in-shop-warning button {
+  grid-column: 2;
+  grid-row: 1/3;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #e3a9ac;
+  border-radius: 9px;
+  background: #fff;
+  color: #a72c32;
+  font-weight: 800;
+  cursor: pointer;
 }
 .approval-strip {
   display: flex;

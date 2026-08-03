@@ -469,12 +469,10 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     job.get("branchId") !== input.branchId
   )
     throw new ApiError(404, "Approved job not found.");
-  const progressedStatuses = ["approved", "in_progress", "quality_check", "ready", "delivered"];
-  if (
-    job.get("approvalStatus") !== "approved" &&
-    !progressedStatuses.includes(String(job.get("status")))
-  )
-    throw new ApiError(409, "Approve and lock the estimate before invoicing.");
+  if (job.get("status") !== "ready")
+    throw new ApiError(409, "An invoice can be issued only after the vehicle is marked Ready.");
+  if (job.get("approvalStatus") !== "approved")
+    throw new ApiError(409, "Customer approval is required before invoicing.");
   if (job.get("estimateLocked") !== true)
     throw new ApiError(409, "Lock the approved estimate before invoicing.");
   const activeLines = lines.docs.filter((line) => line.get("status") === "active");
@@ -666,6 +664,21 @@ async function createJob(request: IncomingMessage, user: DecodedIdToken) {
     vehicle.get("customerId") !== input.customerId
   )
     throw new ApiError(404, "Vehicle not found for this customer.");
+  const vehicleJobs = await db
+      .collection("jobSheets")
+      .where("vehicleId", "==", input.vehicleId)
+      .get(),
+    activeVehicleJobs = vehicleJobs.docs.filter(
+      (item) =>
+        item.get("companyId") === input.companyId &&
+        item.get("branchId") === input.branchId &&
+        !["delivered", "cancelled"].includes(String(item.get("status"))),
+    );
+  if (activeVehicleJobs.length)
+    throw new ApiError(
+      409,
+      `This vehicle is already inside the workshop under ${String(activeVehicleJobs[0]?.get("jobNumber") ?? "an active job")}.`,
+    );
   const nowDate = new Date(),
     startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,

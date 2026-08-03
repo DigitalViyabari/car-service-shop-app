@@ -268,14 +268,9 @@ export default function InvoicesPage() {
   const eligibleJobs = useMemo(
     () =>
       jobs.filter(
-        (job) =>
-          (job.approvalStatus === "approved" ||
-            ["approved", "in_progress", "quality_check", "ready", "delivered"].includes(
-              job.status,
-            )) &&
-          job.estimateLocked,
+        (job) => job.status === "ready" && job.approvalStatus === "approved" && job.estimateLocked,
       ),
-    [jobLineTotals, jobs],
+    [jobs],
   );
   const invoiceableJobs = useMemo(
     () => eligibleJobs.filter((job) => !invoices.some(({ jobId }) => jobId === job.id)),
@@ -1021,7 +1016,8 @@ export default function InvoicesPage() {
             <div className="form-grid">
               {invoiceableJobs.length === 0 ? (
                 <div className="span-2 invoice-edit-note">
-                  No uninvoiced approved job is ready. Approve and lock an estimate first.
+                  No Ready vehicle is waiting for an invoice. Complete Quality Check and mark the
+                  vehicle Ready first.
                 </div>
               ) : null}
               <label className="span-2">

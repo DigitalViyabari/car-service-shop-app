@@ -426,6 +426,11 @@ export default function JobsPage() {
   const customerVehicles = vehicles.filter(({ customerId }) => customerId === draft.customerId);
   const selectedVehicle = vehicles.find(({ id }) => id === draft.vehicleId);
   const selectedCustomer = customers.find(({ id }) => id === draft.customerId);
+  const activeVehicleJob = jobs.find(
+    (job) =>
+      job.vehicleId === draft.vehicleId &&
+      !(["delivered", "cancelled"] as JobStatus[]).includes(job.status),
+  );
   const counts = {
     active: jobs.filter(
       ({ status }) => !(["delivered", "cancelled"] as JobStatus[]).includes(status),
@@ -499,6 +504,10 @@ export default function JobsPage() {
       .filter(Boolean);
     if (complaints.length === 0) {
       setError("Enter at least one Customer Complaint.");
+      return;
+    }
+    if (activeVehicleJob) {
+      setError(`This car is inside the workshop under ${activeVehicleJob.jobNumber}.`);
       return;
     }
     setSubmitting(true);
@@ -623,6 +632,7 @@ export default function JobsPage() {
         status: "delivered",
         deliveredAt: now,
         deliveryNotes: deliveryDraft.notes.trim(),
+        deliveredWithoutInvoice: !selectedInvoice,
         nextServiceDueAt: deliveryDraft.dueAt || null,
         nextServiceDueKm: deliveryDraft.dueKm ? Number(deliveryDraft.dueKm) : null,
         updatedAt: now,
@@ -1262,8 +1272,13 @@ export default function JobsPage() {
                           Record Customer Decision
                         </button>
                       ) : null}
-                      {canAssignTechnician && selected.estimateLocked ? (
+                      {canAssignTechnician && selected.estimateLocked && !selectedInvoice ? (
                         <button onClick={() => void createRevision()}>Create Revision</button>
+                      ) : null}
+                      {canAssignTechnician && selected.estimateLocked && selectedInvoice ? (
+                        <button type="button" disabled title="An issued invoice cannot be changed">
+                          Invoice Issued — Estimate Locked
+                        </button>
                       ) : null}
                     </div>
                   </div>
@@ -1402,7 +1417,7 @@ export default function JobsPage() {
                 </strong>
                 <span>
                   {!selectedInvoice
-                    ? "Issue the invoice before delivery, or confirm delivery without an invoice."
+                    ? "Issue the invoice first unless this is approved no-charge or warranty work."
                     : `${currency(selectedInvoice.paidAmount)} paid · ${currency(selectedInvoice.balanceAmount)} still due.`}
                 </span>
               </div>
@@ -1454,7 +1469,11 @@ export default function JobsPage() {
                 Cancel
               </button>
               <button className="dv-button" disabled={submitting}>
-                {submitting ? "Completing…" : "Confirm & Deliver Anyway"}
+                {submitting
+                  ? "Completing…"
+                  : !selectedInvoice
+                    ? "Confirm No-Charge Delivery"
+                    : "Confirm & Deliver Anyway"}
               </button>
             </footer>
           </form>
@@ -1478,7 +1497,7 @@ export default function JobsPage() {
               </button>
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
-            <div className="form-grid estimate-item-grid">
+            <div className="form-grid">
               <label>
                 Customer *
                 <select
@@ -1495,22 +1514,6 @@ export default function JobsPage() {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label className="gst-choice">
-                GST Rate *
-                <select
-                  value={lineDraft.gstRate}
-                  onChange={(e) => setLineDraft({ ...lineDraft, gstRate: e.target.value })}
-                  required
-                >
-                  <option value="">Select GST</option>
-                  {[0, 5, 12, 18, 28, 40].map((value) => (
-                    <option value={value} key={value}>
-                      {value}%
-                    </option>
-                  ))}
-                </select>
-                <small>Confirm the tax rate before adding this item.</small>
               </label>
               <label>
                 Vehicle *
@@ -1535,6 +1538,23 @@ export default function JobsPage() {
                   ))}
                 </select>
               </label>
+              {activeVehicleJob ? (
+                <div className="span-2 vehicle-in-shop-warning">
+                  <strong>This car is inside our workshop.</strong>
+                  <span>
+                    Active Job {activeVehicleJob.jobNumber} · {statusLabel(activeVehicleJob.status)}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowForm(false);
+                      setSelectedId(activeVehicleJob.id);
+                    }}
+                  >
+                    Open Active Job
+                  </button>
+                </div>
+              ) : null}
               <label>
                 Service Type
                 <select
@@ -1635,7 +1655,9 @@ export default function JobsPage() {
               </button>
               <button
                 className="dv-button"
-                disabled={submitting || !draft.customerId || !draft.vehicleId}
+                disabled={
+                  submitting || !draft.customerId || !draft.vehicleId || Boolean(activeVehicleJob)
+                }
               >
                 {submitting ? "Creating…" : "Create Job Card"}
               </button>
