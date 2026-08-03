@@ -13,9 +13,12 @@ const configSchema = z.object({
   appId: z.string().min(1),
 });
 
-export function createFirebaseClient(options: FirebaseOptions) {
+export function createFirebaseClient(options: FirebaseOptions, appName?: string) {
   const config = configSchema.parse(options);
-  const app = getApps().length ? getApp() : initializeApp(config);
+  const existing = appName
+      ? getApps().find((item) => item.name === appName)
+      : getApps().find((item) => item.name === "[DEFAULT]"),
+    app = existing ?? (appName ? initializeApp(config, appName) : initializeApp(config));
   return { app, auth: getAuth(app), db: getFirestore(app), storage: getStorage(app) };
 }
 

@@ -1,9 +1,8 @@
 "use client";
 
-import { signInWithCustomToken } from "firebase/auth";
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { firebaseClient, getFirebaseAppCheckToken } from "@/lib/firebase-client";
+import { getFirebaseAppCheckToken } from "@/lib/firebase-client";
 
 type Business = {
   id: string;
@@ -180,20 +179,55 @@ export default function PlatformAdminPage() {
       )
     )
       return;
+    const channel = crypto.randomUUID(),
+      impersonationTab = window.open(
+        `/admin/impersonate?channel=${encodeURIComponent(channel)}`,
+        "_blank",
+      );
+    if (!impersonationTab) {
+      setMessage("Allow pop-ups for this site, then try Open Account again.");
+      return;
+    }
     setBusy(true);
+    setMessage("");
+    let token = "",
+      ready = false;
+    const deliver = () => {
+        if (!ready || !token || impersonationTab.closed) return;
+        impersonationTab.postMessage(
+          {
+            type: "dvcs-impersonation-token",
+            channel,
+            token,
+            email: account.email,
+          },
+          window.location.origin,
+        );
+      },
+      receiveReady = (event: MessageEvent) => {
+        if (
+          event.origin === window.location.origin &&
+          event.source === impersonationTab &&
+          event.data?.type === "dvcs-impersonation-ready" &&
+          event.data?.channel === channel
+        ) {
+          ready = true;
+          deliver();
+        }
+      };
+    window.addEventListener("message", receiveReady);
     try {
       const result = await api("/api/v1/admin/impersonate", {
         method: "POST",
         body: JSON.stringify({ targetUserId: account.userId }),
       });
-      sessionStorage.setItem(
-        "dvcs_impersonation",
-        JSON.stringify({ email: result.targetEmail, startedAt: new Date().toISOString() }),
-      );
-      await signInWithCustomToken(firebaseClient.auth, result.token);
-      window.location.href = "/dashboard";
+      token = result.token;
+      deliver();
     } catch (reason) {
+      impersonationTab.close();
       setMessage(reason instanceof Error ? reason.message : "Unable to open account.");
+    } finally {
+      window.setTimeout(() => window.removeEventListener("message", receiveReady), 30_000);
       setBusy(false);
     }
   }

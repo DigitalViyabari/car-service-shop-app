@@ -12,7 +12,19 @@ const firebaseConfig = {
   measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID,
 };
 
-export const firebaseClient = createFirebaseClient(firebaseConfig);
+const impersonationAppName = "dvcs-impersonation";
+const impersonationMode =
+  typeof window !== "undefined" &&
+  window.sessionStorage.getItem("dvcs.impersonationMode") === "true";
+
+export const firebaseClient = createFirebaseClient(
+  firebaseConfig,
+  impersonationMode ? impersonationAppName : undefined,
+);
+
+export function createImpersonationFirebaseClient() {
+  return createFirebaseClient(firebaseConfig, impersonationAppName);
+}
 
 let appCheckPromise: Promise<import("firebase/app-check").AppCheck | null> | null = null;
 

@@ -4,6 +4,7 @@ import type { Branch, BranchSubscription, Company, Membership, UserProfile } fro
 import type { User } from "firebase/auth";
 import {
   browserLocalPersistence,
+  browserSessionPersistence,
   onAuthStateChanged,
   setPersistence,
   signOut,
@@ -144,7 +145,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let active = true;
-    void setPersistence(firebaseClient.auth, browserLocalPersistence).catch(() => undefined);
+    const impersonationMode = window.sessionStorage.getItem("dvcs.impersonationMode") === "true";
+    void setPersistence(
+      firebaseClient.auth,
+      impersonationMode ? browserSessionPersistence : browserLocalPersistence,
+    ).catch(() => undefined);
     const unsubscribe = onAuthStateChanged(firebaseClient.auth, async (nextUser) => {
       if (!active) return;
       setLoading(true);
