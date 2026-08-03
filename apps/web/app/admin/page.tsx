@@ -9,9 +9,9 @@ type Business = {
   id: string;
   name: string;
   status: string;
-  turnover: number;
-  collected: number;
-  invoiceCount: number;
+  turnover?: number;
+  collected?: number;
+  invoiceCount?: number;
   memberCount: number;
   owners: { userId: string; displayName: string; email: string }[];
 };
@@ -190,15 +190,21 @@ export default function PlatformAdminPage() {
         </div>
       </main>
     );
-  const total = businesses.reduce((sum, item) => sum + item.turnover, 0),
-    collected = businesses.reduce((sum, item) => sum + item.collected, 0);
+  const total = businesses.reduce((sum, item) => sum + (item.turnover ?? 0), 0),
+    collected = businesses.reduce((sum, item) => sum + (item.collected ?? 0), 0),
+    activeBusinesses = businesses.filter(({ status }) => status === "active").length,
+    ownerCount = businesses.reduce((sum, item) => sum + item.owners.length, 0);
   return (
     <main className="admin-page platform-control">
       <header className="admin-header">
         <div>
           <span className="heading-kicker">Digital Viyabari Control</span>
           <h1>Business Control Centre</h1>
-          <p>Turnover, subscriptions, owners and account access in one place.</p>
+          <p>
+            {superAdmin
+              ? "Subscriptions, business performance and platform access."
+              : "Owner accounts, subscriptions and customer support operations."}
+          </p>
           <span className="platform-role-chip">{superAdmin ? "Super Admin" : "Support Admin"}</span>
         </div>
         <div className="admin-header-links">
@@ -212,14 +218,29 @@ export default function PlatformAdminPage() {
           <span>Total Businesses</span>
           <strong>{businesses.length}</strong>
         </article>
-        <article>
-          <span>Total Turnover</span>
-          <strong>{money.format(total)}</strong>
-        </article>
-        <article>
-          <span>Collected</span>
-          <strong>{money.format(collected)}</strong>
-        </article>
+        {superAdmin ? (
+          <>
+            <article className="is-finance">
+              <span>Total Turnover</span>
+              <strong>{money.format(total)}</strong>
+            </article>
+            <article className="is-positive">
+              <span>Collected</span>
+              <strong>{money.format(collected)}</strong>
+            </article>
+          </>
+        ) : (
+          <>
+            <article className="is-positive">
+              <span>Active Businesses</span>
+              <strong>{activeBusinesses}</strong>
+            </article>
+            <article>
+              <span>Business Owners</span>
+              <strong>{ownerCount}</strong>
+            </article>
+          </>
+        )}
         <article>
           <span>Accounts</span>
           <strong>{accounts.length}</strong>
@@ -314,32 +335,36 @@ export default function PlatformAdminPage() {
       <section className="platform-businesses">
         <header>
           <div>
-            <span className="heading-kicker">Business Performance</span>
-            <h2>All Owner Businesses</h2>
+            <span className="heading-kicker">
+              {superAdmin ? "Business Performance" : "Business Directory"}
+            </span>
+            <h2>{superAdmin ? "All Owner Businesses" : "Supported Businesses"}</h2>
           </div>
         </header>
         <div className="platform-table">
-          <div className="platform-row platform-row-head">
+          <div
+            className={`platform-row platform-row-head ${superAdmin ? "" : "platform-row--support"}`}
+          >
             <span>Business</span>
             <span>Owner</span>
-            <span>Turnover</span>
-            <span>Collected</span>
-            <span>Invoices</span>
+            {superAdmin ? <span>Turnover</span> : <span>Status</span>}
+            {superAdmin ? <span>Collected</span> : null}
+            {superAdmin ? <span>Invoices</span> : null}
             <span>Team</span>
           </div>
           {businesses.map((item) => (
             <button
               key={item.id}
-              className="platform-row"
+              className={`platform-row ${superAdmin ? "" : "platform-row--support"}`}
               onClick={() => setSelectedCompany(item.id)}
             >
               <strong>{item.name}</strong>
               <span>
                 {item.owners.map((owner) => owner.displayName).join(", ") || "Not Assigned"}
               </span>
-              <b>{money.format(item.turnover)}</b>
-              <span>{money.format(item.collected)}</span>
-              <span>{item.invoiceCount}</span>
+              {superAdmin ? <b>{money.format(item.turnover ?? 0)}</b> : <span>{item.status}</span>}
+              {superAdmin ? <span>{money.format(item.collected ?? 0)}</span> : null}
+              {superAdmin ? <span>{item.invoiceCount ?? 0}</span> : null}
               <span>{item.memberCount}</span>
             </button>
           ))}

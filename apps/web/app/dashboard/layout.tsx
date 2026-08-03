@@ -18,7 +18,15 @@ type WorkspaceNotification = {
 function NavIcon({
   name,
 }: {
-  name: "overview" | "operations" | "inventory" | "finance" | "reports" | "team" | "settings";
+  name:
+    | "overview"
+    | "operations"
+    | "inventory"
+    | "finance"
+    | "reports"
+    | "team"
+    | "communications"
+    | "settings";
 }) {
   const paths = {
     overview: (
@@ -60,6 +68,12 @@ function NavIcon({
         <circle cx="9" cy="8" r="3" />
         <circle cx="17" cy="9" r="2" />
         <path d="M3.5 20a5.5 5.5 0 0 1 11 0M14 15.5a4 4 0 0 1 6.5 3.1" />
+      </>
+    ),
+    communications: (
+      <>
+        <path d="M4 5h16v11H8l-4 4V5Z" />
+        <path d="M8 9h8M8 12h5" />
       </>
     ),
     settings: (
@@ -274,12 +288,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
         <div className="nav-label">Workshop control</div>
         <nav className="nav" aria-label="Primary navigation">
-          {!technicianOnly ? (
-            <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
-              <NavIcon name="overview" />
-              Overview
-            </Link>
-          ) : null}
           <Link
             href="/dashboard/jobs"
             className={pathname.startsWith("/dashboard/jobs") ? "is-active" : ""}
@@ -288,12 +296,27 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             Job Cards
           </Link>
           {!technicianOnly ? (
+            <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
+              <NavIcon name="overview" />
+              Overview
+            </Link>
+          ) : null}
+          {!technicianOnly ? (
             <Link
               href="/dashboard/customers"
               className={pathname.startsWith("/dashboard/customers") ? "is-active" : ""}
             >
               <NavIcon name="team" />
               Customers
+            </Link>
+          ) : null}
+          {canAccessFinance ? (
+            <Link
+              href="/dashboard/invoices"
+              className={pathname.startsWith("/dashboard/invoices") ? "is-active" : ""}
+            >
+              <NavIcon name="finance" />
+              Invoices &amp; Payments
             </Link>
           ) : null}
           {canAccessInventory ? (
@@ -312,15 +335,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             >
               <NavIcon name="finance" />
               Purchases &amp; Expenses
-            </Link>
-          ) : null}
-          {canAccessFinance ? (
-            <Link
-              href="/dashboard/invoices"
-              className={pathname.startsWith("/dashboard/invoices") ? "is-active" : ""}
-            >
-              <NavIcon name="finance" />
-              Invoices &amp; Payments
             </Link>
           ) : null}
           {canAccessFinance ? (
@@ -409,6 +423,16 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   ? `Subscription ${subscription.status.replaceAll("_", " ")}`
                   : "No subscription"}
               </StatusBadge>
+            ) : null}
+            {isCompanyOwner ? (
+              <Link
+                className="topbar-settings topbar-communications"
+                href="/dashboard/communications"
+                aria-label="Communications"
+                title="Communications"
+              >
+                <NavIcon name="communications" />
+              </Link>
             ) : null}
             {isCompanyOwner ? (
               <Link className="topbar-settings" href="/dashboard/settings" aria-label="Settings">

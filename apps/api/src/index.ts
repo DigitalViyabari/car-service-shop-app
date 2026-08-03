@@ -226,17 +226,19 @@ async function platformOverview(user: DecodedIdToken) {
   if (!(await platformAdministrator(user.uid)))
     throw new ApiError(403, "Platform Admin access is required.");
   const administratorProfile = await db.doc(`users/${user.uid}`).get(),
-    platformRoles = (administratorProfile.get("platformRoles") as string[] | undefined) ?? [];
+    platformRoles = (administratorProfile.get("platformRoles") as string[] | undefined) ?? [],
+    exposeFinancials = platformRoles.includes("platform_super_admin");
   const [companies, memberships, invoices, users] = await Promise.all([
       db.collection("companies").get(),
       db.collection("memberships").get(),
-      db.collection("invoices").get(),
+      exposeFinancials ? db.collection("invoices").get() : Promise.resolve(null),
       db.collection("users").get(),
     ]),
     profiles = new Map(users.docs.map((item) => [item.id, item.data()])),
     companyItems = companies.docs.map((company) => {
       const companyId = company.id,
-        companyInvoices = invoices.docs.filter((item) => item.get("companyId") === companyId),
+        companyInvoices =
+          invoices?.docs.filter((item) => item.get("companyId") === companyId) ?? [],
         companyMembers = memberships.docs.filter((item) => item.get("companyId") === companyId),
         owners = companyMembers
           .filter((item) =>
@@ -254,15 +256,19 @@ async function platformOverview(user: DecodedIdToken) {
         id: companyId,
         name: company.get("name") ?? "Business",
         status: company.get("status") ?? "active",
-        turnover: companyInvoices.reduce(
-          (sum, item) => sum + Number(item.get("totalAmount") ?? 0),
-          0,
-        ),
-        collected: companyInvoices.reduce(
-          (sum, item) => sum + Number(item.get("paidAmount") ?? 0),
-          0,
-        ),
-        invoiceCount: companyInvoices.length,
+        ...(exposeFinancials
+          ? {
+              turnover: companyInvoices.reduce(
+                (sum, item) => sum + Number(item.get("totalAmount") ?? 0),
+                0,
+              ),
+              collected: companyInvoices.reduce(
+                (sum, item) => sum + Number(item.get("paidAmount") ?? 0),
+                0,
+              ),
+              invoiceCount: companyInvoices.length,
+            }
+          : {}),
         memberCount: companyMembers.length,
         owners,
       };
@@ -466,23 +472,21 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     totalAmount = activeLines.reduce((sum, line) => sum + Number(line.get("totalAmount") ?? 0), 0),
     settings = await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
     prefix =
-      String(settings.get("invoicePrefix") ?? "INV")
+      String((settings.exists ? settings.get("invoicePrefix") : null) ?? "INV")
         .replace(/[^A-Za-z0-9]/g, "")
         .toUpperCase()
         .slice(0, 4) || "INV",
-    configuredStart = Math.max(
-      1,
-      Math.min(999999, Number(settings.get("invoiceStartNumber") ?? 1)),
-    ),
+    requestedStart = Number(settings.exists ? settings.get("invoiceStartNumber") : 1),
+    configuredStart = Number.isInteger(requestedStart)
+      ? Math.max(1, Math.min(999999, requestedStart))
+      : 1,
     nowDate = new Date(),
     startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
     sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`);
   const invoiceNumber = await db.runTransaction(async (transaction) => {
-    const [currentInvoice, sequence] = await Promise.all([
-        transaction.get(invoiceRef),
-        transaction.get(sequenceRef),
-      ]),
+    const currentInvoice = await transaction.get(invoiceRef),
+      sequence = await transaction.get(sequenceRef),
       serial = sequence.exists ? Number(sequence.get("lastNumber") ?? 0) + 1 : configuredStart;
     if (currentInvoice.exists) throw new ApiError(409, "An invoice already exists for this job.");
     if (serial > 999999) throw new ApiError(409, "Invoice series limit reached. Contact support.");
@@ -507,13 +511,13 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       companyId: input.companyId,
       branchId: input.branchId,
       jobId: input.jobId,
-      jobNumber: job.get("jobNumber"),
+      jobNumber: String(job.get("jobNumber") ?? ""),
       invoiceNumber: number,
-      customerId: job.get("customerId"),
-      customerName: job.get("customerName"),
-      vehicleId: job.get("vehicleId"),
-      vehicleLabel: job.get("vehicleLabel"),
-      registrationNumber: job.get("registrationNumber"),
+      customerId: String(job.get("customerId") ?? ""),
+      customerName: String(job.get("customerName") ?? "Customer"),
+      vehicleId: String(job.get("vehicleId") ?? ""),
+      vehicleLabel: String(job.get("vehicleLabel") ?? "Vehicle"),
+      registrationNumber: String(job.get("registrationNumber") ?? ""),
       taxableAmount,
       taxAmount,
       totalAmount,
@@ -534,17 +538,17 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
         branchId: input.branchId,
         invoiceId: invoiceRef.id,
         jobLineItemId: line.id,
-        type: line.get("type"),
+        type: line.get("type") === "product" ? "product" : "labour",
         productId: line.get("productId") ?? null,
-        description: line.get("description"),
-        quantity: line.get("quantity"),
-        unit: line.get("unit"),
-        unitPrice: line.get("unitPrice"),
-        discount: line.get("discount"),
-        gstRate: line.get("gstRate"),
-        taxableAmount: line.get("taxableAmount"),
-        taxAmount: line.get("taxAmount"),
-        totalAmount: line.get("totalAmount"),
+        description: String(line.get("description") ?? "Service"),
+        quantity: Number(line.get("quantity") ?? 1),
+        unit: String(line.get("unit") ?? "JOB"),
+        unitPrice: Number(line.get("unitPrice") ?? 0),
+        discount: Number(line.get("discount") ?? 0),
+        gstRate: Number(line.get("gstRate") ?? 0),
+        taxableAmount: Number(line.get("taxableAmount") ?? 0),
+        taxAmount: Number(line.get("taxAmount") ?? 0),
+        totalAmount: Number(line.get("totalAmount") ?? 0),
         createdAt: now,
         createdBy: user.uid,
         updatedAt: now,
@@ -1482,11 +1486,16 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await send(request, user));
     throw new ApiError(404, "Route not found.");
   } catch (reason) {
-    const status = reason instanceof ApiError ? reason.status : 500;
+    const status = reason instanceof ApiError ? reason.status : 500,
+      errorReference = randomBytes(4).toString("hex").toUpperCase();
+    if (status === 500)
+      process.stderr.write(
+        `[${errorReference}] ${request.method ?? "REQUEST"} ${request.url ?? "/"}: ${reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)}\n`,
+      );
     reply(response, status, {
       error:
         status === 500
-          ? "Internal server error."
+          ? `Server could not complete this request. Reference: ${errorReference}`
           : reason instanceof Error
             ? reason.message
             : "Request failed.",
