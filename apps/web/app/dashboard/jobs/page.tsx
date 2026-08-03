@@ -16,6 +16,7 @@ import type {
 import {
   collection,
   doc,
+  getDoc,
   getDocs,
   increment,
   query,
@@ -177,6 +178,7 @@ export default function JobsPage() {
         (item) => item.branchId === activeBranchId && item.roles.includes("branch_manager"),
       ),
     isTechnician = branchRoles.includes("technician"),
+    technicianOnly = isTechnician && !canAssignTechnician,
     canCreateJob = canAssignTechnician || branchRoles.includes("job_creator");
   const [showApproval, setShowApproval] = useState(false),
     [approvalMethod, setApprovalMethod] = useState<EstimateApprovalMethod>("whatsapp"),
@@ -187,7 +189,7 @@ export default function JobsPage() {
     setLoading(true);
     try {
       let assignedJobs: JobSheet[] | null = null;
-      if (isTechnician && user) {
+      if (technicianOnly && user) {
         const [token, appCheck] = await Promise.all([
             user.getIdToken(),
             getFirebaseAppCheckToken(),
@@ -205,7 +207,7 @@ export default function JobsPage() {
         if (!response.ok) throw new Error(result.error ?? "Unable to load assigned jobs.");
         assignedJobs = result.jobs ?? [];
       }
-      const jobDocs = isTechnician
+      const jobDocs = technicianOnly
         ? null
         : await getDocs(
             query(
@@ -223,7 +225,7 @@ export default function JobsPage() {
         serviceDocs,
         invoiceDocs,
       ] = await Promise.all([
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -232,7 +234,7 @@ export default function JobsPage() {
                 where("branchId", "==", activeBranchId),
               ),
             ),
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -241,7 +243,7 @@ export default function JobsPage() {
                 where("branchId", "==", activeBranchId),
               ),
             ),
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -250,7 +252,7 @@ export default function JobsPage() {
                 where("branchId", "==", activeBranchId),
               ),
             ),
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -258,7 +260,7 @@ export default function JobsPage() {
                 where("companyId", "==", activeCompanyId),
               ),
             ),
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -267,7 +269,7 @@ export default function JobsPage() {
                 where("branchId", "==", activeBranchId),
               ),
             ),
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -275,7 +277,7 @@ export default function JobsPage() {
                 where("companyId", "==", activeCompanyId),
               ),
             ),
-        isTechnician
+        technicianOnly
           ? Promise.resolve({ docs: [] })
           : getDocs(
               query(
@@ -331,7 +333,7 @@ export default function JobsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeBranchId, activeCompanyId, isTechnician, user]);
+  }, [activeBranchId, activeCompanyId, technicianOnly, user]);
   const loadTechnicians = useCallback(async () => {
     if (!user || !activeCompanyId || !activeBranchId || !canAssignTechnician) return;
     try {
@@ -384,8 +386,8 @@ export default function JobsPage() {
     window.history.replaceState({}, "", "/dashboard/jobs");
   }, [canCreateJob, customers, handledPrefill, loading, vehicles]);
   useEffect(() => {
-    if (isTechnician && !canAssignTechnician && user) setTechnicianFilter(user.uid);
-  }, [canAssignTechnician, isTechnician, user]);
+    if (technicianOnly && user) setTechnicianFilter(user.uid);
+  }, [technicianOnly, user]);
   useEffect(() => {
     const requested = new URLSearchParams(window.location.search).get("priority");
     if (requested === "urgent") setPriorityFilter("urgent");
@@ -409,12 +411,12 @@ export default function JobsPage() {
         matchesTechnician &&
         matchesPriority &&
         (!term ||
-          `${job.jobNumber} ${isTechnician ? "" : job.customerName} ${job.registrationNumber} ${job.vehicleLabel}`
+          `${job.jobNumber} ${technicianOnly ? "" : job.customerName} ${job.registrationNumber} ${job.vehicleLabel}`
             .toLowerCase()
             .includes(term))
       );
     });
-  }, [filter, isTechnician, jobs, priorityFilter, search, technicianFilter]);
+  }, [filter, jobs, priorityFilter, search, technicianFilter, technicianOnly]);
   const selected = jobs.find(({ id }) => id === selectedId) ?? null;
   const selectedInvoice = invoices.find(({ jobId }) => jobId === selectedId) ?? null;
   useEffect(() => {
@@ -653,6 +655,31 @@ export default function JobsPage() {
       setSubmitting(false);
     }
   }
+  async function checkPaymentAndDeliver() {
+    if (!selected || !canAssignTechnician) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const snapshot = await getDoc(doc(firebaseClient.db, "invoices", selected.id)),
+        latestInvoice = snapshot.exists()
+          ? ({ ...snapshot.data(), id: snapshot.id } as Invoice)
+          : null;
+      setInvoices((current) => {
+        const withoutSelected = current.filter(({ jobId }) => jobId !== selected.id);
+        return latestInvoice ? [...withoutSelected, latestInvoice] : withoutSelected;
+      });
+      if (latestInvoice && latestInvoice.balanceAmount <= 0) {
+        setSubmitting(false);
+        await completeDelivery();
+      } else {
+        setShowDelivery(true);
+        setSubmitting(false);
+      }
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to verify invoice payment.");
+      setSubmitting(false);
+    }
+  }
   function selectProduct(productId: string) {
     const product = products.find(({ id }) => id === productId),
       item = inventory.find(({ productId: id }) => id === productId);
@@ -834,7 +861,7 @@ export default function JobsPage() {
     canAdvanceJob = Boolean(
       nextStatus &&
       (canAssignTechnician ||
-        (isTechnician && assignedToCurrentUser && technicianNextStages.includes(nextStatus[0]))),
+        (technicianOnly && assignedToCurrentUser && technicianNextStages.includes(nextStatus[0]))),
     );
   const nextInstruction = selected
     ? (
@@ -997,7 +1024,7 @@ export default function JobsPage() {
                   <span>
                     <strong>{job.registrationNumber}</strong>
                     <small>
-                      {isTechnician
+                      {technicianOnly
                         ? job.vehicleLabel
                         : `${job.customerName} · ${job.vehicleLabel}`}
                     </small>
@@ -1026,7 +1053,7 @@ export default function JobsPage() {
                   <span className="heading-kicker">{selected.jobNumber}</span>
                   <h2>{selected.registrationNumber}</h2>
                   <p>
-                    {isTechnician
+                    {technicianOnly
                       ? selected.vehicleLabel
                       : `${selected.vehicleLabel} · ${selected.customerName}`}
                   </p>
@@ -1086,7 +1113,7 @@ export default function JobsPage() {
                       : "Not Set"}
                   </strong>
                 </div>
-                {!isTechnician ? (
+                {!technicianOnly ? (
                   <div>
                     <span>Estimate</span>
                     <strong>
@@ -1166,7 +1193,7 @@ export default function JobsPage() {
                   ) : null}
                 </section>
               ) : null}
-              {!isTechnician ? (
+              {!technicianOnly ? (
                 <section className="estimate-panel">
                   <div className="estimate-heading">
                     <div>
@@ -1268,7 +1295,7 @@ export default function JobsPage() {
                   <small>{displayDate(selected.delayReportedAt)}</small>
                 </section>
               ) : null}
-              {isTechnician && assignedToCurrentUser ? (
+              {technicianOnly && assignedToCurrentUser ? (
                 <section className="delay-report">
                   <label htmlFor="delay-reason">Report Delay</label>
                   <div>
@@ -1315,11 +1342,7 @@ export default function JobsPage() {
                     onClick={() => {
                       if (nextStatus[0] === "approved") setShowApproval(true);
                       else if (nextStatus[0] === "delivered") {
-                        if (selectedInvoice && selectedInvoice.balanceAmount <= 0) {
-                          void completeDelivery();
-                        } else {
-                          setShowDelivery(true);
-                        }
+                        void checkPaymentAndDeliver();
                       } else void setStatus(nextStatus[0]);
                     }}
                   >

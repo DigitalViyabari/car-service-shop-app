@@ -56,6 +56,15 @@ export default function BusinessSettingsPage() {
       (membership?.branchAssignments ?? []).some(({ roles }) =>
         roles.some((role) => role === "branch_manager" || role === "finance_manager"),
       );
+  const today = new Date(),
+    financialYearStart = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1,
+    financialYearCode = `${String(financialYearStart).slice(-2)}${String(financialYearStart + 1).slice(-2)}`,
+    invoicePrefixPreview =
+      draft.invoicePrefix
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, 4) || "INV",
+    invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`;
   const load = useCallback(async () => {
     if (!activeCompanyId || !canView) return;
     setLoading(true);
@@ -273,6 +282,14 @@ export default function BusinessSettingsPage() {
                 onChange={(event) => update("invoiceStartNumber", Number(event.target.value))}
               />
               <small>Used only when a new financial-year series starts.</small>
+            </label>
+            <label>
+              Current Financial-Year Format
+              <input value={invoiceNumberPreview} readOnly />
+              <small>
+                FY {financialYearStart}–{String(financialYearStart + 1).slice(-2)} · Consecutive and
+                unique within this financial year.
+              </small>
             </label>
             {field("upiId", "UPI ID")}
             {field("bankName", "Bank Name")}
