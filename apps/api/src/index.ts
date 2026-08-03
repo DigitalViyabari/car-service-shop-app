@@ -108,6 +108,10 @@ const createPlatformAdminSchema = z.object({
   temporaryPassword: z.string().min(8).max(128),
 });
 const impersonationSchema = z.object({ targetUserId: z.string().min(8).max(128) });
+const resetAccountPasswordSchema = z.object({
+  targetUserId: z.string().min(8).max(128),
+  temporaryPassword: z.string().min(8).max(128),
+});
 const invoiceLineInputSchema = z.object({
   type: z.enum(["labour", "product"]),
   productId: z.string().max(128).nullable().optional(),
@@ -606,6 +610,22 @@ async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken
     impersonationAuditId: audit.id,
   });
   return { token, targetEmail: target.email ?? "" };
+}
+async function resetAccountPassword(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await superAdmin(user.uid))) throw new ApiError(403, "Super Admin access is required.");
+  const parsed = resetAccountPasswordSchema.safeParse(await body(request));
+  if (!parsed.success)
+    throw new ApiError(400, "Enter a temporary password with at least 8 characters.");
+  const target = await auth.getUser(parsed.data.targetUserId);
+  await auth.updateUser(target.uid, { password: parsed.data.temporaryPassword });
+  await db.collection("platformAuditLogs").add({
+    action: "account_password_reset",
+    actorUserId: user.uid,
+    targetUserId: target.uid,
+    targetEmail: target.email ?? "",
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return { updated: true, targetUserId: target.uid, targetEmail: target.email ?? "" };
 }
 async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = issueInvoiceSchema.safeParse(await body(request));
@@ -2450,6 +2470,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await updateCompanySubscription(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")
       return reply(response, 200, await impersonateAccount(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/reset-password")
+      return reply(response, 200, await resetAccountPassword(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/issue")
       return reply(response, 200, await issueInvoice(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/amend")

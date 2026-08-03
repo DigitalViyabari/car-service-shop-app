@@ -1074,6 +1074,50 @@ button.platform-row:hover {
   cursor: pointer;
   white-space: nowrap;
 }
+.account-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.account-actions button:first-child {
+  border: 1px solid #cfd7df;
+  background: #fff;
+  color: #17202a;
+}
+.communications-company-filter {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 18px 20px;
+  border: 1px solid #d8dee4;
+  border-radius: 14px;
+  background: #fff;
+}
+.communications-company-filter label {
+  display: grid;
+  gap: 7px;
+  min-width: min(360px, 100%);
+  font-weight: 800;
+}
+.communications-company-filter select {
+  min-height: 46px;
+  padding: 0 13px;
+  border: 1px solid #cfd6dd;
+  border-radius: 10px;
+  background: #fff;
+}
+.communications-company-filter p {
+  margin: 0;
+  color: #68737f;
+}
+@media (max-width: 760px) {
+  .communications-company-filter {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
 .platform-admin-create {
   display: grid;
   grid-template-columns: 0.8fr 1.6fr;

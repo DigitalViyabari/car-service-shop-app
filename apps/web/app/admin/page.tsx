@@ -60,6 +60,10 @@ export default function PlatformAdminPage() {
       plan: "trial" | "monthly" | "yearly";
       trialDays: number;
     } | null>(null),
+    [passwordDraft, setPasswordDraft] = useState<{
+      account: Account;
+      temporaryPassword: string;
+    } | null>(null),
     [busy, setBusy] = useState(false);
   const allowed = platformRoles.some((role) =>
       ["platform_super_admin", "platform_support_admin"].includes(role),
@@ -190,6 +194,27 @@ export default function PlatformAdminPage() {
       window.location.href = "/dashboard";
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to open account.");
+      setBusy(false);
+    }
+  }
+  async function resetPassword() {
+    if (!passwordDraft) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await api("/api/v1/admin/reset-password", {
+        method: "POST",
+        body: JSON.stringify({
+          targetUserId: passwordDraft.account.userId,
+          temporaryPassword: passwordDraft.temporaryPassword,
+        }),
+      });
+      const email = passwordDraft.account.email;
+      setPasswordDraft(null);
+      setMessage(`Temporary password updated for ${email}. Share it securely with the user.`);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to reset password.");
+    } finally {
       setBusy(false);
     }
   }
@@ -472,9 +497,17 @@ export default function PlatformAdminPage() {
                 </small>
               </div>
               {superAdmin ? (
-                <button disabled={busy} onClick={() => void impersonate(account)}>
-                  Open Account
-                </button>
+                <div className="account-actions">
+                  <button
+                    disabled={busy}
+                    onClick={() => setPasswordDraft({ account, temporaryPassword: "" })}
+                  >
+                    Set Password
+                  </button>
+                  <button disabled={busy} onClick={() => void impersonate(account)}>
+                    Open Account
+                  </button>
+                </div>
               ) : null}
             </article>
           ))}
@@ -591,6 +624,59 @@ export default function PlatformAdminPage() {
                 onClick={() => void updateSubscription()}
               >
                 {busy ? "Updating…" : "Apply Subscription"}
+              </button>
+            </footer>
+          </section>
+        </div>
+      ) : null}
+      {passwordDraft ? (
+        <div className="modal-backdrop" role="presentation">
+          <section className="module-modal subscription-modal" role="dialog" aria-modal="true">
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Secure Login Reset</span>
+                <h2>{passwordDraft.account.displayName}</h2>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => setPasswordDraft(null)}>
+                ×
+              </button>
+            </header>
+            <div className="form-grid">
+              <label className="span-2">
+                Login Email
+                <input value={passwordDraft.account.email} readOnly />
+              </label>
+              <label className="span-2">
+                New Temporary Password
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={8}
+                  value={passwordDraft.temporaryPassword}
+                  onChange={(event) =>
+                    setPasswordDraft({ ...passwordDraft, temporaryPassword: event.target.value })
+                  }
+                />
+              </label>
+              <p className="span-2 subscription-note">
+                Existing passwords cannot be viewed. This replaces it with a new temporary password.
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button
+                className="cancel-button"
+                type="button"
+                onClick={() => setPasswordDraft(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="dv-button"
+                type="button"
+                disabled={busy || passwordDraft.temporaryPassword.length < 8}
+                onClick={() => void resetPassword()}
+              >
+                {busy ? "Updating…" : "Set New Password"}
               </button>
             </footer>
           </section>
