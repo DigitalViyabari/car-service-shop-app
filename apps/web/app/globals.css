@@ -2609,6 +2609,47 @@ button.platform-row:hover {
   font-weight: 850;
   text-transform: uppercase;
 }
+.job-row-badges {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+}
+.job-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: max-content;
+  padding: 5px 7px;
+  border-radius: 7px;
+  font-size: 8px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.job-priority i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.job-priority.priority-normal {
+  background: #e8f6ee;
+  color: #18784b;
+}
+.job-priority.priority-urgent {
+  background: #fff1cc;
+  color: #9a6500;
+}
+.job-priority.priority-breakdown {
+  background: #fde6e8;
+  color: #c72d35;
+  box-shadow: 0 0 0 1px rgba(199, 45, 53, 0.14);
+}
+.priority-filter-urgent {
+  border-color: #e1a21d !important;
+  background: #fff8e7 !important;
+  color: #825800 !important;
+  font-weight: 800;
+}
 .status-in_progress,
 .status-approved {
   background: #e8f0fa;

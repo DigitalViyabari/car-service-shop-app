@@ -275,7 +275,7 @@ export default function DashboardPage() {
               </header>
               <div className="next-actions">
                 {summary.urgent > 0 ? (
-                  <Link href="/dashboard/jobs" className="action-red">
+                  <Link href="/dashboard/jobs?priority=urgent" className="action-red">
                     <strong>
                       Handle {summary.urgent} Urgent Job{summary.urgent > 1 ? "s" : ""}
                     </strong>

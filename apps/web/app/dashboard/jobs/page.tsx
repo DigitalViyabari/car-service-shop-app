@@ -74,6 +74,8 @@ const emptyDraft: Draft = {
 };
 const statusLabel = (status: JobStatus) =>
   stages.find(([value]) => value === status)?.[1] ?? "Cancelled";
+const priorityLabel = (priority: JobPriority) =>
+  priority === "breakdown" ? "Very Urgent" : priority === "urgent" ? "Priority" : "Normal";
 type LineDraft = {
   type: "labour" | "product";
   productId: string;
@@ -142,7 +144,8 @@ export default function JobsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null),
     [filter, setFilter] = useState<JobStatus | "active" | "all">("active"),
     [search, setSearch] = useState(""),
-    [technicianFilter, setTechnicianFilter] = useState("all");
+    [technicianFilter, setTechnicianFilter] = useState("all"),
+    [priorityFilter, setPriorityFilter] = useState<"all" | "urgent">("all");
   const [loading, setLoading] = useState(true),
     [showForm, setShowForm] = useState(false),
     [submitting, setSubmitting] = useState(false),
@@ -364,6 +367,10 @@ export default function JobsPage() {
   useEffect(() => {
     if (isTechnician && !canAssignTechnician && user) setTechnicianFilter(user.uid);
   }, [canAssignTechnician, isTechnician, user]);
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("priority");
+    if (requested === "urgent") setPriorityFilter("urgent");
+  }, []);
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     return jobs.filter((job) => {
@@ -377,16 +384,18 @@ export default function JobsPage() {
         (technicianFilter === "unassigned"
           ? !job.assignedTechnicianIds?.length
           : job.assignedTechnicianIds?.includes(technicianFilter));
+      const matchesPriority = priorityFilter === "all" || job.priority !== "normal";
       return (
         matchesFilter &&
         matchesTechnician &&
+        matchesPriority &&
         (!term ||
           `${job.jobNumber} ${isTechnician ? "" : job.customerName} ${job.registrationNumber} ${job.vehicleLabel}`
             .toLowerCase()
             .includes(term))
       );
     });
-  }, [filter, isTechnician, jobs, search, technicianFilter]);
+  }, [filter, isTechnician, jobs, priorityFilter, search, technicianFilter]);
   const selected = jobs.find(({ id }) => id === selectedId) ?? null;
   useEffect(() => {
     if (filtered.some(({ id }) => id === selectedId)) return;
@@ -894,6 +903,15 @@ export default function JobsPage() {
               ))}
               <option value="cancelled">Cancelled</option>
             </select>
+            <select
+              value={priorityFilter}
+              aria-label="Filter by priority"
+              className={`priority-filter priority-filter-${priorityFilter}`}
+              onChange={(event) => setPriorityFilter(event.target.value as "all" | "urgent")}
+            >
+              <option value="all">All Priorities</option>
+              <option value="urgent">Priority &amp; Very Urgent</option>
+            </select>
             {canAssignTechnician ? (
               <select
                 value={technicianFilter}
@@ -967,9 +985,14 @@ export default function JobsPage() {
                       {statusLabel(job.status)} · {job.jobNumber}
                     </em>
                   </span>
-                  <span className={`job-status status-${job.status}`}>
-                    {statusLabel(job.status)}
-                  </span>
+                  <div className="job-row-badges">
+                    <span className={`job-priority priority-${job.priority}`}>
+                      <i aria-hidden="true" /> {priorityLabel(job.priority)}
+                    </span>
+                    <span className={`job-status status-${job.status}`}>
+                      {statusLabel(job.status)}
+                    </span>
+                  </div>
                 </button>
               ))
             )}
@@ -1013,9 +1036,7 @@ export default function JobsPage() {
                 </div>
                 <div>
                   <span>Priority</span>
-                  <strong>
-                    {selected.priority.charAt(0).toUpperCase() + selected.priority.slice(1)}
-                  </strong>
+                  <strong>{priorityLabel(selected.priority)}</strong>
                 </div>
                 <div>
                   <span>Odometer</span>
