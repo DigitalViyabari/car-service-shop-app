@@ -3994,14 +3994,41 @@ button.platform-row:hover {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
 }
+.communications-intro {
+  display: grid;
+  grid-template-columns: auto 150px minmax(180px, 1fr) auto 180px minmax(220px, 1fr);
+  gap: 10px 14px;
+  align-items: center;
+  padding: 16px 18px;
+  border: 1px solid #dce2e9;
+  border-radius: 16px;
+  background: #fff;
+}
+.communications-intro > span {
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: #edf8f2;
+  color: #168457;
+  font-size: 0.7rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+.communications-intro > span:nth-of-type(2) {
+  background: #fff3e1;
+  color: #a56500;
+}
+.communications-intro p {
+  margin: 0;
+  color: #687386;
+}
 .communication-card {
   position: relative;
   overflow: hidden;
   padding: 24px;
   border: 1px solid #d9e0e8;
   border-radius: 20px;
-  background: linear-gradient(145deg, #111827, #242a32);
-  color: #f8fafc;
+  background: #fff;
+  color: #172033;
   box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
 }
 .communication-card::after {
@@ -4037,7 +4064,7 @@ button.platform-row:hover {
 }
 .communication-card > p {
   margin: 22px 0 4px;
-  color: #aeb8c7;
+  color: #687386;
 }
 .credit-number {
   display: block;
@@ -4049,7 +4076,7 @@ button.platform-row:hover {
   display: flex;
   gap: 28px;
   margin-top: 22px;
-  color: #aeb8c7;
+  color: #687386;
   font-size: 0.86rem;
 }
 .communication-meta span {
@@ -4057,7 +4084,7 @@ button.platform-row:hover {
   gap: 4px;
 }
 .communication-meta strong {
-  color: #fff;
+  color: #172033;
   font-size: 0.96rem;
 }
 .low-credit-warning {
@@ -4070,6 +4097,97 @@ button.platform-row:hover {
   color: #ffb4a9;
   font-weight: 700;
   font-size: 0.86rem;
+}
+.finance-view-tabs {
+  display: inline-flex;
+  gap: 6px;
+  margin-top: 18px;
+  padding: 5px;
+  border: 1px solid #dce1e6;
+  border-radius: 12px;
+  background: #fff;
+}
+.invoices-page [hidden] {
+  display: none !important;
+}
+.finance-view-tabs button {
+  min-height: 40px;
+  padding: 8px 15px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #5d6875;
+  font-weight: 800;
+  cursor: pointer;
+}
+.finance-view-tabs button.is-active {
+  background: #151b23;
+  color: #fff;
+}
+.finance-view-tabs span {
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  min-height: 22px;
+  margin-left: 6px;
+  border-radius: 999px;
+  background: #df373d;
+  color: #fff;
+  font-size: 0.72rem;
+}
+.pending-payment-panel {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid #d9dde2;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+.pending-payment-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 22px;
+  border-bottom: 1px solid #e5e7ea;
+}
+.pending-payment-panel h2 {
+  margin: 4px 0 0;
+}
+.pending-payment-panel > header > strong {
+  color: #c52f35;
+  font-size: 1.45rem;
+}
+.pending-payment-list > button {
+  display: grid;
+  grid-template-columns: 1.4fr 1.2fr repeat(3, minmax(120px, 0.7fr));
+  gap: 18px;
+  align-items: center;
+  width: 100%;
+  padding: 17px 22px;
+  border: 0;
+  border-bottom: 1px solid #eceef1;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.pending-payment-list > button:hover {
+  background: #f7f9fb;
+}
+.pending-payment-list span {
+  display: grid;
+  gap: 4px;
+}
+.pending-payment-list small {
+  color: #76818d;
+}
+.pending-payment-list .pending-balance strong {
+  color: #c52f35;
+}
+@media (max-width: 900px) {
+  .communications-intro,
+  .pending-payment-list > button {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 .communications-empty,
 .ledger-panel {

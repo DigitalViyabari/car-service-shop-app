@@ -139,6 +139,7 @@ export default function InvoicesPage() {
     [paymentFilter, setPaymentFilter] = useState<InvoicePaymentFilter>("all"),
     [customFrom, setCustomFrom] = useState(""),
     [customTo, setCustomTo] = useState("");
+  const [financeView, setFinanceView] = useState<"invoices" | "pending">("invoices");
   const [showEdit, setShowEdit] = useState(false),
     [editDueAt, setEditDueAt] = useState(""),
     [editNotes, setEditNotes] = useState("");
@@ -272,8 +273,7 @@ export default function InvoicesPage() {
             ["approved", "in_progress", "quality_check", "ready", "delivered"].includes(
               job.status,
             )) &&
-          job.estimateLocked &&
-          (jobLineTotals.get(job.id) ?? 0) > 0,
+          job.estimateLocked,
       ),
     [jobLineTotals, jobs],
   );
@@ -299,6 +299,9 @@ export default function InvoicesPage() {
     filteredPayments = payments
       .filter(({ receivedAt, status }) => status === "completed" && withinDates(receivedAt, bounds))
       .sort((a, b) => paymentDate(b.receivedAt).getTime() - paymentDate(a.receivedAt).getTime()),
+    pendingInvoices = invoices
+      .filter(({ balanceAmount, status }) => balanceAmount > 0 && status !== "void")
+      .sort((a, b) => Number(b.balanceAmount) - Number(a.balanceAmount)),
     collectedInPeriod = filteredPayments.reduce((sum, item) => sum + item.amount, 0);
   const totals = {
     billed: filteredInvoices.reduce((sum, item) => sum + item.totalAmount, 0),
@@ -315,14 +318,7 @@ export default function InvoicesPage() {
 
   async function createInvoice(event: FormEvent) {
     event.preventDefault();
-    if (
-      !user ||
-      !activeCompanyId ||
-      !activeBranchId ||
-      !selectedJob ||
-      selectedJobLines.length === 0
-    )
-      return;
+    if (!user || !activeCompanyId || !activeBranchId || !selectedJob) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -564,6 +560,22 @@ export default function InvoicesPage() {
           <button onClick={() => setError(null)}>×</button>
         </div>
       ) : null}
+      <nav className="finance-view-tabs" aria-label="Invoice views">
+        <button
+          type="button"
+          className={financeView === "invoices" ? "is-active" : ""}
+          onClick={() => setFinanceView("invoices")}
+        >
+          All Invoices
+        </button>
+        <button
+          type="button"
+          className={financeView === "pending" ? "is-active" : ""}
+          onClick={() => setFinanceView("pending")}
+        >
+          Pending Payments <span>{pendingInvoices.length}</span>
+        </button>
+      </nav>
       <section className="finance-legend">
         <strong>Payment Guide</strong>
         <span>
@@ -658,7 +670,63 @@ export default function InvoicesPage() {
           <small>{totals.open ? "Open these invoices to collect" : "No unpaid invoices"}</small>
         </div>
       </section>
-      <section className="invoice-workspace">
+      <section className="pending-payment-panel" hidden={financeView !== "pending"}>
+        <header>
+          <div>
+            <span className="heading-kicker">Customer Follow-Up</span>
+            <h2>Pending Payments</h2>
+          </div>
+          <strong>
+            {money.format(pendingInvoices.reduce((sum, item) => sum + item.balanceAmount, 0))}
+          </strong>
+        </header>
+        {pendingInvoices.length === 0 ? (
+          <div className="list-state list-state--empty">
+            <strong>No Pending Payments</strong>
+            <p>All issued invoices are settled.</p>
+          </div>
+        ) : (
+          <div className="pending-payment-list">
+            {pendingInvoices.map((invoice) => {
+              const customer = customers.find(({ id }) => id === invoice.customerId);
+              return (
+                <button
+                  type="button"
+                  key={invoice.id}
+                  onClick={() => {
+                    setSelectedId(invoice.id);
+                    setDateFilter("all");
+                    setPaymentFilter("all");
+                    setFinanceView("invoices");
+                  }}
+                >
+                  <span>
+                    <strong>{invoice.customerName}</strong>
+                    <small>{customer?.phone || "Phone Not Recorded"}</small>
+                  </span>
+                  <span>
+                    <strong>{invoice.jobNumber || "Job Sheet"}</strong>
+                    <small>{invoice.invoiceNumber}</small>
+                  </span>
+                  <span>
+                    <small>Invoice Total</small>
+                    <strong>{money.format(invoice.totalAmount)}</strong>
+                  </span>
+                  <span>
+                    <small>Paid</small>
+                    <strong>{money.format(invoice.paidAmount)}</strong>
+                  </span>
+                  <span className="pending-balance">
+                    <small>Pending</small>
+                    <strong>{money.format(invoice.balanceAmount)}</strong>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </section>
+      <section className="invoice-workspace" hidden={financeView !== "invoices"}>
         <div className="invoice-directory">
           <div className="invoice-directory-head">
             <strong>Branch Invoices</strong>
@@ -843,7 +911,7 @@ export default function InvoicesPage() {
           )}
         </aside>
       </section>
-      <section className="collection-register">
+      <section className="collection-register" hidden={financeView !== "invoices"}>
         <header>
           <div>
             <span className="heading-kicker">Payment Register</span>
@@ -953,8 +1021,7 @@ export default function InvoicesPage() {
             <div className="form-grid">
               {invoiceableJobs.length === 0 ? (
                 <div className="span-2 invoice-edit-note">
-                  No uninvoiced approved job is ready. Approve and lock an estimate with at least
-                  one priced item.
+                  No uninvoiced approved job is ready. Approve and lock an estimate first.
                 </div>
               ) : null}
               <label className="span-2">

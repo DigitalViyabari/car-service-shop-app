@@ -110,6 +110,14 @@ export default function CommunicationsPage() {
           <p>Credits and message usage.</p>
         </div>
       </header>
+      <section className="communications-intro">
+        <span>Free</span>
+        <strong>Email &amp; Push</strong>
+        <p>Included for everyday workshop updates.</p>
+        <span>Paid</span>
+        <strong>WhatsApp &amp; SMS</strong>
+        <p>Credits are controlled by Digital Viyabari.</p>
+      </section>
       {error ? <div className="alert">{error}</div> : null}
       {!entitlement ? (
         <section className="communications-empty">
