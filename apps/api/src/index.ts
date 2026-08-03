@@ -60,6 +60,16 @@ const reversePaymentSchema = z.object({
   paymentId: z.string().min(8).max(128),
   reason: z.string().min(3).max(300),
 });
+const correctPaymentSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  paymentId: z.string().min(8).max(128),
+  amount: z.number().positive().max(100000000),
+  method: z.enum(["cash", "upi", "card", "bank_transfer", "cheque", "other"]),
+  reference: z.string().max(200).default(""),
+  notes: z.string().max(500).default(""),
+  reason: z.string().min(3).max(300),
+});
 const notificationSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -438,8 +448,14 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     job.get("branchId") !== input.branchId
   )
     throw new ApiError(404, "Approved job not found.");
-  if (job.get("approvalStatus") !== "approved")
+  const progressedStatuses = ["approved", "in_progress", "quality_check", "ready", "delivered"];
+  if (
+    job.get("approvalStatus") !== "approved" &&
+    !progressedStatuses.includes(String(job.get("status")))
+  )
     throw new ApiError(409, "Approve and lock the estimate before invoicing.");
+  if (job.get("estimateLocked") !== true)
+    throw new ApiError(409, "Lock the approved estimate before invoicing.");
   const activeLines = lines.docs.filter((line) => line.get("status") === "active");
   if (!activeLines.length) throw new ApiError(409, "Add at least one approved invoice item.");
   const taxableAmount = activeLines.reduce(
@@ -917,6 +933,64 @@ async function reversePayment(request: IncomingMessage, user: DecodedIdToken) {
       updatedBy: user.uid,
     });
     return { reversed: true, paymentId, balanceAmount: balance };
+  });
+}
+
+async function correctPayment(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = correctPaymentSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter a valid payment correction.");
+  const { companyId, branchId, paymentId, amount, method, reference, notes, reason } = parsed.data;
+  await financeManager(user.uid, companyId, branchId);
+  const paymentRef = db.doc(`payments/${paymentId}`);
+  return db.runTransaction(async (transaction) => {
+    const payment = await transaction.get(paymentRef);
+    if (
+      !payment.exists ||
+      payment.get("companyId") !== companyId ||
+      payment.get("branchId") !== branchId
+    )
+      throw new ApiError(404, "Payment not found.");
+    if (payment.get("status") !== "completed")
+      throw new ApiError(409, "A reversed payment cannot be edited.");
+    const invoiceRef = db.doc(`invoices/${String(payment.get("invoiceId"))}`),
+      invoice = await transaction.get(invoiceRef);
+    if (!invoice.exists) throw new ApiError(404, "Invoice not found.");
+    const previousAmount = Number(payment.get("amount")),
+      total = Number(invoice.get("totalAmount")),
+      paidWithoutThisPayment = Math.max(0, Number(invoice.get("paidAmount")) - previousAmount);
+    if (amount > total - paidWithoutThisPayment + 0.001)
+      throw new ApiError(409, "Corrected payment cannot exceed the remaining invoice amount.");
+    const paid = paidWithoutThisPayment + amount,
+      balance = Math.max(0, total - paid),
+      now = FieldValue.serverTimestamp();
+    transaction.update(paymentRef, {
+      amount,
+      method,
+      reference: reference.trim(),
+      notes: notes.trim(),
+      correctionReason: reason.trim(),
+      correctedAt: now,
+      correctedBy: user.uid,
+      correctionHistory: FieldValue.arrayUnion({
+        previousAmount,
+        previousMethod: payment.get("method"),
+        previousReference: payment.get("reference") ?? "",
+        previousNotes: payment.get("notes") ?? "",
+        reason: reason.trim(),
+        correctedAt: Timestamp.now(),
+        correctedBy: user.uid,
+      }),
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    transaction.update(invoiceRef, {
+      paidAmount: paid,
+      balanceAmount: balance,
+      status: balance <= 0.001 ? "paid" : paid > 0.001 ? "part_paid" : "issued",
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    return { corrected: true, paymentId, paidAmount: paid, balanceAmount: balance };
   });
 }
 
@@ -1400,6 +1474,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await assignTeam(request, user));
     if (request.method === "POST" && url.pathname === "/v1/payments/reverse")
       return reply(response, 200, await reversePayment(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/payments/correct")
+      return reply(response, 200, await correctPayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/communications/configure")
       return reply(response, 200, await configure(request, user));
     if (request.method === "POST" && url.pathname === "/v1/communications/send")

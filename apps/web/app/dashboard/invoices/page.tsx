@@ -142,6 +142,12 @@ export default function InvoicesPage() {
   const [showEdit, setShowEdit] = useState(false),
     [editDueAt, setEditDueAt] = useState(""),
     [editNotes, setEditNotes] = useState("");
+  const [editPayment, setEditPayment] = useState<Payment | null>(null),
+    [correctionAmount, setCorrectionAmount] = useState(""),
+    [correctionMethod, setCorrectionMethod] = useState<PaymentMethod>("upi"),
+    [correctionReference, setCorrectionReference] = useState(""),
+    [correctionNotes, setCorrectionNotes] = useState(""),
+    [correctionReason, setCorrectionReason] = useState("");
 
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
     companyFinanceRole = (membership?.companyRoles ?? []).some((role) =>
@@ -256,7 +262,10 @@ export default function InvoicesPage() {
     () =>
       jobs.filter(
         (job) =>
-          job.approvalStatus === "approved" &&
+          (job.approvalStatus === "approved" ||
+            ["approved", "in_progress", "quality_check", "ready", "delivered"].includes(
+              job.status,
+            )) &&
           job.estimateLocked &&
           job.estimateTotal > 0 &&
           !invoices.some(({ jobId: item }) => item === job.id),
@@ -456,6 +465,58 @@ export default function InvoicesPage() {
     }
   }
 
+  async function correctRecordedPayment(event: FormEvent) {
+    event.preventDefault();
+    if (!user || !editPayment || !activeCompanyId || !activeBranchId) return;
+    const amount = Number(correctionAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter the corrected amount received.");
+      return;
+    }
+    if (correctionReason.trim().length < 3) {
+      setError("Enter a correction reason for the audit record.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    try {
+      const [idToken, appCheck] = await Promise.all([
+          user.getIdToken(),
+          getFirebaseAppCheckToken(),
+        ]),
+        response = await fetch("/api/v1/payments/correct", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${idToken}`,
+            "x-firebase-appcheck": appCheck,
+          },
+          body: JSON.stringify({
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            paymentId: editPayment.id,
+            amount,
+            method: correctionMethod,
+            reference: correctionReference.trim(),
+            notes: correctionNotes.trim(),
+            reason: correctionReason.trim(),
+          }),
+        }),
+        result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to correct payment.");
+      setEditPayment(null);
+      setCorrectionAmount("");
+      setCorrectionReference("");
+      setCorrectionNotes("");
+      setCorrectionReason("");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to correct payment.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   if (!canManageFinance)
     return (
       <main className="content">
@@ -478,7 +539,6 @@ export default function InvoicesPage() {
         </div>
         <button
           className="quick-action quick-action--enabled"
-          disabled={invoiceableJobs.length === 0}
           onClick={() => {
             setError(null);
             setShowCreate(true);
@@ -488,7 +548,7 @@ export default function InvoicesPage() {
           <strong>+</strong> Issue Invoice
         </button>
       </div>
-      {error && !showCreate && !showPayment && !showEdit ? (
+      {error && !showCreate && !showPayment && !showEdit && !editPayment ? (
         <div className="alert alert--error module-alert">
           {error}
           <button onClick={() => setError(null)}>×</button>
@@ -704,7 +764,7 @@ export default function InvoicesPage() {
                 <button
                   className="dv-button receive-payment"
                   onClick={() => {
-                    setPaymentAmount(String(selected.balanceAmount));
+                    setPaymentAmount("");
                     setError(null);
                     setShowPayment(true);
                   }}
@@ -743,6 +803,22 @@ export default function InvoicesPage() {
                         >
                           View Receipt
                         </button>
+                        {payment.status === "completed" ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditPayment(payment);
+                              setCorrectionAmount(String(payment.amount));
+                              setCorrectionMethod(payment.method);
+                              setCorrectionReference(payment.reference ?? "");
+                              setCorrectionNotes(payment.notes ?? "");
+                              setCorrectionReason("");
+                              setError(null);
+                            }}
+                          >
+                            Correct Payment
+                          </button>
+                        ) : null}
                       </span>
                     </article>
                   ))
@@ -865,9 +941,15 @@ export default function InvoicesPage() {
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
             <div className="form-grid">
+              {invoiceableJobs.length === 0 ? (
+                <div className="span-2 invoice-edit-note">
+                  No invoice-ready job found. Approve and lock an estimate first.
+                </div>
+              ) : null}
               <label className="span-2">
                 Approved Job
                 <select value={jobId} onChange={(event) => setJobId(event.target.value)} required>
+                  {invoiceableJobs.length === 0 ? <option value="">No Approved Job</option> : null}
                   {invoiceableJobs.map((job) => (
                     <option key={job.id} value={job.id}>
                       {job.jobNumber} · {job.customerName} · {job.registrationNumber} ·{" "}
@@ -936,8 +1018,14 @@ export default function InvoicesPage() {
                   step="0.01"
                   value={paymentAmount}
                   onChange={(event) => setPaymentAmount(event.target.value)}
+                  placeholder={`Up to ${money.format(selected.balanceAmount)}`}
+                  autoFocus
                   required
                 />
+                <small>
+                  Enter only the amount received now. Balance:{" "}
+                  {money.format(selected.balanceAmount)}
+                </small>
               </label>
               <label>
                 Payment Method
@@ -968,6 +1056,21 @@ export default function InvoicesPage() {
                   onChange={(event) => setPaymentNotes(event.target.value)}
                 />
               </label>
+              {Number(paymentAmount) > 0 ? (
+                <div
+                  className={`span-2 payment-entry-summary ${Number(paymentAmount) < selected.balanceAmount ? "is-partial" : "is-full"}`}
+                >
+                  <strong>
+                    {Number(paymentAmount) < selected.balanceAmount
+                      ? "Partial Payment"
+                      : "Full Payment"}
+                  </strong>
+                  <span>
+                    Received {money.format(Number(paymentAmount))} · Remaining{" "}
+                    {money.format(Math.max(0, selected.balanceAmount - Number(paymentAmount)))}
+                  </span>
+                </div>
+              ) : null}
             </div>
             <footer className="modal-footer">
               <button type="button" className="cancel-button" onClick={() => setShowPayment(false)}>
@@ -975,6 +1078,84 @@ export default function InvoicesPage() {
               </button>
               <button className="dv-button" disabled={submitting}>
                 {submitting ? "Recording…" : "Record & Generate Receipt"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
+      {editPayment && selected ? (
+        <div className="modal-backdrop">
+          <form className="module-modal payment-modal" onSubmit={correctRecordedPayment}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">{editPayment.receiptNumber}</span>
+                <h2>Correct Received Payment</h2>
+              </div>
+              <button type="button" onClick={() => setEditPayment(null)}>
+                ×
+              </button>
+            </header>
+            {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
+            <div className="modal-body form-grid">
+              <label>
+                Correct Amount Received
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={correctionAmount}
+                  onChange={(event) => setCorrectionAmount(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Payment Method
+                <select
+                  value={correctionMethod}
+                  onChange={(event) => setCorrectionMethod(event.target.value as PaymentMethod)}
+                >
+                  {methods.map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="span-2">
+                Transaction / Reference
+                <input
+                  value={correctionReference}
+                  onChange={(event) => setCorrectionReference(event.target.value)}
+                />
+              </label>
+              <label className="span-2">
+                Payment Notes
+                <textarea
+                  rows={2}
+                  value={correctionNotes}
+                  onChange={(event) => setCorrectionNotes(event.target.value)}
+                />
+              </label>
+              <label className="span-2">
+                Correction Reason
+                <input
+                  value={correctionReason}
+                  onChange={(event) => setCorrectionReason(event.target.value)}
+                  placeholder="Example: Typing mistake in received amount"
+                  required
+                />
+              </label>
+              <p className="span-2 invoice-edit-note">
+                The previous value and correction reason are preserved in the audit history. The
+                invoice paid amount and balance will be recalculated automatically.
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="cancel-button" onClick={() => setEditPayment(null)}>
+                Cancel
+              </button>
+              <button className="dv-button" disabled={submitting}>
+                {submitting ? "Correcting…" : "Save Payment Correction"}
               </button>
             </footer>
           </form>

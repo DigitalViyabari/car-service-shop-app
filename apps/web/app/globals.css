@@ -5174,6 +5174,28 @@ button.platform-row:hover {
   color: #586674;
   font-size: 11px;
 }
+.payment-entry-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 15px;
+  border-left: 4px solid #e6a225;
+  border-radius: 9px;
+  background: #fff8e9;
+  color: #75510b;
+}
+.payment-entry-summary.is-full {
+  border-left-color: #22a06b;
+  background: #effaf5;
+  color: #176b49;
+}
+.payment-entry-summary strong {
+  font-size: 12px;
+}
+.payment-entry-summary span {
+  font-size: 10px;
+}
 .invoice-preview {
   display: flex;
   justify-content: space-between;

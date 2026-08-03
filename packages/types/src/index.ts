@@ -401,6 +401,18 @@ export interface Payment extends AuditFields {
   reversalReason?: string;
   reversedAt?: string;
   reversedBy?: string;
+  correctionReason?: string;
+  correctedAt?: string;
+  correctedBy?: string;
+  correctionHistory?: Array<{
+    previousAmount: number;
+    previousMethod: PaymentMethod;
+    previousReference?: string;
+    previousNotes?: string;
+    reason: string;
+    correctedAt: string;
+    correctedBy: string;
+  }>;
 }
 
 export interface CommunicationEntitlement extends AuditFields {
