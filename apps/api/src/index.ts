@@ -99,12 +99,26 @@ const createPlatformAdminSchema = z.object({
   temporaryPassword: z.string().min(8).max(128),
 });
 const impersonationSchema = z.object({ targetUserId: z.string().min(8).max(128) });
+const invoiceLineInputSchema = z.object({
+  type: z.enum(["labour", "product"]),
+  productId: z.string().max(128).nullable().optional(),
+  description: z.string().min(1).max(300),
+  quantity: z.number().positive().max(100000),
+  unit: z.string().min(1).max(20),
+  unitPrice: z.number().nonnegative().max(100000000),
+  discount: z.number().nonnegative().max(100000000).default(0),
+  gstRate: z.number().min(0).max(100),
+});
 const issueInvoiceSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
-  jobId: z.string().min(2).max(128),
+  sourceType: z.enum(["job", "counter_sale"]).default("job"),
+  jobId: z.string().max(128).optional(),
+  customerId: z.string().max(128).optional(),
+  customerName: z.string().min(2).max(160).optional(),
   dueAt: z.string().max(40).nullable().optional(),
   notes: z.string().max(1000).default(""),
+  lines: z.array(invoiceLineInputSchema).min(1).max(100).optional(),
 });
 const createJobSchema = z.object({
   companyId: z.string().min(2).max(128),
@@ -483,34 +497,64 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
   if (!parsed.success) throw new ApiError(400, "Enter valid invoice details.");
   const input = parsed.data;
   await financeManager(user.uid, input.companyId, input.branchId);
-  const invoiceRef = db.doc(`invoices/${input.jobId}`),
-    jobRef = db.doc(`jobSheets/${input.jobId}`),
-    [invoice, job, lines] = await Promise.all([
+  if (input.sourceType === "job" && !input.jobId) throw new ApiError(400, "Select a Ready job.");
+  const invoiceRef =
+      input.sourceType === "job"
+        ? db.doc(`invoices/${input.jobId}`)
+        : db.collection("invoices").doc(),
+    jobRef = input.jobId ? db.doc(`jobSheets/${input.jobId}`) : null,
+    [invoice, job, jobLines] = await Promise.all([
       invoiceRef.get(),
-      jobRef.get(),
-      db.collection("jobLineItems").where("jobId", "==", input.jobId).get(),
+      jobRef?.get() ?? Promise.resolve(null),
+      input.jobId
+        ? db.collection("jobLineItems").where("jobId", "==", input.jobId).get()
+        : Promise.resolve(null),
     ]);
   if (invoice.exists) throw new ApiError(409, "An invoice already exists for this job.");
-  if (
-    !job.exists ||
-    job.get("companyId") !== input.companyId ||
-    job.get("branchId") !== input.branchId
-  )
-    throw new ApiError(404, "Approved job not found.");
-  if (job.get("status") !== "ready")
-    throw new ApiError(409, "An invoice can be issued only after the vehicle is marked Ready.");
-  if (job.get("approvalStatus") !== "approved")
-    throw new ApiError(409, "Customer approval is required before invoicing.");
-  if (job.get("estimateLocked") !== true)
-    throw new ApiError(409, "Lock the approved estimate before invoicing.");
-  const activeLines = lines.docs.filter((line) => line.get("status") === "active");
-  if (!activeLines.length) throw new ApiError(409, "Add at least one approved invoice item.");
-  const taxableAmount = activeLines.reduce(
-      (sum, line) => sum + Number(line.get("taxableAmount") ?? 0),
-      0,
-    ),
-    taxAmount = activeLines.reduce((sum, line) => sum + Number(line.get("taxAmount") ?? 0), 0),
-    totalAmount = activeLines.reduce((sum, line) => sum + Number(line.get("totalAmount") ?? 0), 0),
+  if (input.sourceType === "job") {
+    if (
+      !job?.exists ||
+      job.get("companyId") !== input.companyId ||
+      job.get("branchId") !== input.branchId
+    )
+      throw new ApiError(404, "Approved job not found.");
+    if (job.get("status") !== "ready")
+      throw new ApiError(409, "An invoice can be issued only after the vehicle is marked Ready.");
+    if (job.get("approvalStatus") !== "approved" || job.get("estimateLocked") !== true)
+      throw new ApiError(409, "Approve and lock the estimate before invoicing.");
+  }
+  const sourceLines =
+    input.lines ??
+    jobLines?.docs
+      .filter((line) => line.get("status") === "active")
+      .map((line) => ({
+        type: line.get("type") === "product" ? ("product" as const) : ("labour" as const),
+        productId: (line.get("productId") as string | null | undefined) ?? null,
+        description: String(line.get("description") ?? "Service"),
+        quantity: Number(line.get("quantity") ?? 1),
+        unit: String(line.get("unit") ?? "JOB"),
+        unitPrice: Number(line.get("unitPrice") ?? 0),
+        discount: Number(line.get("discount") ?? 0),
+        gstRate: Number(line.get("gstRate") ?? 0),
+      })) ??
+    [];
+  if (!sourceLines.length) throw new ApiError(409, "Add at least one invoice item.");
+  const calculatedLines = sourceLines.map((line) => {
+      const gross = line.quantity * line.unitPrice,
+        discount = Math.min(line.discount, gross),
+        taxableAmount = Math.max(0, gross - discount),
+        taxAmount = (taxableAmount * line.gstRate) / 100;
+      return {
+        ...line,
+        discount,
+        taxableAmount,
+        taxAmount,
+        totalAmount: taxableAmount + taxAmount,
+      };
+    }),
+    taxableAmount = calculatedLines.reduce((sum, line) => sum + line.taxableAmount, 0),
+    taxAmount = calculatedLines.reduce((sum, line) => sum + line.taxAmount, 0),
+    totalAmount = calculatedLines.reduce((sum, line) => sum + line.totalAmount, 0),
     settings = await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
     prefix =
       String((settings.exists ? settings.get("invoicePrefix") : null) ?? "INV")
@@ -534,6 +578,42 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     const number = `${prefix}/${financialYear}/${String(serial).padStart(6, "0")}`;
     if (number.length > 16)
       throw new ApiError(409, "Invoice number exceeds the 16-character GST limit.");
+    const stockUpdates: Array<{
+      line: (typeof calculatedLines)[number];
+      inventoryRef: FirebaseFirestore.DocumentReference;
+      stockBefore: number;
+    }> = [];
+    if (input.sourceType === "counter_sale") {
+      const productSales = new Map<string, (typeof calculatedLines)[number]>();
+      for (const line of calculatedLines.filter(
+        (item) => item.type === "product" && item.productId,
+      )) {
+        const existing = productSales.get(String(line.productId));
+        productSales.set(String(line.productId), {
+          ...line,
+          quantity: (existing?.quantity ?? 0) + line.quantity,
+        });
+      }
+      for (const line of productSales.values()) {
+        const productRef = db.doc(`products/${line.productId}`),
+          inventoryRef = db.doc(`inventoryItems/${input.branchId}_${line.productId}`),
+          [product, inventory] = await Promise.all([
+            transaction.get(productRef),
+            transaction.get(inventoryRef),
+          ]);
+        if (!product.exists || product.get("companyId") !== input.companyId)
+          throw new ApiError(409, `${line.description} is not in this company catalogue.`);
+        if (product.get("trackInventory") === true) {
+          const stockBefore = Number(inventory.get("currentStock") ?? 0);
+          if (!inventory.exists || stockBefore < line.quantity)
+            throw new ApiError(
+              409,
+              `${line.description} has only ${stockBefore} available in stock.`,
+            );
+          stockUpdates.push({ line, inventoryRef, stockBefore });
+        }
+      }
+    }
     const now = FieldValue.serverTimestamp();
     transaction.set(
       sequenceRef,
@@ -551,14 +631,15 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     transaction.create(invoiceRef, {
       companyId: input.companyId,
       branchId: input.branchId,
-      jobId: input.jobId,
-      jobNumber: String(job.get("jobNumber") ?? ""),
+      sourceType: input.sourceType,
+      jobId: input.jobId ?? "",
+      jobNumber: String(job?.get("jobNumber") ?? ""),
       invoiceNumber: number,
-      customerId: String(job.get("customerId") ?? ""),
-      customerName: String(job.get("customerName") ?? "Customer"),
-      vehicleId: String(job.get("vehicleId") ?? ""),
-      vehicleLabel: String(job.get("vehicleLabel") ?? "Vehicle"),
-      registrationNumber: String(job.get("registrationNumber") ?? ""),
+      customerId: String(job?.get("customerId") ?? input.customerId ?? "walk-in"),
+      customerName: String(job?.get("customerName") ?? input.customerName ?? "Walk-In Customer"),
+      vehicleId: String(job?.get("vehicleId") ?? ""),
+      vehicleLabel: String(job?.get("vehicleLabel") ?? "Counter Sale"),
+      registrationNumber: String(job?.get("registrationNumber") ?? ""),
       taxableAmount,
       taxAmount,
       totalAmount,
@@ -573,30 +654,61 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       updatedAt: now,
       updatedBy: user.uid,
     });
-    for (const line of activeLines) {
+    for (const line of calculatedLines) {
       transaction.create(db.collection("invoiceLines").doc(), {
         companyId: input.companyId,
         branchId: input.branchId,
         invoiceId: invoiceRef.id,
-        jobLineItemId: line.id,
-        type: line.get("type") === "product" ? "product" : "labour",
-        productId: line.get("productId") ?? null,
-        description: String(line.get("description") ?? "Service"),
-        quantity: Number(line.get("quantity") ?? 1),
-        unit: String(line.get("unit") ?? "JOB"),
-        unitPrice: Number(line.get("unitPrice") ?? 0),
-        discount: Number(line.get("discount") ?? 0),
-        gstRate: Number(line.get("gstRate") ?? 0),
-        taxableAmount: Number(line.get("taxableAmount") ?? 0),
-        taxAmount: Number(line.get("taxAmount") ?? 0),
-        totalAmount: Number(line.get("totalAmount") ?? 0),
+        jobLineItemId: "",
+        type: line.type,
+        productId: line.productId ?? null,
+        description: line.description,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitPrice: line.unitPrice,
+        discount: line.discount,
+        gstRate: line.gstRate,
+        taxableAmount: line.taxableAmount,
+        taxAmount: line.taxAmount,
+        totalAmount: line.totalAmount,
         createdAt: now,
         createdBy: user.uid,
         updatedAt: now,
         updatedBy: user.uid,
       });
     }
-    transaction.update(jobRef, { invoiceTotal: totalAmount, updatedAt: now, updatedBy: user.uid });
+    for (const { line, inventoryRef, stockBefore } of stockUpdates) {
+      const stockAfter = stockBefore - line.quantity;
+      transaction.update(inventoryRef, {
+        currentStock: stockAfter,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+      transaction.create(db.collection("inventoryMovements").doc(), {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        productId: line.productId,
+        inventoryItemId: inventoryRef.id,
+        type: "issue",
+        quantity: line.quantity,
+        stockBefore,
+        stockAfter,
+        unitCost: line.unitPrice,
+        reference: number,
+        notes: "Counter sale invoice",
+        occurredAt: now,
+        createdAt: now,
+        createdBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    }
+    if (jobRef)
+      transaction.update(jobRef, {
+        invoiceTotal: totalAmount,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
     return number;
   });
   return { issued: true, invoiceId: invoiceRef.id, invoiceNumber };

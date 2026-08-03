@@ -356,6 +356,7 @@ export interface Invoice extends AuditFields {
   id: string;
   companyId: string;
   branchId: string;
+  sourceType?: "job" | "counter_sale";
   jobId: string;
   invoiceNumber: string;
   jobNumber?: string;

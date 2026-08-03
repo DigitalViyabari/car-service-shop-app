@@ -3,12 +3,14 @@
 import type {
   BusinessTaxProfile,
   Customer,
+  InventoryItem,
   Invoice,
   InvoiceLine,
   JobLineItem,
   JobSheet,
   Payment,
   PaymentMethod,
+  Product,
 } from "@dvcs/types";
 import {
   collection,
@@ -66,6 +68,17 @@ type InvoiceDateFilter =
   | "previous_financial_year"
   | "custom";
 type InvoicePaymentFilter = "all" | "paid" | "part_paid" | "unpaid";
+type InvoiceBuilderLine = {
+  id: string;
+  type: "labour" | "product";
+  productId: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitPrice: number;
+  discount: number;
+  gstRate: number;
+};
 function dateBounds(filter: InvoiceDateFilter, customFrom: string, customTo: string) {
   const now = new Date(),
     dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()),
@@ -117,14 +130,20 @@ export default function InvoicesPage() {
     [lines, setLines] = useState<JobLineItem[]>([]),
     [invoiceLines, setInvoiceLines] = useState<InvoiceLine[]>([]),
     [payments, setPayments] = useState<Payment[]>([]),
-    [customers, setCustomers] = useState<Customer[]>([]);
+    [customers, setCustomers] = useState<Customer[]>([]),
+    [products, setProducts] = useState<Product[]>([]),
+    [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [taxProfile, setTaxProfile] = useState<BusinessTaxProfile | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null),
     [loading, setLoading] = useState(true),
     [submitting, setSubmitting] = useState(false),
     [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false),
+    [invoiceMode, setInvoiceMode] = useState<"job" | "counter_sale">("job"),
     [jobId, setJobId] = useState(""),
+    [counterCustomerId, setCounterCustomerId] = useState("walk-in"),
+    [counterCustomerName, setCounterCustomerName] = useState("Walk-In Customer"),
+    [builderLines, setBuilderLines] = useState<InvoiceBuilderLine[]>([]),
     [dueAt, setDueAt] = useState(""),
     [notes, setNotes] = useState("");
   const [showPayment, setShowPayment] = useState(false),
@@ -137,6 +156,7 @@ export default function InvoicesPage() {
     [reversalReason, setReversalReason] = useState("");
   const [dateFilter, setDateFilter] = useState<InvoiceDateFilter>("all"),
     [paymentFilter, setPaymentFilter] = useState<InvoicePaymentFilter>("all"),
+    [invoiceTypeFilter, setInvoiceTypeFilter] = useState<"all" | "job" | "counter_sale">("all"),
     [customFrom, setCustomFrom] = useState(""),
     [customTo, setCustomTo] = useState("");
   const [financeView, setFinanceView] = useState<"invoices" | "pending">("invoices");
@@ -173,6 +193,8 @@ export default function InvoicesPage() {
         invoiceLineDocs,
         paymentDocs,
         customerDocs,
+        productDocs,
+        inventoryDocs,
         taxProfileDoc,
       ] = await Promise.all([
         getDocs(
@@ -217,6 +239,19 @@ export default function InvoicesPage() {
             where("branchId", "==", activeBranchId),
           ),
         ),
+        getDocs(
+          query(
+            collection(firebaseClient.db, "products"),
+            where("companyId", "==", activeCompanyId),
+          ),
+        ),
+        getDocs(
+          query(
+            collection(firebaseClient.db, "inventoryItems"),
+            where("companyId", "==", activeCompanyId),
+            where("branchId", "==", activeBranchId),
+          ),
+        ),
         getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
       ]);
       const nextInvoices = invoiceDocs.docs
@@ -234,6 +269,16 @@ export default function InvoicesPage() {
       );
       setPayments(paymentDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Payment));
       setCustomers(customerDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Customer));
+      setProducts(
+        productDocs.docs
+          .map((item) => ({ ...item.data(), id: item.id }) as Product)
+          .filter(({ status }) => status === "active"),
+      );
+      setInventory(
+        inventoryDocs.docs
+          .map((item) => ({ ...item.data(), id: item.id }) as InventoryItem)
+          .filter(({ status }) => status === "active"),
+      );
       setTaxProfile(
         taxProfileDoc.exists()
           ? ({ ...taxProfileDoc.data(), id: taxProfileDoc.id } as BusinessTaxProfile)
@@ -259,12 +304,6 @@ export default function InvoicesPage() {
   const selectedCustomer = customers.find(({ id }) => id === selected?.customerId);
   const invoicedJob = jobs.find(({ id }) => id === selected?.jobId);
   const invoicedJobNumber = selected?.jobNumber || invoicedJob?.jobNumber || "—";
-  const jobLineTotals = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const line of lines)
-      totals.set(line.jobId, (totals.get(line.jobId) ?? 0) + Number(line.totalAmount || 0));
-    return totals;
-  }, [lines]);
   const eligibleJobs = useMemo(
     () =>
       jobs.filter(
@@ -276,9 +315,7 @@ export default function InvoicesPage() {
     () => eligibleJobs.filter((job) => !invoices.some(({ jobId }) => jobId === job.id)),
     [eligibleJobs, invoices],
   );
-  const selectedJob = jobs.find(({ id }) => id === jobId),
-    selectedJobLines = lines.filter((line) => line.jobId === jobId),
-    selectedJobTotal = jobLineTotals.get(jobId) ?? 0;
+  const selectedJob = jobs.find(({ id }) => id === jobId);
   const selectedPayments = payments
     .filter(({ invoiceId }) => invoiceId === selectedId)
     .sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
@@ -289,7 +326,12 @@ export default function InvoicesPage() {
         (paymentFilter === "paid" && invoice.balanceAmount <= 0) ||
         (paymentFilter === "part_paid" && invoice.paidAmount > 0 && invoice.balanceAmount > 0) ||
         (paymentFilter === "unpaid" && invoice.paidAmount <= 0 && invoice.balanceAmount > 0);
-      return withinDates(invoice.issuedAt, bounds) && paymentMatches;
+      const typeMatches =
+        invoiceTypeFilter === "all" ||
+        (invoiceTypeFilter === "counter_sale"
+          ? invoice.sourceType === "counter_sale"
+          : invoice.sourceType !== "counter_sale");
+      return withinDates(invoice.issuedAt, bounds) && paymentMatches && typeMatches;
     }),
     filteredPayments = payments
       .filter(({ receivedAt, status }) => status === "completed" && withinDates(receivedAt, bounds))
@@ -311,9 +353,88 @@ export default function InvoicesPage() {
     setSelectedId(filteredInvoices[0]?.id ?? null);
   }, [filteredInvoices, selectedId]);
 
+  function jobLinesForBuilder(selectedJobId: string) {
+    return lines
+      .filter(({ jobId: lineJobId }) => lineJobId === selectedJobId)
+      .map((line) => ({
+        id: line.id,
+        type: line.type,
+        productId: line.productId ?? "",
+        description: line.description,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitPrice: line.unitPrice,
+        discount: line.discount,
+        gstRate: line.gstRate,
+      }));
+  }
+
+  function updateBuilderLine(id: string, values: Partial<InvoiceBuilderLine>) {
+    setBuilderLines((current) =>
+      current.map((line) => (line.id === id ? { ...line, ...values } : line)),
+    );
+  }
+
+  function addLabourLine() {
+    setBuilderLines((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: "labour",
+        productId: "",
+        description: "Labour / Service",
+        quantity: 1,
+        unit: "JOB",
+        unitPrice: 0,
+        discount: 0,
+        gstRate: 18,
+      },
+    ]);
+  }
+
+  function addProductLine(productId: string) {
+    const product = products.find(({ id }) => id === productId),
+      stock = inventory.find((item) => item.productId === productId);
+    if (!product) return;
+    setBuilderLines((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: "product",
+        productId,
+        description: product.name,
+        quantity: 1,
+        unit: product.unit,
+        unitPrice: stock?.sellingPrice ?? product.mrp ?? 0,
+        discount: 0,
+        gstRate: product.gstRate,
+      },
+    ]);
+  }
+
+  const builderTotals = builderLines.reduce(
+    (totals, line) => {
+      const taxable = Math.max(0, line.quantity * line.unitPrice - line.discount),
+        tax = (taxable * line.gstRate) / 100;
+      return {
+        taxable: totals.taxable + taxable,
+        tax: totals.tax + tax,
+        total: totals.total + taxable + tax,
+      };
+    },
+    { taxable: 0, tax: 0, total: 0 },
+  );
+
   async function createInvoice(event: FormEvent) {
     event.preventDefault();
-    if (!user || !activeCompanyId || !activeBranchId || !selectedJob) return;
+    if (
+      !user ||
+      !activeCompanyId ||
+      !activeBranchId ||
+      !builderLines.length ||
+      (invoiceMode === "job" && !selectedJob)
+    )
+      return;
     setSubmitting(true);
     setError(null);
     try {
@@ -328,19 +449,33 @@ export default function InvoicesPage() {
           body: JSON.stringify({
             companyId: activeCompanyId,
             branchId: activeBranchId,
-            jobId: selectedJob.id,
+            sourceType: invoiceMode,
+            jobId: invoiceMode === "job" ? selectedJob?.id : undefined,
+            customerId: invoiceMode === "counter_sale" ? counterCustomerId : undefined,
+            customerName: invoiceMode === "counter_sale" ? counterCustomerName.trim() : undefined,
             dueAt: dueAt || null,
             notes: notes.trim(),
+            lines: builderLines.map((line) => ({
+              type: line.type,
+              productId: line.productId || null,
+              description: line.description,
+              quantity: line.quantity,
+              unit: line.unit,
+              unitPrice: line.unitPrice,
+              discount: line.discount,
+              gstRate: line.gstRate,
+            })),
           }),
         }),
         result = (await response.json()) as { invoiceId?: string; error?: string };
       if (!response.ok) throw new Error(result.error ?? "Unable to issue invoice.");
       setShowCreate(false);
       setJobId("");
+      setBuilderLines([]);
       setDueAt("");
       setNotes("");
       await load();
-      setSelectedId(result.invoiceId ?? selectedJob.id);
+      setSelectedId(result.invoiceId ?? selectedJob?.id ?? null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to issue invoice.");
     } finally {
@@ -543,10 +678,15 @@ export default function InvoicesPage() {
           onClick={() => {
             setError(null);
             setShowCreate(true);
-            setJobId(invoiceableJobs[0]?.id ?? "");
+            setInvoiceMode("job");
+            const firstJobId = invoiceableJobs[0]?.id ?? "";
+            setJobId(firstJobId);
+            setBuilderLines(jobLinesForBuilder(firstJobId));
+            setCounterCustomerId("walk-in");
+            setCounterCustomerName("Walk-In Customer");
           }}
         >
-          <strong>+</strong> Issue Invoice
+          <strong>+</strong> New Invoice
         </button>
       </div>
       {error && !showCreate && !showPayment && !showEdit && !editPayment ? (
@@ -601,6 +741,19 @@ export default function InvoicesPage() {
             <option value="this_financial_year">This Financial Year</option>
             <option value="previous_financial_year">Previous Financial Year</option>
             <option value="custom">Custom Date</option>
+          </select>
+        </label>
+        <label>
+          Invoice Type
+          <select
+            value={invoiceTypeFilter}
+            onChange={(event) =>
+              setInvoiceTypeFilter(event.target.value as "all" | "job" | "counter_sale")
+            }
+          >
+            <option value="all">All Invoices</option>
+            <option value="job">Job Invoices</option>
+            <option value="counter_sale">Counter Sales</option>
           </select>
         </label>
         <label>
@@ -700,7 +853,11 @@ export default function InvoicesPage() {
                     <small>{customer?.phone || "Phone Not Recorded"}</small>
                   </span>
                   <span>
-                    <strong>{invoice.jobNumber || "Job Sheet"}</strong>
+                    <strong>
+                      {invoice.sourceType === "counter_sale"
+                        ? "Counter Sale"
+                        : invoice.jobNumber || "Job Sheet"}
+                    </strong>
                     <small>{invoice.invoiceNumber}</small>
                   </span>
                   <span>
@@ -751,7 +908,10 @@ export default function InvoicesPage() {
                 <span>
                   <strong>{invoice.invoiceNumber}</strong>
                   <small>
-                    {invoice.customerName} · {invoice.registrationNumber}
+                    {invoice.customerName} ·{" "}
+                    {invoice.sourceType === "counter_sale"
+                      ? "Counter Sale"
+                      : invoice.registrationNumber}
                   </small>
                 </span>
                 <span>
@@ -772,7 +932,9 @@ export default function InvoicesPage() {
                   <span className="heading-kicker">{selected.invoiceNumber}</span>
                   <h2>{selected.customerName}</h2>
                   <p>
-                    {selected.registrationNumber} · {selected.vehicleLabel}
+                    {selected.sourceType === "counter_sale"
+                      ? "Direct Product Sale"
+                      : `${selected.registrationNumber} · ${selected.vehicleLabel}`}
                   </p>
                 </div>
                 <div className="invoice-head-actions">
@@ -1002,68 +1164,255 @@ export default function InvoicesPage() {
       ) : null}
       {showCreate ? (
         <div className="modal-backdrop">
-          <form className="module-modal" onSubmit={createInvoice}>
+          <form className="module-modal invoice-builder-modal" onSubmit={createInvoice}>
             <header className="modal-header">
               <div>
-                <span className="heading-kicker">Approved Work</span>
-                <h2>Issue Invoice</h2>
+                <span className="heading-kicker">Draft — Not A Tax Invoice</span>
+                <h2>Invoice Builder</h2>
               </div>
               <button type="button" onClick={() => setShowCreate(false)}>
                 ×
               </button>
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
-            <div className="form-grid">
-              {invoiceableJobs.length === 0 ? (
-                <div className="span-2 invoice-edit-note">
-                  No Ready vehicle is waiting for an invoice. Complete Quality Check and mark the
-                  vehicle Ready first.
+            <div className="modal-body invoice-builder-body">
+              <div className="invoice-source-tabs">
+                <button
+                  type="button"
+                  className={invoiceMode === "job" ? "is-active" : ""}
+                  onClick={() => {
+                    setInvoiceMode("job");
+                    const firstJobId = invoiceableJobs[0]?.id ?? "";
+                    setJobId(firstJobId);
+                    setBuilderLines(jobLinesForBuilder(firstJobId));
+                  }}
+                >
+                  Job Invoice
+                </button>
+                <button
+                  type="button"
+                  className={invoiceMode === "counter_sale" ? "is-active" : ""}
+                  onClick={() => {
+                    setInvoiceMode("counter_sale");
+                    setJobId("");
+                    setBuilderLines([]);
+                  }}
+                >
+                  Counter Sale
+                </button>
+              </div>
+              {invoiceMode === "job" ? (
+                <label>
+                  Ready Job
+                  <select
+                    value={jobId}
+                    onChange={(event) => {
+                      setJobId(event.target.value);
+                      setBuilderLines(jobLinesForBuilder(event.target.value));
+                    }}
+                    required
+                  >
+                    {invoiceableJobs.length === 0 ? <option value="">No Ready Job</option> : null}
+                    {invoiceableJobs.map((job) => (
+                      <option key={job.id} value={job.id}>
+                        {job.jobNumber} · {job.customerName} · {job.registrationNumber}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <div className="invoice-customer-grid">
+                  <label>
+                    Customer
+                    <select
+                      value={counterCustomerId}
+                      onChange={(event) => {
+                        const customer = customers.find(({ id }) => id === event.target.value);
+                        setCounterCustomerId(event.target.value);
+                        setCounterCustomerName(customer?.name ?? "Walk-In Customer");
+                      }}
+                    >
+                      <option value="walk-in">Walk-In Customer</option>
+                      {customers
+                        .filter(({ status }) => status === "active")
+                        .map((customer) => (
+                          <option key={customer.id} value={customer.id}>
+                            {customer.name} · {customer.phone}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  <label>
+                    Invoice Name
+                    <input
+                      value={counterCustomerName}
+                      onChange={(event) => setCounterCustomerName(event.target.value)}
+                      required
+                    />
+                  </label>
                 </div>
-              ) : null}
-              <label className="span-2">
-                Approved Job
-                <select value={jobId} onChange={(event) => setJobId(event.target.value)} required>
-                  {invoiceableJobs.length === 0 ? <option value="">No Approved Job</option> : null}
-                  {invoiceableJobs.map((job) => (
-                    <option key={job.id} value={job.id}>
-                      {job.jobNumber} · {job.customerName} · {job.registrationNumber} ·{" "}
-                      {money.format(jobLineTotals.get(job.id) ?? 0)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Due Date
-                <input
-                  type="date"
-                  value={dueAt}
-                  onChange={(event) => setDueAt(event.target.value)}
-                />
-              </label>
-              <label className="span-2">
-                Invoice Notes
-                <textarea
-                  rows={3}
-                  value={notes}
-                  onChange={(event) => setNotes(event.target.value)}
-                  placeholder="Warranty, payment or delivery notes"
-                />
-              </label>
-              <div className="span-2 invoice-preview">
+              )}
+              <div className="invoice-builder-tools">
+                <button type="button" onClick={addLabourLine}>
+                  + Labour
+                </button>
+                <label>
+                  <span>Add Product</span>
+                  <select value="" onChange={(event) => addProductLine(event.target.value)}>
+                    <option value="">Select Product / SKU / Barcode</option>
+                    {products.map((product) => {
+                      const stock = inventory.find((item) => item.productId === product.id);
+                      return (
+                        <option key={product.id} value={product.id}>
+                          {product.name} · {product.sku} · Stock {stock?.currentStock ?? 0}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              </div>
+              <div className="invoice-builder-lines">
+                {builderLines.length === 0 ? (
+                  <div className="invoice-edit-note">Add at least one labour or product item.</div>
+                ) : (
+                  builderLines.map((line) => (
+                    <article key={line.id}>
+                      <label className="invoice-line-description">
+                        Description
+                        <input
+                          value={line.description}
+                          onChange={(event) =>
+                            updateBuilderLine(line.id, { description: event.target.value })
+                          }
+                          required
+                        />
+                      </label>
+                      <label>
+                        Qty
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={line.quantity}
+                          onChange={(event) =>
+                            updateBuilderLine(line.id, { quantity: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Unit Price
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.unitPrice}
+                          onChange={(event) =>
+                            updateBuilderLine(line.id, { unitPrice: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        Discount
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={line.discount}
+                          onChange={(event) =>
+                            updateBuilderLine(line.id, { discount: Number(event.target.value) })
+                          }
+                        />
+                      </label>
+                      <label>
+                        GST
+                        <select
+                          value={line.gstRate}
+                          onChange={(event) =>
+                            updateBuilderLine(line.id, { gstRate: Number(event.target.value) })
+                          }
+                        >
+                          {[0, 5, 12, 18, 28, 40].map((rate) => (
+                            <option key={rate} value={rate}>
+                              {rate}%
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <strong>
+                        {money.format(
+                          Math.max(0, line.quantity * line.unitPrice - line.discount) *
+                            (1 + line.gstRate / 100),
+                        )}
+                      </strong>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${line.description}`}
+                        onClick={() =>
+                          setBuilderLines((current) => current.filter(({ id }) => id !== line.id))
+                        }
+                      >
+                        ×
+                      </button>
+                    </article>
+                  ))
+                )}
+              </div>
+              <div className="invoice-builder-meta">
+                <label>
+                  Due Date
+                  <input
+                    type="date"
+                    value={dueAt}
+                    onChange={(event) => setDueAt(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Invoice Notes
+                  <textarea
+                    rows={2}
+                    value={notes}
+                    onChange={(event) => setNotes(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="invoice-preview">
                 <span>
-                  Items <strong>{selectedJobLines.length}</strong>
+                  Items <strong>{builderLines.length}</strong>
+                </span>
+                {invoiceMode === "job" && selectedJob ? (
+                  <span>
+                    Estimate <strong>{money.format(selectedJob.estimateTotal)}</strong>
+                  </span>
+                ) : null}
+                <span>
+                  Taxable <strong>{money.format(builderTotals.taxable)}</strong>
                 </span>
                 <span>
-                  Invoice Total <strong>{money.format(selectedJobTotal)}</strong>
+                  GST <strong>{money.format(builderTotals.tax)}</strong>
+                </span>
+                <span>
+                  Final Total <strong>{money.format(builderTotals.total)}</strong>
                 </span>
               </div>
+              <p className="invoice-final-warning">
+                Confirm carefully. The official GST invoice number is generated only now, and issued
+                items and values will be locked.
+              </p>
             </div>
             <footer className="modal-footer">
               <button type="button" className="cancel-button" onClick={() => setShowCreate(false)}>
                 Cancel
               </button>
-              <button className="dv-button" disabled={submitting || !jobId}>
-                {submitting ? "Issuing…" : "Issue Locked Invoice"}
+              <button
+                className="dv-button"
+                disabled={
+                  submitting ||
+                  builderLines.length === 0 ||
+                  (invoiceMode === "job" && !jobId) ||
+                  (invoiceMode === "counter_sale" && counterCustomerName.trim().length < 2)
+                }
+              >
+                {submitting ? "Issuing…" : "Confirm & Issue Final Invoice"}
               </button>
             </footer>
           </form>
