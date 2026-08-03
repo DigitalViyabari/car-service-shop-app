@@ -120,6 +120,15 @@ const issueInvoiceSchema = z.object({
   notes: z.string().max(1000).default(""),
   lines: z.array(invoiceLineInputSchema).min(1).max(100).optional(),
 });
+const amendInvoiceSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  invoiceId: z.string().min(2).max(128),
+  reason: z.string().min(3).max(500),
+  dueAt: z.string().max(40).nullable().optional(),
+  notes: z.string().max(1000).default(""),
+  lines: z.array(invoiceLineInputSchema).min(1).max(100),
+});
 const createJobSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -671,6 +680,8 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
         taxableAmount: line.taxableAmount,
         taxAmount: line.taxAmount,
         totalAmount: line.totalAmount,
+        status: "active",
+        amendmentNumber: 0,
         createdAt: now,
         createdBy: user.uid,
         updatedAt: now,
@@ -712,6 +723,211 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     return number;
   });
   return { issued: true, invoiceId: invoiceRef.id, invoiceNumber };
+}
+async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = amendInvoiceSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid invoice amendment details.");
+  const input = parsed.data;
+  await financeManager(user.uid, input.companyId, input.branchId);
+  const invoiceRef = db.doc(`invoices/${input.invoiceId}`),
+    lineQuery = await db.collection("invoiceLines").where("invoiceId", "==", input.invoiceId).get(),
+    activeLineDocs = lineQuery.docs.filter((line) => {
+      const status = line.get("status");
+      return !status || status === "active";
+    }),
+    calculatedLines = input.lines.map((line) => {
+      const gross = line.quantity * line.unitPrice,
+        discount = Math.min(line.discount, gross),
+        taxableAmount = Math.max(0, gross - discount),
+        taxAmount = (taxableAmount * line.gstRate) / 100;
+      return {
+        ...line,
+        discount,
+        taxableAmount,
+        taxAmount,
+        totalAmount: taxableAmount + taxAmount,
+      };
+    }),
+    taxableAmount = calculatedLines.reduce((sum, line) => sum + line.taxableAmount, 0),
+    taxAmount = calculatedLines.reduce((sum, line) => sum + line.taxAmount, 0),
+    totalAmount = calculatedLines.reduce((sum, line) => sum + line.totalAmount, 0);
+
+  await db.runTransaction(async (transaction) => {
+    const invoice = await transaction.get(invoiceRef);
+    if (
+      !invoice.exists ||
+      invoice.get("companyId") !== input.companyId ||
+      invoice.get("branchId") !== input.branchId
+    )
+      throw new ApiError(404, "Invoice not found.");
+    if (invoice.get("status") === "void")
+      throw new ApiError(409, "A void invoice cannot be edited.");
+
+    const oldLineSnapshots = await Promise.all(
+        activeLineDocs.map((line) => transaction.get(line.ref)),
+      ),
+      sourceType = String(invoice.get("sourceType") ?? "job"),
+      oldProducts = new Map<string, number>(),
+      newProducts = new Map<string, number>();
+    for (const line of oldLineSnapshots) {
+      const productId = String(line.get("productId") ?? "");
+      if (line.get("type") === "product" && productId)
+        oldProducts.set(
+          productId,
+          (oldProducts.get(productId) ?? 0) + Number(line.get("quantity")),
+        );
+    }
+    for (const line of calculatedLines) {
+      const productId = String(line.productId ?? "");
+      if (line.type === "product" && productId)
+        newProducts.set(productId, (newProducts.get(productId) ?? 0) + line.quantity);
+    }
+
+    const stockChanges: Array<{
+      productId: string;
+      description: string;
+      inventoryRef: FirebaseFirestore.DocumentReference;
+      stockBefore: number;
+      delta: number;
+    }> = [];
+    if (sourceType === "counter_sale") {
+      const productIds = [...new Set([...oldProducts.keys(), ...newProducts.keys()])];
+      for (const productId of productIds) {
+        const productRef = db.doc(`products/${productId}`),
+          inventoryRef = db.doc(`inventoryItems/${input.branchId}_${productId}`),
+          [product, inventory] = await Promise.all([
+            transaction.get(productRef),
+            transaction.get(inventoryRef),
+          ]);
+        if (!product.exists || product.get("companyId") !== input.companyId)
+          throw new ApiError(409, "An invoice product is not in this company catalogue.");
+        if (product.get("trackInventory") === true) {
+          const delta = (newProducts.get(productId) ?? 0) - (oldProducts.get(productId) ?? 0),
+            stockBefore = Number(inventory.get("currentStock") ?? 0);
+          if (delta > 0 && (!inventory.exists || stockBefore < delta))
+            throw new ApiError(
+              409,
+              `${String(product.get("name") ?? "Product")} has only ${stockBefore} available in stock.`,
+            );
+          if (delta !== 0)
+            stockChanges.push({
+              productId,
+              description: String(product.get("name") ?? "Product"),
+              inventoryRef,
+              stockBefore,
+              delta,
+            });
+        }
+      }
+    }
+
+    const now = FieldValue.serverTimestamp(),
+      paidAmount = Number(invoice.get("paidAmount") ?? 0),
+      balanceAmount = Math.max(0, totalAmount - paidAmount),
+      overpaidAmount = Math.max(0, paidAmount - totalAmount),
+      amendmentNumber = Number(invoice.get("amendmentCount") ?? 0) + 1,
+      nextStatus = balanceAmount <= 0 ? "paid" : paidAmount > 0 ? "part_paid" : "issued";
+    transaction.create(db.collection("invoiceAmendments").doc(), {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      invoiceId: invoice.id,
+      invoiceNumber: String(invoice.get("invoiceNumber") ?? ""),
+      amendmentNumber,
+      reason: input.reason.trim(),
+      previousTotals: {
+        taxableAmount: Number(invoice.get("taxableAmount") ?? 0),
+        taxAmount: Number(invoice.get("taxAmount") ?? 0),
+        totalAmount: Number(invoice.get("totalAmount") ?? 0),
+      },
+      revisedTotals: { taxableAmount, taxAmount, totalAmount },
+      previousLines: oldLineSnapshots.map((line) => ({ id: line.id, ...line.data() })),
+      revisedLines: calculatedLines,
+      createdAt: now,
+      createdBy: user.uid,
+    });
+    for (const line of oldLineSnapshots)
+      transaction.update(line.ref, {
+        status: "superseded",
+        supersededAt: now,
+        supersededBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    for (const line of calculatedLines)
+      transaction.create(db.collection("invoiceLines").doc(), {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        invoiceId: invoice.id,
+        jobLineItemId: "",
+        type: line.type,
+        productId: line.productId ?? null,
+        description: line.description,
+        quantity: line.quantity,
+        unit: line.unit,
+        unitPrice: line.unitPrice,
+        discount: line.discount,
+        gstRate: line.gstRate,
+        taxableAmount: line.taxableAmount,
+        taxAmount: line.taxAmount,
+        totalAmount: line.totalAmount,
+        status: "active",
+        amendmentNumber,
+        createdAt: now,
+        createdBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    transaction.update(invoiceRef, {
+      taxableAmount,
+      taxAmount,
+      totalAmount,
+      balanceAmount,
+      overpaidAmount,
+      status: nextStatus,
+      dueAt: input.dueAt || null,
+      notes: input.notes.trim(),
+      amendmentCount: amendmentNumber,
+      lastAmendmentReason: input.reason.trim(),
+      lastAmendedAt: now,
+      lastAmendedBy: user.uid,
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    const jobId = String(invoice.get("jobId") ?? "");
+    if (jobId)
+      transaction.update(db.doc(`jobSheets/${jobId}`), {
+        invoiceTotal: totalAmount,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    for (const change of stockChanges) {
+      const stockAfter = change.stockBefore - change.delta;
+      transaction.update(change.inventoryRef, {
+        currentStock: stockAfter,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+      transaction.create(db.collection("inventoryMovements").doc(), {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        productId: change.productId,
+        inventoryItemId: change.inventoryRef.id,
+        type: change.delta > 0 ? "issue" : "adjustment_in",
+        quantity: Math.abs(change.delta),
+        stockBefore: change.stockBefore,
+        stockAfter,
+        unitCost: 0,
+        reference: String(invoice.get("invoiceNumber") ?? ""),
+        notes: `Invoice amendment ${amendmentNumber}: ${input.reason.trim()}`,
+        occurredAt: now,
+        createdAt: now,
+        createdBy: user.uid,
+        updatedAt: now,
+        updatedBy: user.uid,
+      });
+    }
+  });
+  return { amended: true, invoiceId: input.invoiceId };
 }
 async function sender(uid: string, companyId: string, branchId: string) {
   const member = await db.doc(`memberships/${uid}_${companyId}`).get();
@@ -1924,6 +2140,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await impersonateAccount(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/issue")
       return reply(response, 200, await issueInvoice(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/invoices/amend")
+      return reply(response, 200, await amendInvoice(request, user));
     if (request.method === "POST" && url.pathname === "/v1/jobs/create")
       return reply(response, 200, await createJob(request, user));
     if (request.method === "POST" && url.pathname === "/v1/jobs/status")

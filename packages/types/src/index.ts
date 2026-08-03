@@ -370,10 +370,15 @@ export interface Invoice extends AuditFields {
   totalAmount: number;
   paidAmount: number;
   balanceAmount: number;
+  overpaidAmount?: number;
   status: InvoiceStatus;
   issuedAt: string;
   dueAt?: string;
   notes?: string;
+  amendmentCount?: number;
+  lastAmendmentReason?: string;
+  lastAmendedAt?: string;
+  lastAmendedBy?: string;
 }
 
 export interface InvoiceLine extends AuditFields {
@@ -393,6 +398,8 @@ export interface InvoiceLine extends AuditFields {
   taxableAmount: number;
   taxAmount: number;
   totalAmount: number;
+  status?: "active" | "superseded";
+  amendmentNumber?: number;
 }
 
 export interface Payment extends AuditFields {

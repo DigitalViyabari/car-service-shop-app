@@ -20,7 +20,6 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  updateDoc,
   where,
 } from "firebase/firestore";
 import {
@@ -162,7 +161,9 @@ export default function InvoicesPage() {
   const [financeView, setFinanceView] = useState<"invoices" | "pending">("invoices");
   const [showEdit, setShowEdit] = useState(false),
     [editDueAt, setEditDueAt] = useState(""),
-    [editNotes, setEditNotes] = useState("");
+    [editNotes, setEditNotes] = useState(""),
+    [editLines, setEditLines] = useState<InvoiceBuilderLine[]>([]),
+    [amendmentReason, setAmendmentReason] = useState("");
   const [editPayment, setEditPayment] = useState<Payment | null>(null),
     [correctionAmount, setCorrectionAmount] = useState(""),
     [correctionMethod, setCorrectionMethod] = useState<PaymentMethod>("upi"),
@@ -265,7 +266,9 @@ export default function InvoicesPage() {
           .filter(({ status }) => status === "active"),
       );
       setInvoiceLines(
-        invoiceLineDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as InvoiceLine),
+        invoiceLineDocs.docs
+          .map((item) => ({ ...item.data(), id: item.id }) as InvoiceLine)
+          .filter(({ status }) => !status || status === "active"),
       );
       setPayments(paymentDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Payment));
       setCustomers(customerDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Customer));
@@ -411,6 +414,62 @@ export default function InvoicesPage() {
       },
     ]);
   }
+
+  function updateEditLine(id: string, values: Partial<InvoiceBuilderLine>) {
+    setEditLines((current) =>
+      current.map((line) => (line.id === id ? { ...line, ...values } : line)),
+    );
+  }
+
+  function addEditLabourLine() {
+    setEditLines((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: "labour",
+        productId: "",
+        description: "Labour / Service",
+        quantity: 1,
+        unit: "JOB",
+        unitPrice: 0,
+        discount: 0,
+        gstRate: 0,
+      },
+    ]);
+  }
+
+  function addEditProductLine(productId: string) {
+    const product = products.find(({ id }) => id === productId),
+      stock = inventory.find((item) => item.productId === productId);
+    if (!product) return;
+    setEditLines((current) => [
+      ...current,
+      {
+        id: crypto.randomUUID(),
+        type: "product",
+        productId,
+        description: product.name,
+        quantity: 1,
+        unit: product.unit,
+        unitPrice: stock?.sellingPrice ?? product.mrp ?? 0,
+        discount: 0,
+        gstRate: product.gstRate,
+      },
+    ]);
+  }
+
+  const editTotals = editLines.reduce(
+    (totals, line) => {
+      const taxable = Math.max(0, line.quantity * line.unitPrice - line.discount),
+        tax = (taxable * line.gstRate) / 100;
+      return {
+        taxable: totals.taxable + taxable,
+        tax: totals.tax + tax,
+        total: totals.total + taxable + tax,
+      };
+    },
+    { taxable: 0, tax: 0, total: 0 },
+  );
 
   const builderTotals = builderLines.reduce(
     (totals, line) => {
@@ -582,20 +641,56 @@ export default function InvoicesPage() {
 
   async function editInvoice(event: FormEvent) {
     event.preventDefault();
-    if (!user || !selected || selected.status === "void") return;
+    if (!user || !selected || !activeCompanyId || !activeBranchId || selected.status === "void")
+      return;
+    if (!editLines.length) {
+      setError("Add at least one invoice item.");
+      return;
+    }
+    if (amendmentReason.trim().length < 3) {
+      setError("Enter why this issued invoice is being edited.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
     try {
-      await updateDoc(doc(firebaseClient.db, "invoices", selected.id), {
-        dueAt: editDueAt || null,
-        notes: editNotes.trim(),
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid,
-      });
+      const [idToken, appCheck] = await Promise.all([
+          user.getIdToken(),
+          getFirebaseAppCheckToken(),
+        ]),
+        response = await fetch("/api/v1/invoices/amend", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${idToken}`,
+            "x-firebase-appcheck": appCheck,
+          },
+          body: JSON.stringify({
+            companyId: activeCompanyId,
+            branchId: activeBranchId,
+            invoiceId: selected.id,
+            reason: amendmentReason.trim(),
+            dueAt: editDueAt || null,
+            notes: editNotes.trim(),
+            lines: editLines.map((line) => ({
+              type: line.type,
+              productId: line.productId || null,
+              description: line.description,
+              quantity: line.quantity,
+              unit: line.unit,
+              unitPrice: line.unitPrice,
+              discount: line.discount,
+              gstRate: line.gstRate,
+            })),
+          }),
+        }),
+        result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to edit invoice.");
       setShowEdit(false);
+      setAmendmentReason("");
       await load();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to update invoice details.");
+      setError(reason instanceof Error ? reason.message : "Unable to edit invoice.");
     } finally {
       setSubmitting(false);
     }
@@ -954,11 +1049,25 @@ export default function InvoicesPage() {
                           : "",
                       );
                       setEditNotes(selected.notes ?? "");
+                      setEditLines(
+                        selectedInvoiceLines.map((line) => ({
+                          id: line.id,
+                          type: line.type,
+                          productId: line.productId ?? "",
+                          description: line.description,
+                          quantity: line.quantity,
+                          unit: line.unit,
+                          unitPrice: line.unitPrice,
+                          discount: line.discount,
+                          gstRate: line.gstRate,
+                        })),
+                      );
+                      setAmendmentReason("");
                       setError(null);
                       setShowEdit(true);
                     }}
                   >
-                    Edit Details
+                    Edit Invoice
                   </button>
                 </div>
               </div>
@@ -1118,45 +1227,182 @@ export default function InvoicesPage() {
       </section>
       {showEdit && selected ? (
         <div className="modal-backdrop">
-          <form className="module-modal" onSubmit={editInvoice}>
+          <form className="module-modal invoice-builder-modal" onSubmit={editInvoice}>
             <header className="modal-header">
               <div>
                 <span className="heading-kicker">{selected.invoiceNumber}</span>
-                <h2>Edit Invoice Details</h2>
+                <h2>Edit Issued Invoice</h2>
               </div>
               <button type="button" onClick={() => setShowEdit(false)}>
                 ×
               </button>
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
-            <div className="modal-body form-grid">
-              <label>
-                Due Date
-                <input
-                  type="date"
-                  value={editDueAt}
-                  onChange={(event) => setEditDueAt(event.target.value)}
-                />
-              </label>
-              <label className="span-2">
-                Invoice Notes
-                <textarea
-                  rows={4}
-                  value={editNotes}
-                  onChange={(event) => setEditNotes(event.target.value)}
-                  placeholder="Warranty, payment or delivery notes"
-                />
-              </label>
-              <p className="span-2 invoice-edit-note">
-                Invoice number, issued items, GST and totals stay locked for accounting safety.
+            <div className="modal-body invoice-builder-body">
+              <p className="invoice-final-warning">
+                The invoice number stays the same. Every edit is saved as a numbered amendment for
+                your audit history.
               </p>
+              <div className="invoice-builder-tools">
+                <button type="button" onClick={addEditLabourLine}>
+                  + Labour / Service
+                </button>
+                <label>
+                  <span>Add Product</span>
+                  <select value="" onChange={(event) => addEditProductLine(event.target.value)}>
+                    <option value="">Select Product / SKU / Barcode</option>
+                    {products.map((product) => {
+                      const stock = inventory.find((item) => item.productId === product.id);
+                      return (
+                        <option key={product.id} value={product.id}>
+                          {product.name} · {product.sku} · Stock {stock?.currentStock ?? 0}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </label>
+              </div>
+              <div className="invoice-builder-lines">
+                {editLines.map((line) => (
+                  <article key={line.id}>
+                    <label className="invoice-line-description">
+                      Description
+                      <input
+                        value={line.description}
+                        onChange={(event) =>
+                          updateEditLine(line.id, { description: event.target.value })
+                        }
+                        required
+                      />
+                    </label>
+                    <label>
+                      Qty
+                      <input
+                        type="number"
+                        min="0.01"
+                        step="0.01"
+                        value={line.quantity}
+                        onChange={(event) =>
+                          updateEditLine(line.id, { quantity: Number(event.target.value) })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Unit Price
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.unitPrice}
+                        onChange={(event) =>
+                          updateEditLine(line.id, { unitPrice: Number(event.target.value) })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Discount
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={line.discount}
+                        onChange={(event) =>
+                          updateEditLine(line.id, { discount: Number(event.target.value) })
+                        }
+                      />
+                    </label>
+                    <label>
+                      GST
+                      <select
+                        value={line.gstRate}
+                        onChange={(event) =>
+                          updateEditLine(line.id, { gstRate: Number(event.target.value) })
+                        }
+                      >
+                        {[0, 5, 12, 18, 28, 40].map((rate) => (
+                          <option key={rate} value={rate}>
+                            {rate}%
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <strong>
+                      {money.format(
+                        Math.max(0, line.quantity * line.unitPrice - line.discount) *
+                          (1 + line.gstRate / 100),
+                      )}
+                    </strong>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${line.description}`}
+                      onClick={() =>
+                        setEditLines((current) => current.filter(({ id }) => id !== line.id))
+                      }
+                    >
+                      ×
+                    </button>
+                  </article>
+                ))}
+              </div>
+              <div className="invoice-builder-meta">
+                <label>
+                  Payment Due Date (Credit Sales Only)
+                  <input
+                    type="date"
+                    value={editDueAt}
+                    onChange={(event) => setEditDueAt(event.target.value)}
+                  />
+                  <small>Leave empty for immediate or cash payment.</small>
+                </label>
+                <label>
+                  Invoice Notes
+                  <textarea
+                    rows={3}
+                    value={editNotes}
+                    onChange={(event) => setEditNotes(event.target.value)}
+                    placeholder="Warranty, payment or delivery notes"
+                  />
+                </label>
+              </div>
+              <label>
+                Reason For Edit *
+                <input
+                  value={amendmentReason}
+                  onChange={(event) => setAmendmentReason(event.target.value)}
+                  placeholder="Example: Customer added an accessory"
+                  required
+                />
+              </label>
+              <div className="invoice-preview">
+                <span>
+                  Items <strong>{editLines.length}</strong>
+                </span>
+                <span>
+                  Taxable <strong>{money.format(editTotals.taxable)}</strong>
+                </span>
+                <span>
+                  GST <strong>{money.format(editTotals.tax)}</strong>
+                </span>
+                <span>
+                  Revised Total <strong>{money.format(editTotals.total)}</strong>
+                </span>
+                <span>
+                  Already Paid <strong>{money.format(selected.paidAmount)}</strong>
+                </span>
+              </div>
+              {editTotals.total < selected.paidAmount ? (
+                <p className="invoice-final-warning">
+                  This creates a customer credit of{" "}
+                  {money.format(selected.paidAmount - editTotals.total)}.
+                </p>
+              ) : null}
             </div>
             <footer className="modal-footer">
               <button type="button" className="cancel-button" onClick={() => setShowEdit(false)}>
                 Cancel
               </button>
               <button className="dv-button" disabled={submitting}>
-                {submitting ? "Saving…" : "Save Details"}
+                {submitting ? "Saving Amendment…" : "Save Invoice Amendment"}
               </button>
             </footer>
           </form>
@@ -1359,12 +1605,13 @@ export default function InvoicesPage() {
               </div>
               <div className="invoice-builder-meta">
                 <label>
-                  Due Date
+                  Payment Due Date (Credit Sales Only)
                   <input
                     type="date"
                     value={dueAt}
                     onChange={(event) => setDueAt(event.target.value)}
                   />
+                  <small>Leave empty for immediate or cash payment.</small>
                 </label>
                 <label>
                   Invoice Notes
