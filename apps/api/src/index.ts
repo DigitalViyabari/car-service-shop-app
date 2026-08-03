@@ -139,6 +139,13 @@ const jobStatusSchema = z.object({
   deliveryNotes: z.string().max(1000).default(""),
   nextServiceDueAt: z.string().max(40).nullable().optional(),
   nextServiceDueKm: z.number().nonnegative().nullable().optional(),
+  assignedTechnicianId: z.string().min(8).max(128).optional(),
+});
+const jobRevisionSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  jobId: z.string().min(2).max(128),
+  reason: z.string().min(3).max(500),
 });
 const createCompanySchema = z.object({
   companyName: z.string().min(2).max(120),
@@ -818,8 +825,27 @@ async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
       throw new ApiError(403, "A manager must complete this stage.");
   }
   if (input.status === "in_progress") {
-    const assigned = (job.get("assignedTechnicianIds") as string[] | undefined) ?? [];
+    const assigned = input.assignedTechnicianId
+      ? [input.assignedTechnicianId]
+      : ((job.get("assignedTechnicianIds") as string[] | undefined) ?? []);
     if (!assigned.length) throw new ApiError(409, "Assign a technician before starting the work.");
+    if (input.assignedTechnicianId) {
+      if (!manager) throw new ApiError(403, "Only a manager can assign workshop staff.");
+      const assignedMember = await db
+        .doc(`memberships/${input.assignedTechnicianId}_${input.companyId}`)
+        .get();
+      const assignedBranches =
+        (assignedMember.get("branchAssignments") as
+          { branchId: string; roles: string[] }[] | undefined) ?? [];
+      if (
+        !assignedMember.exists ||
+        assignedMember.get("status") !== "active" ||
+        !assignedBranches.some(
+          (item) => item.branchId === input.branchId && item.roles.includes("technician"),
+        )
+      )
+        throw new ApiError(409, "Select an active technician from this branch.");
+    }
   }
   if (input.status === "ready") {
     if (!manager)
@@ -839,6 +865,8 @@ async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
       updatedAt: now,
       updatedBy: user.uid,
     };
+  if (input.status === "in_progress" && input.assignedTechnicianId)
+    update.assignedTechnicianIds = [input.assignedTechnicianId];
   if (input.status === "ready") {
     update.qualityCheckedAt = now;
     update.qualityCheckedBy = user.uid;
@@ -879,6 +907,42 @@ async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
   }
   await batch.commit();
   return { updated: true, status: input.status };
+}
+async function createJobRevision(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = jobRevisionSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter a reason for this revision.");
+  const input = parsed.data;
+  await teamManager(user.uid, input.companyId, input.branchId);
+  const jobRef = db.doc(`jobSheets/${input.jobId}`),
+    invoiceRef = db.doc(`invoices/${input.jobId}`),
+    [job, invoice] = await Promise.all([jobRef.get(), invoiceRef.get()]);
+  if (
+    !job.exists ||
+    job.get("companyId") !== input.companyId ||
+    job.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Job card not found in this branch.");
+  if (invoice.exists)
+    throw new ApiError(
+      409,
+      "An issued invoice cannot be revised. Create a new job for extra work.",
+    );
+  if (!["approved", "in_progress", "quality_check", "ready"].includes(String(job.get("status"))))
+    throw new ApiError(409, "A revision is available after approval and before invoicing.");
+  const now = FieldValue.serverTimestamp();
+  await jobRef.update({
+    approvalStatus: "draft",
+    estimateLocked: false,
+    estimateRevision: FieldValue.increment(1),
+    status: "estimate_pending",
+    assignedTechnicianIds: [],
+    revisionReason: input.reason.trim(),
+    revisionCreatedAt: now,
+    revisionCreatedBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  return { revised: true, status: "estimate_pending" };
 }
 async function listTeam(user: DecodedIdToken, companyId: string, branchId: string) {
   await teamManager(user.uid, companyId, branchId);
@@ -1752,6 +1816,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await createJob(request, user));
     if (request.method === "POST" && url.pathname === "/v1/jobs/status")
       return reply(response, 200, await changeJobStatus(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/jobs/revision")
+      return reply(response, 200, await createJobRevision(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")

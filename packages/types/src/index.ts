@@ -312,6 +312,9 @@ export interface JobSheet extends AuditFields {
   approvalBy?: string;
   estimateLocked?: boolean;
   estimateRevision?: number;
+  revisionReason?: string;
+  revisionCreatedAt?: string;
+  revisionCreatedBy?: string;
 }
 
 export interface ServiceReminder extends AuditFields {

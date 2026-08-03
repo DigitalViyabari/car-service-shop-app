@@ -1809,6 +1809,9 @@ button.platform-row:hover {
   cursor: pointer;
   font-size: 20px;
 }
+.modal-body {
+  padding: 24px;
+}
 .modal-alert {
   margin: 16px 24px 0;
 }
@@ -1981,6 +1984,21 @@ button.platform-row:hover {
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.55;
+}
+
+.workflow-info-card {
+  display: grid;
+  gap: 6px;
+  padding: 15px 16px;
+  border-left: 4px solid #327dcc;
+  border-radius: 12px;
+  background: #eef6ff;
+  color: #25374c;
+}
+
+.workflow-info-card span {
+  color: #617187;
+  line-height: 1.45;
 }
 
 .workflow-gate-modal label {

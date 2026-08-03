@@ -174,6 +174,8 @@ export default function JobsPage() {
   const [showCancellation, setShowCancellation] = useState(false),
     [cancellationReason, setCancellationReason] = useState("");
   const [showInvoiceGate, setShowInvoiceGate] = useState(false);
+  const [showRevision, setShowRevision] = useState(false),
+    [revisionReason, setRevisionReason] = useState("");
   const membership = memberships.find((item) => item.companyId === activeCompanyId),
     branchRoles =
       membership?.branchAssignments.find((item) => item.branchId === activeBranchId)?.roles ?? [],
@@ -563,6 +565,7 @@ export default function JobsPage() {
       deliveryNotes?: string;
       nextServiceDueAt?: string | null;
       nextServiceDueKm?: number | null;
+      assignedTechnicianId?: string;
     } = {},
   ) {
     if (!user || !selected) return;
@@ -587,13 +590,29 @@ export default function JobsPage() {
             deliveryNotes: details.deliveryNotes ?? "",
             nextServiceDueAt: details.nextServiceDueAt ?? null,
             nextServiceDueKm: details.nextServiceDueKm ?? null,
+            assignedTechnicianId: details.assignedTechnicianId,
           }),
         }),
         result = (await response.json()) as { error?: string };
       if (!response.ok) throw new Error(result.error ?? "Unable to update job status.");
+      setJobs((current) =>
+        current.map((job) =>
+          job.id === selected.id
+            ? {
+                ...job,
+                status,
+                ...(details.assignedTechnicianId
+                  ? { assignedTechnicianIds: [details.assignedTechnicianId] }
+                  : {}),
+              }
+            : job,
+        ),
+      );
       await load();
+      return true;
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to update job status.");
+      return false;
     } finally {
       setSubmitting(false);
     }
@@ -628,24 +647,37 @@ export default function JobsPage() {
     }
   }
   async function assignAndStart() {
-    if (!gateTechnicianId) return;
-    const assigned = await assignTechnician(gateTechnicianId);
-    if (!assigned) return;
+    if (!gateTechnicianId || !user || !selected) return;
+    const changed = await setStatus("in_progress", {
+      assignedTechnicianId: gateTechnicianId,
+    });
+    if (!changed) return;
+    await sendJobNotification(user, {
+      companyId: selected.companyId,
+      branchId: selected.branchId,
+      jobId: selected.id,
+      type: "job_assigned",
+      recipientUserId: gateTechnicianId,
+      message: `${selected.jobNumber} has been assigned to you.`,
+    });
     setShowAssignmentGate(false);
     setGateTechnicianId("");
-    await setStatus("in_progress");
   }
   async function confirmQualityCheck(event: FormEvent) {
     event.preventDefault();
     if (qualityNotes.trim().length < 3) return;
-    await setStatus("ready", { qualityNotes: qualityNotes.trim() });
+    const changed = await setStatus("ready", { qualityNotes: qualityNotes.trim() });
+    if (!changed) return;
     setShowQualityCheck(false);
     setQualityNotes("");
   }
   async function confirmCancellation(event: FormEvent) {
     event.preventDefault();
     if (cancellationReason.trim().length < 3) return;
-    await setStatus("cancelled", { cancellationReason: cancellationReason.trim() });
+    const changed = await setStatus("cancelled", {
+      cancellationReason: cancellationReason.trim(),
+    });
+    if (!changed) return;
     setShowCancellation(false);
     setCancellationReason("");
   }
@@ -870,31 +902,37 @@ export default function JobsPage() {
       setSubmitting(false);
     }
   }
-  async function createRevision() {
+  async function createRevision(event: FormEvent) {
+    event.preventDefault();
     if (selectedInvoice) {
       setError(
         `Invoice ${selectedInvoice.invoiceNumber} is already issued. Issued invoices stay locked; create a separate job for additional work.`,
       );
       return;
     }
-    if (
-      !user ||
-      !selected ||
-      !confirm(
-        "Create a new estimate revision? The previous approval will remain in the audit history.",
-      )
-    )
-      return;
+    if (!user || !selected || revisionReason.trim().length < 3) return;
     setSubmitting(true);
+    setError(null);
     try {
-      await updateDoc(doc(firebaseClient.db, "jobSheets", selected.id), {
-        approvalStatus: "draft",
-        estimateLocked: false,
-        estimateRevision: increment(1),
-        status: "estimate_pending",
-        updatedAt: serverTimestamp(),
-        updatedBy: user.uid,
-      });
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch("/api/v1/jobs/revision", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            ...(appCheck ? { "x-firebase-appcheck": appCheck } : {}),
+          },
+          body: JSON.stringify({
+            companyId: selected.companyId,
+            branchId: selected.branchId,
+            jobId: selected.id,
+            reason: revisionReason.trim(),
+          }),
+        }),
+        result = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to create the estimate revision.");
+      setShowRevision(false);
+      setRevisionReason("");
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to create an estimate revision.");
@@ -1182,7 +1220,8 @@ export default function JobsPage() {
                   <strong>
                     {technicians.find(({ userId }) =>
                       selected.assignedTechnicianIds?.includes(userId),
-                    )?.displayName ?? "Unassigned"}
+                    )?.displayName ??
+                      (selected.assignedTechnicianIds?.length ? "Assigned Staff" : "Unassigned")}
                   </strong>
                 </div>
                 {canAssignTechnician ? (
@@ -1193,6 +1232,12 @@ export default function JobsPage() {
                     onChange={(event) => void assignTechnician(event.target.value)}
                   >
                     <option value="">Unassigned</option>
+                    {selected.assignedTechnicianIds?.[0] &&
+                    !technicians.some(
+                      ({ userId }) => userId === selected.assignedTechnicianIds?.[0],
+                    ) ? (
+                      <option value={selected.assignedTechnicianIds[0]}>Assigned Staff</option>
+                    ) : null}
                     {technicians.map((technician) => (
                       <option key={technician.userId} value={technician.userId}>
                         {technician.displayName}
@@ -1310,8 +1355,19 @@ export default function JobsPage() {
                           Record Customer Decision
                         </button>
                       ) : null}
-                      {canAssignTechnician && selected.estimateLocked && !selectedInvoice ? (
-                        <button onClick={() => void createRevision()}>Create Revision</button>
+                      {canAssignTechnician &&
+                      !selectedInvoice &&
+                      (
+                        ["approved", "in_progress", "quality_check", "ready"] as JobStatus[]
+                      ).includes(selected.status) ? (
+                        <button
+                          onClick={() => {
+                            setRevisionReason("");
+                            setShowRevision(true);
+                          }}
+                        >
+                          Create Revision
+                        </button>
                       ) : null}
                       {canAssignTechnician && selected.estimateLocked && selectedInvoice ? (
                         <button type="button" disabled title="An issued invoice cannot be changed">
@@ -1427,6 +1483,54 @@ export default function JobsPage() {
           )}
         </aside>
       </section>
+      {showRevision && selected ? (
+        <div className="modal-backdrop">
+          <form className="module-modal workflow-gate-modal" onSubmit={createRevision}>
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Estimate Revision</span>
+                <h2>Add More Approved Work</h2>
+              </div>
+              <button type="button" onClick={() => setShowRevision(false)}>
+                ×
+              </button>
+            </header>
+            <div className="modal-body">
+              <div className="workflow-info-card">
+                <strong>Previous estimate items will remain.</strong>
+                <span>
+                  This job returns to Estimate Pending and its technician assignment is cleared.
+                </span>
+              </div>
+              <label>
+                Revision Reason
+                <textarea
+                  rows={3}
+                  value={revisionReason}
+                  onChange={(event) => setRevisionReason(event.target.value)}
+                  placeholder="Example: Customer requested additional AC work"
+                  required
+                />
+              </label>
+            </div>
+            <footer className="modal-footer">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setShowRevision(false)}
+              >
+                Keep Current Work
+              </button>
+              <button
+                className="dv-button"
+                disabled={submitting || revisionReason.trim().length < 3}
+              >
+                {submitting ? "Creating…" : "Create Revision"}
+              </button>
+            </footer>
+          </form>
+        </div>
+      ) : null}
       {showAssignmentGate && selected ? (
         <div className="modal-backdrop">
           <form
