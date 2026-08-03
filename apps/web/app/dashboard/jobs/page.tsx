@@ -101,7 +101,7 @@ const emptyLine: LineDraft = {
   unit: "JOB",
   unitPrice: "",
   discount: "0",
-  gstRate: "18",
+  gstRate: "",
 };
 const currency = (value: number) =>
   new Intl.NumberFormat("en-IN", {
@@ -703,8 +703,8 @@ export default function JobsPage() {
     const taxable = Math.max(0, quantity * unitPrice - discount),
       tax = (taxable * gstRate) / 100,
       total = taxable + tax;
-    if (!lineDraft.description.trim() || quantity <= 0 || unitPrice < 0) {
-      setError("Enter a Description, Quantity and valid Unit Price.");
+    if (!lineDraft.description.trim() || quantity <= 0 || unitPrice < 0 || !lineDraft.gstRate) {
+      setError("Enter the item details and select the applicable GST rate.");
       return;
     }
     setSubmitting(true);
@@ -1472,7 +1472,7 @@ export default function JobsPage() {
               </button>
             </header>
             {error ? <div className="alert alert--error modal-alert">{error}</div> : null}
-            <div className="form-grid">
+            <div className="form-grid estimate-item-grid">
               <label>
                 Customer *
                 <select
@@ -1489,6 +1489,22 @@ export default function JobsPage() {
                     </option>
                   ))}
                 </select>
+              </label>
+              <label className="gst-choice">
+                GST Rate *
+                <select
+                  value={lineDraft.gstRate}
+                  onChange={(e) => setLineDraft({ ...lineDraft, gstRate: e.target.value })}
+                  required
+                >
+                  <option value="">Select GST</option>
+                  {[0, 5, 12, 18, 28, 40].map((value) => (
+                    <option value={value} key={value}>
+                      {value}%
+                    </option>
+                  ))}
+                </select>
+                <small>Confirm the tax rate before adding this item.</small>
               </label>
               <label>
                 Vehicle *
@@ -1721,19 +1737,6 @@ export default function JobsPage() {
                   value={lineDraft.discount}
                   onChange={(e) => setLineDraft({ ...lineDraft, discount: e.target.value })}
                 />
-              </label>
-              <label>
-                GST Rate
-                <select
-                  value={lineDraft.gstRate}
-                  onChange={(e) => setLineDraft({ ...lineDraft, gstRate: e.target.value })}
-                >
-                  {[0, 5, 12, 18, 28, 40].map((value) => (
-                    <option value={value} key={value}>
-                      {value}%
-                    </option>
-                  ))}
-                </select>
               </label>
             </div>
             <footer className="modal-footer">

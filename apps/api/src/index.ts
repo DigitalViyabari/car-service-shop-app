@@ -54,6 +54,12 @@ const createStaffSchema = z.object({
   temporaryPassword: z.string().min(8).max(128),
   role: branchRoles,
 });
+const staffStatusSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  userId: z.string().min(8).max(128),
+  action: z.enum(["enable", "disable", "delete"]),
+});
 const reversePaymentSchema = z.object({
   companyId: z.string().min(2).max(128),
   branchId: z.string().min(2).max(128),
@@ -726,19 +732,21 @@ async function listTeam(user: DecodedIdToken, companyId: string, branchId: strin
   const members = await db.collection("memberships").where("companyId", "==", companyId).get();
   return {
     members: await Promise.all(
-      members.docs.map(async (item) => {
-        const data = item.data(),
-          profile = await db.doc(`users/${String(data.userId)}`).get();
-        return {
-          id: item.id,
-          userId: data.userId,
-          displayName: profile.get("displayName") ?? "Team Member",
-          email: profile.get("email") ?? "",
-          status: data.status,
-          companyRoles: data.companyRoles ?? [],
-          branchAssignments: data.branchAssignments ?? [],
-        };
-      }),
+      members.docs
+        .filter((item) => item.get("status") !== "deleted")
+        .map(async (item) => {
+          const data = item.data(),
+            profile = await db.doc(`users/${String(data.userId)}`).get();
+          return {
+            id: item.id,
+            userId: data.userId,
+            displayName: profile.get("displayName") ?? "Team Member",
+            email: profile.get("email") ?? "",
+            status: data.status,
+            companyRoles: data.companyRoles ?? [],
+            branchAssignments: data.branchAssignments ?? [],
+          };
+        }),
     ),
   };
 }
@@ -811,6 +819,52 @@ async function createStaff(request: IncomingMessage, user: DecodedIdToken) {
   });
   await batch.commit();
   return { created: true };
+}
+async function changeStaffStatus(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = staffStatusSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Select a valid staff action.");
+  const { companyId, branchId, userId, action } = parsed.data,
+    authority = await teamManager(user.uid, companyId, branchId);
+  if (!authority.owner) throw new ApiError(403, "Only an Owner can change staff login access.");
+  if (userId === user.uid) throw new ApiError(409, "You cannot change your own login access.");
+  const membershipRef = db.doc(`memberships/${userId}_${companyId}`),
+    membership = await membershipRef.get();
+  if (!membership.exists) throw new ApiError(404, "Staff membership not found.");
+  if (((membership.get("companyRoles") as string[] | undefined) ?? []).length)
+    throw new ApiError(409, "Owner and company administrator access cannot be changed here.");
+  const now = FieldValue.serverTimestamp();
+  if (action === "delete") {
+    try {
+      await auth.deleteUser(userId);
+    } catch (reason) {
+      if ((reason as { code?: string }).code !== "auth/user-not-found") throw reason;
+    }
+    await membershipRef.update({
+      status: "deleted",
+      branchIds: [],
+      branchAssignments: [],
+      branchRoleKeys: [],
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+    await db
+      .doc(`users/${userId}`)
+      .set({ status: "deleted", updatedAt: now, updatedBy: user.uid }, { merge: true });
+    return { updated: true, action };
+  }
+  await auth.updateUser(userId, { disabled: action === "disable" });
+  await membershipRef.update({
+    status: action === "disable" ? "disabled" : "active",
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  await db
+    .doc(`users/${userId}`)
+    .set(
+      { status: action === "disable" ? "disabled" : "active", updatedAt: now, updatedBy: user.uid },
+      { merge: true },
+    );
+  return { updated: true, action };
 }
 async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: string) {
   const member = await db.doc(`memberships/${user.uid}_${companyId}`).get(),
@@ -1549,6 +1603,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await createStaff(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/assign")
       return reply(response, 200, await assignTeam(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/team/status")
+      return reply(response, 200, await changeStaffStatus(request, user));
     if (request.method === "POST" && url.pathname === "/v1/payments/reverse")
       return reply(response, 200, await reversePayment(request, user));
     if (request.method === "POST" && url.pathname === "/v1/payments/correct")

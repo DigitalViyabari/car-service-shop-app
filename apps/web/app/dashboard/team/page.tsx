@@ -10,6 +10,7 @@ type Member = {
   email: string;
   companyRoles: string[];
   branchAssignments: { branchId: string; roles: BranchRole[] }[];
+  status: "active" | "disabled" | "deleted";
 };
 const roles: Array<[BranchRole, string]> = [
   ["branch_manager", "Branch Manager"],
@@ -31,6 +32,10 @@ export default function TeamPage() {
     [members, setMembers] = useState<Member[]>([]),
     [message, setMessage] = useState(""),
     [saving, setSaving] = useState<string | null>(null),
+    [memberAction, setMemberAction] = useState<{
+      member: Member;
+      action: "enable" | "disable" | "delete";
+    } | null>(null),
     [showCreate, setShowCreate] = useState(false),
     [draft, setDraft] = useState({
       displayName: "",
@@ -124,6 +129,32 @@ export default function TeamPage() {
       setSaving(null);
     }
   }
+  async function changeAccess() {
+    if (!memberAction || !activeCompanyId || !activeBranchId) return;
+    setSaving(memberAction.member.id);
+    try {
+      await call("/api/v1/team/status", {
+        method: "POST",
+        body: JSON.stringify({
+          companyId: activeCompanyId,
+          branchId: activeBranchId,
+          userId: memberAction.member.userId,
+          action: memberAction.action,
+        }),
+      });
+      setMessage(
+        memberAction.action === "delete"
+          ? `${memberAction.member.displayName}'s login account was deleted.`
+          : `${memberAction.member.displayName}'s login is now ${memberAction.action === "enable" ? "active" : "disabled"}.`,
+      );
+      setMemberAction(null);
+      await load();
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to change staff access.");
+    } finally {
+      setSaving(null);
+    }
+  }
   return (
     <main className="content team-page">
       <div className="dashboard-heading">
@@ -180,10 +211,80 @@ export default function TeamPage() {
                     ))}
                   </select>
                 )}
+                {isOwner && !(member.companyRoles ?? []).length ? (
+                  <div className="team-access-actions">
+                    <span className={`member-status member-status--${member.status || "active"}`}>
+                      {member.status === "disabled" ? "Disabled" : "Active"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setMemberAction({
+                          member,
+                          action: member.status === "disabled" ? "enable" : "disable",
+                        })
+                      }
+                    >
+                      {member.status === "disabled" ? "Enable Login" : "Disable Login"}
+                    </button>
+                    <button
+                      type="button"
+                      className="danger-link"
+                      onClick={() => setMemberAction({ member, action: "delete" })}
+                    >
+                      Delete Account
+                    </button>
+                  </div>
+                ) : null}
               </article>
             );
           })}
         </section>
+      ) : null}
+      {memberAction ? (
+        <div className="modal-backdrop">
+          <section className="module-modal staff-access-modal" role="dialog" aria-modal="true">
+            <header className="modal-header">
+              <div>
+                <span className="heading-kicker">Staff Login Access</span>
+                <h2>
+                  {memberAction.action === "delete"
+                    ? "Delete Account?"
+                    : memberAction.action === "disable"
+                      ? "Disable Login?"
+                      : "Enable Login?"}
+                </h2>
+              </div>
+              <button type="button" onClick={() => setMemberAction(null)}>
+                ×
+              </button>
+            </header>
+            <div className="staff-access-copy">
+              <strong>{memberAction.member.displayName}</strong>
+              <span>{memberAction.member.email}</span>
+              <p>
+                {memberAction.action === "delete"
+                  ? "This permanently removes the Firebase login. Historical jobs and audit records remain preserved."
+                  : memberAction.action === "disable"
+                    ? "The employee will be signed out and cannot log in until an Owner enables access again."
+                    : "The employee can sign in again with their existing account."}
+              </p>
+            </div>
+            <footer className="modal-footer">
+              <button type="button" className="cancel-button" onClick={() => setMemberAction(null)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className={memberAction.action === "delete" ? "danger-button" : "dv-button"}
+                disabled={saving === memberAction.member.id}
+                onClick={() => void changeAccess()}
+              >
+                {saving === memberAction.member.id ? "Updating…" : "Confirm"}
+              </button>
+            </footer>
+          </section>
+        </div>
       ) : null}
       {canManageTeam && showCreate ? (
         <div className="modal-backdrop">
