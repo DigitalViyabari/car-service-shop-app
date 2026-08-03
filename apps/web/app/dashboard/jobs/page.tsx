@@ -869,6 +869,27 @@ export default function JobsPage() {
         updatedAt: serverTimestamp(),
         updatedBy: user.uid,
       });
+      try {
+        const [token, appCheck] = await Promise.all([
+          user.getIdToken(),
+          getFirebaseAppCheckToken(),
+        ]);
+        await fetch("/api/v1/jobs/estimate-email", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            ...(appCheck ? { "x-firebase-appcheck": appCheck } : {}),
+          },
+          body: JSON.stringify({
+            companyId: selected.companyId,
+            branchId: selected.branchId,
+            jobId: selected.id,
+          }),
+        });
+      } catch {
+        // Notification delivery must never block the workshop operation.
+      }
       await load();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to mark the estimate as sent.");

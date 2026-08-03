@@ -199,6 +199,11 @@ const jobRevisionSchema = z.object({
   jobId: z.string().min(2).max(128),
   reason: z.string().min(3).max(500),
 });
+const estimateEmailSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  jobId: z.string().min(2).max(128),
+});
 const createCompanySchema = z.object({
   companyName: z.string().min(2).max(120),
   branchName: z.string().min(2).max(120).default("Main Branch"),
@@ -912,6 +917,37 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       });
     return { invoiceNumber: number, receiptNumber };
   });
+  const customerId = String(job?.get("customerId") ?? input.customerId ?? "walk-in");
+  queueCustomerEventEmail({
+    companyId: input.companyId,
+    customerId,
+    eventKey: `${invoiceRef.id}_invoice_issued`,
+    eyebrow: "Invoice Issued",
+    title: "Your invoice is ready",
+    message: "Your workshop invoice has been issued. Please keep the invoice number for reference.",
+    details: [
+      { label: "Invoice Number", value: issueResult.invoiceNumber },
+      ...(job?.get("jobNumber")
+        ? [{ label: "Job Number", value: String(job.get("jobNumber")) }]
+        : []),
+      { label: "Invoice Total", value: formatRupees(totalAmount) },
+      { label: "Balance", value: formatRupees(Math.max(0, totalAmount - requestedPayment)) },
+    ],
+  });
+  if (requestedPayment > 0)
+    queueCustomerEventEmail({
+      companyId: input.companyId,
+      customerId,
+      eventKey: `${paymentRef?.id ?? invoiceRef.id}_payment_received`,
+      eyebrow: "Payment Received",
+      title: "Payment received",
+      message: "Thank you. Your payment has been recorded successfully.",
+      details: [
+        { label: "Receipt Number", value: issueResult.receiptNumber },
+        { label: "Amount Received", value: formatRupees(requestedPayment) },
+        { label: "Balance", value: formatRupees(Math.max(0, totalAmount - requestedPayment)) },
+      ],
+    });
   return { issued: true, invoiceId: invoiceRef.id, ...issueResult };
 }
 async function amendInvoice(request: IncomingMessage, user: DecodedIdToken) {
@@ -1356,6 +1392,20 @@ async function createJob(request: IncomingMessage, user: DecodedIdToken) {
     });
     return number;
   });
+  queueCustomerEventEmail({
+    companyId: input.companyId,
+    customerId: customer.id,
+    eventKey: `${jobRef.id}_job_created`,
+    eyebrow: "Workshop Check-In",
+    title: "Job card created",
+    message:
+      "Your vehicle has been checked in and the workshop team will begin the service process.",
+    details: [
+      { label: "Job Number", value: jobNumber },
+      { label: "Vehicle", value: String(vehicle.get("registrationNumber") ?? "") },
+      { label: "Service", value: input.serviceType },
+    ],
+  });
   return { created: true, jobId: jobRef.id, jobNumber };
 }
 async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
@@ -1496,7 +1546,55 @@ async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
     });
   }
   await batch.commit();
+  if (input.status === "ready" || input.status === "delivered")
+    queueCustomerEventEmail({
+      companyId: input.companyId,
+      customerId: String(job.get("customerId")),
+      eventKey: `${input.jobId}_${input.status}`,
+      eyebrow: input.status === "ready" ? "Service Complete" : "Vehicle Delivery",
+      title: input.status === "ready" ? "Your vehicle is ready" : "Vehicle delivered",
+      message:
+        input.status === "ready"
+          ? "The approved work and quality check are complete. Your vehicle is ready for delivery."
+          : "Your vehicle delivery has been recorded successfully. Thank you for choosing our workshop.",
+      details: [
+        { label: "Job Number", value: String(job.get("jobNumber") ?? "") },
+        { label: "Vehicle", value: String(job.get("registrationNumber") ?? "") },
+        { label: "Status", value: input.status === "ready" ? "Ready" : "Delivered" },
+      ],
+    });
   return { updated: true, status: input.status };
+}
+async function notifyEstimateReady(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = estimateEmailSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Select a valid job estimate.");
+  const input = parsed.data;
+  await jobManager(user.uid, input.companyId, input.branchId);
+  const job = await db.doc(`jobSheets/${input.jobId}`).get();
+  if (
+    !job.exists ||
+    job.get("companyId") !== input.companyId ||
+    job.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Job card not found.");
+  if (job.get("approvalStatus") !== "sent")
+    throw new ApiError(409, "Mark the estimate as sent before emailing the customer.");
+  const revision = Number(job.get("estimateRevision") ?? 1),
+    total = Number(job.get("estimateTotal") ?? 0);
+  queueCustomerEventEmail({
+    companyId: input.companyId,
+    customerId: String(job.get("customerId")),
+    eventKey: `${input.jobId}_estimate_${revision}`,
+    eyebrow: revision > 1 ? "Estimate Revision" : "Service Estimate",
+    title: revision > 1 ? "Revised estimate is ready" : "Your estimate is ready",
+    message: "Please review the workshop estimate and confirm your approval before work continues.",
+    details: [
+      { label: "Job Number", value: String(job.get("jobNumber") ?? "") },
+      { label: "Vehicle", value: String(job.get("registrationNumber") ?? "") },
+      { label: "Estimate", value: formatRupees(total) },
+    ],
+  });
+  return { queued: true };
 }
 async function createJobRevision(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = jobRevisionSchema.safeParse(await body(request));
@@ -1824,7 +1922,7 @@ async function recordInvoicePayment(request: IncomingMessage, user: DecodedIdTok
     startYear = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
     sequenceRef = db.doc(`receiptSequences/${input.companyId}_${financialYear}`);
-  return db.runTransaction(async (transaction) => {
+  const result = await db.runTransaction(async (transaction) => {
     const [invoice, sequence] = await Promise.all([
       transaction.get(invoiceRef),
       transaction.get(sequenceRef),
@@ -1881,8 +1979,34 @@ async function recordInvoicePayment(request: IncomingMessage, user: DecodedIdTok
       updatedAt: now,
       updatedBy: user.uid,
     });
-    return { recorded: true, paymentId: paymentRef.id, receiptNumber };
+    return {
+      recorded: true,
+      paymentId: paymentRef.id,
+      receiptNumber,
+      customerId: String(invoice.get("customerId") ?? "walk-in"),
+      invoiceNumber: String(invoice.get("invoiceNumber") ?? ""),
+      balanceAmount: nextBalance,
+    };
   });
+  queueCustomerEventEmail({
+    companyId: input.companyId,
+    customerId: result.customerId,
+    eventKey: `${result.paymentId}_payment_received`,
+    eyebrow: "Payment Received",
+    title: "Payment received",
+    message: "Thank you. Your payment has been recorded successfully.",
+    details: [
+      { label: "Receipt Number", value: result.receiptNumber },
+      { label: "Invoice Number", value: result.invoiceNumber },
+      { label: "Amount Received", value: formatRupees(input.amount) },
+      { label: "Balance", value: formatRupees(result.balanceAmount) },
+    ],
+  });
+  return {
+    recorded: result.recorded,
+    paymentId: result.paymentId,
+    receiptNumber: result.receiptNumber,
+  };
 }
 
 async function correctPayment(request: IncomingMessage, user: DecodedIdToken) {
@@ -2116,6 +2240,102 @@ function brandedEmailTemplate(input: {
     </table>
   </body>
 </html>`;
+}
+function formatRupees(value: number) {
+  return new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+type CustomerEventEmail = {
+  companyId: string;
+  customerId: string;
+  eventKey: string;
+  eyebrow: string;
+  title: string;
+  message: string;
+  details?: { label: string; value: string }[];
+};
+function queueCustomerEventEmail(input: CustomerEventEmail) {
+  void sendCustomerEventEmail(input).catch((reason) =>
+    process.stderr.write(
+      `Customer email ${input.eventKey}: ${reason instanceof Error ? reason.message : "failed"}\n`,
+    ),
+  );
+}
+async function sendCustomerEventEmail(input: CustomerEventEmail) {
+  const password = process.env.SMTP_PASSWORD;
+  if (!password || !input.customerId || input.customerId === "walk-in") return "skipped";
+  const deliveryId = `${input.companyId}_${input.eventKey}`.replace(/[^A-Za-z0-9_-]/g, "_");
+  const deliveryRef = db.doc(`customerEmailDeliveries/${deliveryId}`);
+  const [existing, customer, company, entitlement] = await Promise.all([
+    deliveryRef.get(),
+    db.doc(`customers/${input.customerId}`).get(),
+    db.doc(`companies/${input.companyId}`).get(),
+    db.doc(`communicationEntitlements/${input.companyId}`).get(),
+  ]);
+  if (existing.exists && ["processing", "sent"].includes(String(existing.get("status"))))
+    return "duplicate";
+  if (!customer.exists || customer.get("companyId") !== input.companyId) return "skipped";
+  if (entitlement.exists && entitlement.get("emailEnabled") === false) return "disabled";
+  const recipient = String(customer.get("email") ?? "").trim();
+  if (!recipient || !recipient.includes("@")) return "no_email";
+  const workshop = String(company.get("name") ?? "Digital Viyabari");
+  await deliveryRef.set(
+    {
+      companyId: input.companyId,
+      customerId: input.customerId,
+      eventKey: input.eventKey,
+      recipient,
+      status: "processing",
+      updatedAt: FieldValue.serverTimestamp(),
+      updatedBy: "customer_email_worker",
+      ...(existing.exists
+        ? {}
+        : { createdAt: FieldValue.serverTimestamp(), createdBy: "customer_email_worker" }),
+    },
+    { merge: true },
+  );
+  try {
+    const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST ?? "smtp.hostinger.com",
+        port: Number(process.env.SMTP_PORT ?? 465),
+        secure: true,
+        auth: {
+          user: process.env.SMTP_USER ?? "noreply@digitalviyabari.com",
+          pass: password,
+        },
+      }),
+      sent = await transporter.sendMail({
+        from: `"${process.env.SMTP_FROM_NAME ?? "Digital Viyabari"}" <${process.env.SMTP_USER ?? "noreply@digitalviyabari.com"}>`,
+        to: recipient,
+        subject: `${workshop}: ${input.title}`,
+        text: `${input.title}\n\n${input.message}\n\n${(input.details ?? []).map(({ label, value }) => `${label}: ${value}`).join("\n")}`,
+        html: brandedEmailTemplate({
+          brand: workshop,
+          eyebrow: input.eyebrow,
+          title: input.title,
+          message: input.message,
+          details: input.details,
+          footer: `This service update was sent by ${workshop}.`,
+        }),
+      });
+    await deliveryRef.update({
+      status: "sent",
+      providerMessageId: sent.messageId,
+      sentAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    return "sent";
+  } catch (reason) {
+    await deliveryRef.update({
+      status: "failed",
+      failureReason: reason instanceof Error ? reason.message.slice(0, 300) : "Email failed.",
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    throw reason;
+  }
 }
 async function sendTestEmail(request: IncomingMessage, user: DecodedIdToken) {
   if (!(await superAdmin(user.uid)))
@@ -2556,6 +2776,38 @@ async function runInsuranceReminderWorker() {
     });
   }
 }
+async function runServiceReminderWorker() {
+  if (!process.env.SMTP_PASSWORD) return;
+  const today = indiaDate(),
+    reminders = await db.collection("serviceReminders").where("status", "==", "scheduled").get();
+  for (const reminder of reminders.docs) {
+    const dueAt = String(reminder.get("dueAt") ?? "");
+    if (!dueAt) continue;
+    const difference = dateDifference(dueAt, today);
+    if (![3, 0].includes(difference)) continue;
+    const timing = difference === 3 ? "due in 3 days" : "due today";
+    await sendCustomerEventEmail({
+      companyId: String(reminder.get("companyId")),
+      customerId: String(reminder.get("customerId")),
+      eventKey: `${reminder.id}_service_${difference}`,
+      eyebrow: "Service Reminder",
+      title: `Vehicle service ${timing}`,
+      message: "A timely service helps keep your vehicle safe, reliable and efficient.",
+      details: [
+        { label: "Vehicle", value: String(reminder.get("registrationNumber") ?? "") },
+        { label: "Service Due Date", value: dueAt },
+        ...(typeof reminder.get("dueKm") === "number"
+          ? [
+              {
+                label: "Service Due At",
+                value: `${Number(reminder.get("dueKm")).toLocaleString("en-IN")} km`,
+              },
+            ]
+          : []),
+      ],
+    });
+  }
+}
 
 const server = createServer(async (request, response) => {
   try {
@@ -2619,6 +2871,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await changeJobStatus(request, user));
     if (request.method === "POST" && url.pathname === "/v1/jobs/revision")
       return reply(response, 200, await createJobRevision(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/jobs/estimate-email")
+      return reply(response, 200, await notifyEstimateReady(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")
@@ -2662,21 +2916,30 @@ const server = createServer(async (request, response) => {
 server.listen(port, "127.0.0.1", () =>
   process.stdout.write(`DVCS API listening on 127.0.0.1:${port}\n`),
 );
-setTimeout(
-  () =>
-    void runInsuranceReminderWorker().catch((reason) =>
-      process.stderr.write(
-        `Insurance reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
-      ),
+setTimeout(() => {
+  void runInsuranceReminderWorker().catch((reason) =>
+    process.stderr.write(
+      `Insurance reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
     ),
-  30_000,
-);
+  );
+  void runServiceReminderWorker().catch((reason) =>
+    process.stderr.write(
+      `Service reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
+    ),
+  );
+}, 30_000);
 setInterval(
-  () =>
+  () => {
     void runInsuranceReminderWorker().catch((reason) =>
       process.stderr.write(
         `Insurance reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
       ),
-    ),
+    );
+    void runServiceReminderWorker().catch((reason) =>
+      process.stderr.write(
+        `Service reminder worker: ${reason instanceof Error ? reason.message : "failed"}\n`,
+      ),
+    );
+  },
   6 * 60 * 60 * 1000,
 );
