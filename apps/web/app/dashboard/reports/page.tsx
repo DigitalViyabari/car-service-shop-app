@@ -393,7 +393,7 @@ export default function ReportsPage() {
         <>
           <section className="report-kpis">
             <div className="kpi-blue">
-              <span>Vehicles</span>
+              <span>Total Jobs</span>
               <strong>{report.includedJobs.length}</strong>
               <small>
                 {deliveredJobs} delivered · {completionRate}% completed

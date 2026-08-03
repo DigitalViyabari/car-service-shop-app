@@ -258,6 +258,12 @@ export default function InvoicesPage() {
   const selectedCustomer = customers.find(({ id }) => id === selected?.customerId);
   const invoicedJob = jobs.find(({ id }) => id === selected?.jobId);
   const invoicedJobNumber = selected?.jobNumber || invoicedJob?.jobNumber || "—";
+  const jobLineTotals = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const line of lines)
+      totals.set(line.jobId, (totals.get(line.jobId) ?? 0) + Number(line.totalAmount || 0));
+    return totals;
+  }, [lines]);
   const eligibleJobs = useMemo(
     () =>
       jobs.filter(
@@ -267,19 +273,17 @@ export default function InvoicesPage() {
               job.status,
             )) &&
           job.estimateLocked &&
-          job.estimateTotal > 0,
+          (jobLineTotals.get(job.id) ?? 0) > 0,
       ),
-    [jobs],
+    [jobLineTotals, jobs],
   );
   const invoiceableJobs = useMemo(
-      () => eligibleJobs.filter((job) => !invoices.some(({ jobId }) => jobId === job.id)),
-      [eligibleJobs, invoices],
-    ),
-    alreadyInvoicedJobs = eligibleJobs.filter((job) =>
-      invoices.some(({ jobId }) => jobId === job.id),
-    );
+    () => eligibleJobs.filter((job) => !invoices.some(({ jobId }) => jobId === job.id)),
+    [eligibleJobs, invoices],
+  );
   const selectedJob = jobs.find(({ id }) => id === jobId),
-    selectedJobLines = lines.filter((line) => line.jobId === jobId);
+    selectedJobLines = lines.filter((line) => line.jobId === jobId),
+    selectedJobTotal = jobLineTotals.get(jobId) ?? 0;
   const selectedPayments = payments
     .filter(({ invoiceId }) => invoiceId === selectedId)
     .sort((a, b) => String(b.receivedAt).localeCompare(String(a.receivedAt)));
@@ -949,24 +953,8 @@ export default function InvoicesPage() {
             <div className="form-grid">
               {invoiceableJobs.length === 0 ? (
                 <div className="span-2 invoice-edit-note">
-                  {alreadyInvoicedJobs.length
-                    ? "All approved jobs already have invoices. A duplicate invoice cannot be issued."
-                    : "No invoice-ready job found. Approve and lock an estimate first."}
-                  {alreadyInvoicedJobs.length ? (
-                    <button
-                      type="button"
-                      className="inline-create-toggle"
-                      onClick={() => {
-                        const invoice = invoices.find(
-                          ({ jobId }) => jobId === alreadyInvoicedJobs[0]?.id,
-                        );
-                        setShowCreate(false);
-                        if (invoice) setSelectedId(invoice.id);
-                      }}
-                    >
-                      Open Existing Invoice
-                    </button>
-                  ) : null}
+                  No uninvoiced approved job is ready. Approve and lock an estimate with at least
+                  one priced item.
                 </div>
               ) : null}
               <label className="span-2">
@@ -976,7 +964,7 @@ export default function InvoicesPage() {
                   {invoiceableJobs.map((job) => (
                     <option key={job.id} value={job.id}>
                       {job.jobNumber} · {job.customerName} · {job.registrationNumber} ·{" "}
-                      {money.format(job.estimateTotal)}
+                      {money.format(jobLineTotals.get(job.id) ?? 0)}
                     </option>
                   ))}
                 </select>
@@ -1003,7 +991,7 @@ export default function InvoicesPage() {
                   Items <strong>{selectedJobLines.length}</strong>
                 </span>
                 <span>
-                  Invoice Total <strong>{money.format(selectedJob?.estimateTotal ?? 0)}</strong>
+                  Invoice Total <strong>{money.format(selectedJobTotal)}</strong>
                 </span>
               </div>
             </div>
