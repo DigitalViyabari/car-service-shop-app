@@ -2042,6 +2042,81 @@ async function configure(request: IncomingMessage, user: DecodedIdToken) {
   ]);
   return { configured: true, companyId, channel };
 }
+function escapeEmailHtml(value: unknown) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+function brandedEmailTemplate(input: {
+  brand: string;
+  eyebrow: string;
+  title: string;
+  message: string;
+  details?: { label: string; value: string }[];
+  footer?: string;
+}) {
+  const brand = escapeEmailHtml(input.brand),
+    details = (input.details ?? [])
+      .map(
+        ({ label, value }) => `
+          <tr>
+            <td style="padding:11px 12px;border-bottom:1px solid #e5e7eb;color:#687386;font-size:13px;">${escapeEmailHtml(label)}</td>
+            <td style="padding:11px 12px;border-bottom:1px solid #e5e7eb;color:#111820;font-size:14px;font-weight:700;text-align:right;">${escapeEmailHtml(value)}</td>
+          </tr>`,
+      )
+      .join("");
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <meta name="color-scheme" content="light only">
+    <title>${escapeEmailHtml(input.title)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#eef1f4;font-family:Arial,Helvetica,sans-serif;color:#111820;">
+    <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeEmailHtml(input.message)}</div>
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#eef1f4;">
+      <tr>
+        <td align="center" style="padding:28px 12px;">
+          <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:620px;background:#ffffff;border:1px solid #dce1e6;border-radius:18px;overflow:hidden;box-shadow:0 12px 32px rgba(15,23,32,.08);">
+            <tr>
+              <td style="padding:22px 28px;background:#0b1118;border-bottom:4px solid #e63236;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="color:#ffffff;font-size:20px;font-weight:800;letter-spacing:.02em;">${brand}</td>
+                    <td align="right"><span style="display:inline-block;padding:7px 11px;border:1px solid #39434d;border-radius:999px;color:#f2f4f6;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;">Car Care</span></td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:34px 28px 18px;">
+                <div style="margin-bottom:10px;color:#e63236;font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;">${escapeEmailHtml(input.eyebrow)}</div>
+                <h1 style="margin:0;color:#111820;font-size:28px;line-height:1.2;">${escapeEmailHtml(input.title)}</h1>
+                <p style="margin:16px 0 0;color:#556170;font-size:16px;line-height:1.65;">${escapeEmailHtml(input.message)}</p>
+              </td>
+            </tr>
+            ${
+              details
+                ? `<tr><td style="padding:10px 28px 26px;"><table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e1e5e9;border-radius:12px;overflow:hidden;background:#f8fafb;">${details}</table></td></tr>`
+                : ""
+            }
+            <tr>
+              <td style="padding:20px 28px;background:#f4f6f8;border-top:1px solid #e1e5e9;color:#76818d;font-size:12px;line-height:1.6;">
+                ${escapeEmailHtml(input.footer ?? `This notification was sent by ${input.brand}.`)}<br>
+                <span style="color:#a0a8b1;">Powered by Digital Viyabari</span>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+}
 async function sendTestEmail(request: IncomingMessage, user: DecodedIdToken) {
   if (!(await superAdmin(user.uid)))
     throw new ApiError(403, "Platform Super Admin access is required.");
@@ -2063,7 +2138,18 @@ async function sendTestEmail(request: IncomingMessage, user: DecodedIdToken) {
     to: parsed.data.recipient,
     subject: "Digital Viyabari Email Test",
     text: "Your Digital Viyabari production email notification connection is working correctly.",
-    html: '<div style="font-family:Arial,sans-serif;padding:24px;color:#111820"><h2 style="margin:0 0 12px">Email connection successful</h2><p>Your Digital Viyabari production email notification connection is working correctly.</p></div>',
+    html: brandedEmailTemplate({
+      brand: "Digital Viyabari",
+      eyebrow: "Production Email Test",
+      title: "Email connection successful",
+      message: "Your production email notification connection is working correctly.",
+      details: [
+        { label: "Sender", value: process.env.SMTP_USER ?? "noreply@digitalviyabari.com" },
+        { label: "Delivery", value: "Hostinger SMTP" },
+        { label: "Status", value: "Connected" },
+      ],
+      footer: "This test confirms that Digital Viyabari can send branded workshop notifications.",
+    }),
   });
   await db.collection("platformAuditLogs").add({
     action: "test_email_sent",
@@ -2414,6 +2500,18 @@ async function runInsuranceReminderWorker() {
           to: String(customer.get("email")),
           subject: `${registration} insurance ${timing}`,
           text: message,
+          html: brandedEmailTemplate({
+            brand: workshop,
+            eyebrow: "Vehicle Insurance Reminder",
+            title: `Insurance ${timing}`,
+            message: `Dear ${customerName}, please renew the insurance on time to keep your vehicle protected.`,
+            details: [
+              { label: "Vehicle", value: registration },
+              { label: "Expiry Date", value: expiry },
+              { label: "Reminder", value: timing },
+            ],
+            footer: `This helpful reminder was sent by ${workshop}.`,
+          }),
         });
         emailStatus = "sent";
       } catch {
