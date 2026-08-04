@@ -15,7 +15,8 @@
     },
     "android": {
       "package": "com.digitalviyabari.carserviceshopapp",
-      "googleServicesFile": "./google-services.json"
+      "googleServicesFile": "./google-services.json",
+      "userInterfaceStyle": "light"
     }
   }
 }
