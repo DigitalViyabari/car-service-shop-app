@@ -810,7 +810,7 @@ export default function PlatformAdminPage() {
                   : "Updates every branch and starts a new billing period today."}
               </p>
             </div>
-            <footer className="modal-footer">
+            <footer className="modal-footer subscription-actions">
               {subscriptionDraft.branchId ? (
                 <button
                   className={

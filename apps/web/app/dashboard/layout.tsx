@@ -256,6 +256,22 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       Boolean(subscriptionEnd && subscriptionEnd.getTime() < Date.now()),
     subscriptionTone =
       !subscriptionExpired && subscription?.status === "active" ? "positive" : "warning";
+  const selectableCompanyBranches = companyBranches.filter((branch) => {
+    const item = subscriptions.find(({ branchId }) => branchId === branch.id),
+      endValue = item?.currentPeriodEnd as unknown,
+      end =
+        typeof endValue === "string"
+          ? new Date(endValue)
+          : endValue && typeof endValue === "object" && "toDate" in endValue
+            ? (endValue as { toDate: () => Date }).toDate()
+            : null;
+    return (
+      branch.status === "active" &&
+      Boolean(item) &&
+      !["expired", "suspended", "cancelled", "past_due"].includes(item?.status ?? "") &&
+      !(end && end.getTime() < Date.now())
+    );
+  });
   const activeMembership = memberships.find(({ companyId }) => companyId === activeCompanyId);
   const isCompanyOwner = activeMembership?.companyRoles.includes("company_owner") ?? false;
   const activeBranchRoles =
@@ -427,12 +443,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 aria-label="Branch"
                 value={activeBranchId ?? ""}
                 onChange={(event) => selectBranch(event.target.value)}
-                disabled={companyBranches.length === 0}
+                disabled={selectableCompanyBranches.length === 0}
               >
-                {companyBranches.length === 0 ? (
-                  <option value="">No assigned branches</option>
+                {selectableCompanyBranches.length === 0 ? (
+                  <option value="">No active branches</option>
                 ) : null}
-                {companyBranches.map((branch) => (
+                {selectableCompanyBranches.map((branch) => (
                   <option key={branch.id} value={branch.id}>
                     {branch.name}
                   </option>

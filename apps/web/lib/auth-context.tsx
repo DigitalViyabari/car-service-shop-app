@@ -45,6 +45,24 @@ function fromDocument<T extends { id: string }>(snapshot: DocumentSnapshot): T {
   return { ...snapshot.data(), id: snapshot.id } as T;
 }
 
+function subscriptionEnd(value: unknown) {
+  if (typeof value === "string") return new Date(value);
+  if (value && typeof value === "object" && "toDate" in value)
+    return (value as { toDate: () => Date }).toDate();
+  return null;
+}
+
+function branchHasAccess(branch: Branch, subscriptions: BranchSubscription[], now = Date.now()) {
+  const subscription = subscriptions.find(({ branchId }) => branchId === branch.id),
+    end = subscriptionEnd(subscription?.currentPeriodEnd);
+  return (
+    branch.status === "active" &&
+    Boolean(subscription) &&
+    !["expired", "suspended", "cancelled", "past_due"].includes(subscription?.status ?? "") &&
+    !(end && end.getTime() < now)
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -130,17 +148,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setBranches(nextBranches);
     setSubscriptions(nextSubscriptions);
 
-    const storedCompanyId = window.localStorage.getItem("dvcs.activeCompanyId");
-    const nextCompanyId = nextCompanies.some(({ id }) => id === storedCompanyId)
-      ? storedCompanyId
-      : (nextCompanies[0]?.id ?? null);
+    const storedCompanyId = window.localStorage.getItem("dvcs.activeCompanyId"),
+      companiesWithAccess = nextCompanies.filter((company) =>
+        nextBranches.some(
+          (branch) => branch.companyId === company.id && branchHasAccess(branch, nextSubscriptions),
+        ),
+      ),
+      nextCompanyId = companiesWithAccess.some(({ id }) => id === storedCompanyId)
+        ? storedCompanyId
+        : (companiesWithAccess[0]?.id ??
+          (nextCompanies.some(({ id }) => id === storedCompanyId)
+            ? storedCompanyId
+            : (nextCompanies[0]?.id ?? null)));
     const companyBranches = nextBranches.filter(({ companyId }) => companyId === nextCompanyId);
-    const storedBranchId = window.localStorage.getItem("dvcs.activeBranchId");
-    const nextBranchId = companyBranches.some(({ id }) => id === storedBranchId)
-      ? storedBranchId
-      : (companyBranches[0]?.id ?? null);
+    const availableBranches = companyBranches.filter((branch) =>
+        branchHasAccess(branch, nextSubscriptions),
+      ),
+      storedBranchId = window.localStorage.getItem("dvcs.activeBranchId"),
+      nextBranchId = availableBranches.some(({ id }) => id === storedBranchId)
+        ? storedBranchId
+        : (availableBranches[0]?.id ?? companyBranches[0]?.id ?? null);
     setActiveCompanyId(nextCompanyId);
     setActiveBranchId(nextBranchId);
+    if (nextCompanyId) window.localStorage.setItem("dvcs.activeCompanyId", nextCompanyId);
+    if (nextBranchId) window.localStorage.setItem("dvcs.activeBranchId", nextBranchId);
   }, []);
 
   useEffect(() => {
@@ -178,23 +209,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const selectCompany = useCallback(
     (companyId: string) => {
       if (!companies.some(({ id }) => id === companyId)) return;
-      const nextBranchId = branches.find((branch) => branch.companyId === companyId)?.id ?? null;
+      const companyBranches = branches.filter((branch) => branch.companyId === companyId),
+        nextBranchId =
+          companyBranches.find((branch) => branchHasAccess(branch, subscriptions))?.id ??
+          companyBranches[0]?.id ??
+          null;
       setActiveCompanyId(companyId);
       setActiveBranchId(nextBranchId);
       window.localStorage.setItem("dvcs.activeCompanyId", companyId);
       if (nextBranchId) window.localStorage.setItem("dvcs.activeBranchId", nextBranchId);
     },
-    [branches, companies],
+    [branches, companies, subscriptions],
   );
 
   const selectBranch = useCallback(
     (branchId: string) => {
-      if (!branches.some(({ id, companyId }) => id === branchId && companyId === activeCompanyId))
+      if (
+        !branches.some(
+          (branch) =>
+            branch.id === branchId &&
+            branch.companyId === activeCompanyId &&
+            branchHasAccess(branch, subscriptions),
+        )
+      )
         return;
       setActiveBranchId(branchId);
       window.localStorage.setItem("dvcs.activeBranchId", branchId);
     },
-    [activeCompanyId, branches],
+    [activeCompanyId, branches, subscriptions],
   );
 
   const value = useMemo<AuthContextValue>(

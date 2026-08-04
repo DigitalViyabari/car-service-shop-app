@@ -1038,6 +1038,26 @@ button.platform-row:hover {
 .subscription-modal {
   width: min(560px, calc(100vw - 24px));
 }
+.subscription-modal .subscription-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(100px, 0.65fr) minmax(0, 1.15fr);
+  gap: 12px;
+}
+.subscription-modal .subscription-actions > button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 16px;
+  white-space: normal;
+}
+.subscription-modal .subscription-actions .danger-button {
+  border: 1px solid #df3439;
+  background: #fff;
+  color: #c8252b;
+  box-shadow: none;
+}
+.subscription-modal .subscription-actions .danger-button:hover {
+  background: #fff1f1;
+}
 .subscription-note {
   margin: 0;
   padding: 12px 14px;
@@ -7547,6 +7567,13 @@ textarea:focus-visible {
   .content .modal-footer :is(button, .dv-button) {
     width: 100%;
     min-width: 0;
+  }
+
+  .subscription-modal .subscription-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+  .subscription-modal .subscription-actions > :first-child {
+    grid-column: 1 / -1;
   }
 
   .mobile-nav :is(a, span, button) {
