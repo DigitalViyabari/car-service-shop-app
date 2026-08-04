@@ -74,6 +74,7 @@ export default function PlatformAdminPage() {
       companyName: string;
       branchId?: string;
       branchName?: string;
+      branchStatus?: string;
       plan: "trial" | "monthly" | "yearly";
       trialDays: number;
     } | null>(null),
@@ -208,6 +209,29 @@ export default function PlatformAdminPage() {
       );
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to update subscription.");
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function updateBranchAccess(action: "activate" | "suspend") {
+    if (!subscriptionDraft?.branchId) return;
+    setBusy(true);
+    setMessage("");
+    try {
+      await api("/api/v1/admin/branches/access", {
+        method: "POST",
+        body: JSON.stringify({
+          companyId: subscriptionDraft.companyId,
+          branchId: subscriptionDraft.branchId,
+          action,
+        }),
+      });
+      const label = `${subscriptionDraft.companyName} · ${subscriptionDraft.branchName}`;
+      setSubscriptionDraft(null);
+      await refreshOverview();
+      setMessage(`${label} ${action === "suspend" ? "access suspended" : "access activated"}.`);
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to update branch access.");
     } finally {
       setBusy(false);
     }
@@ -620,12 +644,13 @@ export default function PlatformAdminPage() {
                           companyName: item.name,
                           branchId: branch.id,
                           branchName: branch.name,
+                          branchStatus: branch.status,
                           plan: branch.subscription?.plan ?? "trial",
                           trialDays: 30,
                         });
                       }}
                     >
-                      {branch.name} · {branch.subscription?.plan ?? "Not Set"}
+                      {branch.name} · {branch.subscription?.plan ?? "Not Set"} · {branch.status}
                     </button>
                   ))}
                 </span>
@@ -780,10 +805,32 @@ export default function PlatformAdminPage() {
                 </label>
               ) : null}
               <p className="span-2 subscription-note">
-                Updates every branch and starts a new billing period today.
+                {subscriptionDraft.branchId
+                  ? "Updates this branch and starts a new billing period today."
+                  : "Updates every branch and starts a new billing period today."}
               </p>
             </div>
             <footer className="modal-footer">
+              {subscriptionDraft.branchId ? (
+                <button
+                  className={
+                    subscriptionDraft.branchStatus === "suspended"
+                      ? "cancel-button"
+                      : "danger-button"
+                  }
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void updateBranchAccess(
+                      subscriptionDraft.branchStatus === "suspended" ? "activate" : "suspend",
+                    )
+                  }
+                >
+                  {subscriptionDraft.branchStatus === "suspended"
+                    ? "Activate Branch"
+                    : "Suspend Branch Access"}
+                </button>
+              ) : null}
               <button
                 className="cancel-button"
                 type="button"

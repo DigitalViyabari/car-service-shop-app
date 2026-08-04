@@ -287,7 +287,13 @@ export default function InvoicesPage() {
         ),
         (async () => {
           const branchProfile = await getDoc(
-            doc(firebaseClient.db, "branchTaxProfiles", `${activeCompanyId}_${activeBranchId}`),
+            doc(
+              firebaseClient.db,
+              "businessTaxProfiles",
+              activeCompanyId,
+              "branches",
+              activeBranchId,
+            ),
           );
           return branchProfile.exists()
             ? branchProfile

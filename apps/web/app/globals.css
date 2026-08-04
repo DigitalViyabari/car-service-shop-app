@@ -6354,6 +6354,11 @@ textarea::placeholder {
 }
 .settings-card > .form-grid {
   padding: 24px;
+  align-items: start;
+}
+.settings-card > .form-grid > label {
+  align-content: start;
+  align-self: start;
 }
 .settings-card input:disabled,
 .settings-card select:disabled,

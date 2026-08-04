@@ -235,6 +235,11 @@ const createBranchSchema = z.object({
   plan: z.enum(["trial", "monthly", "yearly"]),
   trialDays: z.number().int().min(1).max(365).default(30),
 });
+const branchAccessSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  action: z.enum(["activate", "suspend"]),
+});
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 type RateWindow = { count: number; resetAt: number };
@@ -711,6 +716,50 @@ async function createCompanyBranch(request: IncomingMessage, user: DecodedIdToke
     currentPeriodEnd: periodEnd.toISOString(),
   };
 }
+async function updateBranchAccess(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await platformAdministrator(user.uid)))
+    throw new ApiError(403, "Platform Admin access is required.");
+  const parsed = branchAccessSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Select a valid branch action.");
+  const input = parsed.data,
+    branchRef = db.doc(`branches/${input.branchId}`),
+    subscriptionRef = db.doc(`branchSubscriptions/${input.branchId}`),
+    [branch, subscription] = await Promise.all([branchRef.get(), subscriptionRef.get()]);
+  if (!branch.exists || branch.get("companyId") !== input.companyId)
+    throw new ApiError(404, "Branch not found.");
+  if (input.action === "activate" && !subscription.exists)
+    throw new ApiError(409, "Set a subscription before activating this branch.");
+  const periodEnd = subscription.get("currentPeriodEnd")?.toDate?.() as Date | undefined;
+  if (input.action === "activate" && periodEnd && periodEnd.getTime() < Date.now())
+    throw new ApiError(409, "Renew the branch subscription before activating access.");
+  const now = FieldValue.serverTimestamp(),
+    batch = db.batch();
+  batch.update(branchRef, {
+    status: input.action === "suspend" ? "suspended" : "active",
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  if (subscription.exists)
+    batch.update(subscriptionRef, {
+      status:
+        input.action === "suspend"
+          ? "suspended"
+          : subscription.get("planId") === "trial" || Number(subscription.get("trialDays") ?? 0) > 0
+            ? "trialing"
+            : "active",
+      updatedAt: now,
+      updatedBy: user.uid,
+    });
+  batch.create(db.collection("platformAuditLogs").doc(), {
+    action: input.action === "suspend" ? "branch_suspended" : "branch_activated",
+    actorUserId: user.uid,
+    companyId: input.companyId,
+    branchId: input.branchId,
+    createdAt: now,
+  });
+  await batch.commit();
+  return { updated: true, status: input.action === "suspend" ? "suspended" : "active" };
+}
 async function impersonateAccount(request: IncomingMessage, user: DecodedIdToken) {
   if (!(await superAdmin(user.uid))) throw new ApiError(403, "Super Admin access is required.");
   const parsed = impersonationSchema.safeParse(await body(request));
@@ -809,7 +858,9 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     taxableAmount = calculatedLines.reduce((sum, line) => sum + line.taxableAmount, 0),
     taxAmount = calculatedLines.reduce((sum, line) => sum + line.taxAmount, 0),
     totalAmount = calculatedLines.reduce((sum, line) => sum + line.totalAmount, 0),
-    branchSettings = await db.doc(`branchTaxProfiles/${input.companyId}_${input.branchId}`).get(),
+    branchSettings = await db
+      .doc(`businessTaxProfiles/${input.companyId}/branches/${input.branchId}`)
+      .get(),
     legacySettings = branchSettings.exists
       ? null
       : await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
@@ -3112,6 +3163,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await createCompany(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/branches")
       return reply(response, 200, await createCompanyBranch(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/branches/access")
+      return reply(response, 200, await updateBranchAccess(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/subscriptions")
       return reply(response, 200, await updateCompanySubscription(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")

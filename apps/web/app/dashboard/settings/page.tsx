@@ -72,7 +72,13 @@ export default function BusinessSettingsPage() {
     setMessage("");
     try {
       const branchSnapshot = await getDoc(
-          doc(firebaseClient.db, "branchTaxProfiles", `${activeCompanyId}_${activeBranchId}`),
+          doc(
+            firebaseClient.db,
+            "businessTaxProfiles",
+            activeCompanyId,
+            "branches",
+            activeBranchId,
+          ),
         ),
         legacySnapshot = branchSnapshot.exists()
           ? null
@@ -131,7 +137,13 @@ export default function BusinessSettingsPage() {
     setMessage("");
     try {
       const now = serverTimestamp(),
-        ref = doc(firebaseClient.db, "branchTaxProfiles", `${activeCompanyId}_${activeBranchId}`),
+        ref = doc(
+          firebaseClient.db,
+          "businessTaxProfiles",
+          activeCompanyId,
+          "branches",
+          activeBranchId,
+        ),
         values = {
           ...draft,
           gstin,
