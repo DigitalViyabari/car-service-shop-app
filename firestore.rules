@@ -180,19 +180,18 @@ service cloud.firestore {
         request.resource.data.branchId == branchId && validAuditUpdate();
       allow delete: if false;
     }
-    match /gstRegistrations/{registrationId} {
-      allow read: if resource.data.companyId is string &&
-        companyFinanceViewer(resource.data.companyId);
-      allow create: if request.resource.data.companyId is string &&
-        companyOwner(request.resource.data.companyId) &&
+    match /businessTaxProfiles/{companyId}/gstRegistrations/{registrationId} {
+      allow read: if companyFinanceViewer(companyId);
+      allow create: if companyOwner(companyId) &&
+        request.resource.data.companyId == companyId &&
         request.resource.data.id == registrationId &&
         request.resource.data.keys().hasAll([
           "id", "companyId", "gstin", "legalName", "registrationType", "state",
           "stateCode", "invoicePrefix", "invoiceStartNumber", "invoiceSeriesKey",
           "status", "createdAt", "createdBy", "updatedAt", "updatedBy"
         ]) && validAuditCreate();
-      allow update: if resource.data.companyId is string &&
-        companyOwner(resource.data.companyId) &&
+      allow update: if companyOwner(companyId) &&
+        resource.data.companyId == companyId &&
         request.resource.data.id == resource.data.id &&
         request.resource.data.companyId == resource.data.companyId &&
         request.resource.data.gstin == resource.data.gstin &&

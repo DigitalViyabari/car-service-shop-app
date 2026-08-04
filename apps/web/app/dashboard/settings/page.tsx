@@ -1,16 +1,7 @@
 "use client";
 
 import type { BusinessTaxProfile, GstRegistration, GstRegistrationType } from "@dvcs/types";
-import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  serverTimestamp,
-  where,
-  writeBatch,
-} from "firebase/firestore";
+import { collection, doc, getDoc, getDocs, serverTimestamp, writeBatch } from "firebase/firestore";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { firebaseClient } from "@/lib/firebase-client";
@@ -82,31 +73,31 @@ export default function BusinessSettingsPage() {
     setLoading(true);
     setMessage("");
     try {
-      const [branchSnapshot, registrationSnapshots] = await Promise.all([
-          getDoc(
-            doc(
-              firebaseClient.db,
-              "businessTaxProfiles",
-              activeCompanyId,
-              "branches",
-              activeBranchId,
-            ),
+      const branchSnapshot = await getDoc(
+          doc(
+            firebaseClient.db,
+            "businessTaxProfiles",
+            activeCompanyId,
+            "branches",
+            activeBranchId,
           ),
-          getDocs(
-            query(
-              collection(firebaseClient.db, "gstRegistrations"),
-              where("companyId", "==", activeCompanyId),
-            ),
-          ),
-        ]),
+        ),
+        registrationSnapshots = await getDocs(
+          collection(firebaseClient.db, "businessTaxProfiles", activeCompanyId, "gstRegistrations"),
+        ).catch(() => null),
         legacySnapshot = branchSnapshot.exists()
           ? null
           : await getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
         snapshot = branchSnapshot.exists() ? branchSnapshot : legacySnapshot!,
-        availableRegistrations = registrationSnapshots.docs.map((item) => ({
-          id: item.id,
-          ...item.data(),
-        })) as GstRegistration[];
+        availableRegistrations = registrationSnapshots
+          ? (registrationSnapshots.docs.map((item) => ({
+              id: item.id,
+              ...item.data(),
+            })) as GstRegistration[])
+          : [];
+      if (!registrationSnapshots) {
+        setMessage("GST registration access is not active yet. Deploy the latest Firestore rules.");
+      }
       setRegistrations(availableRegistrations.filter(({ status }) => status !== "inactive"));
       if (snapshot.exists()) {
         const data = snapshot.data() as BusinessTaxProfile;
@@ -224,7 +215,13 @@ export default function BusinessSettingsPage() {
           updatedBy: user.uid,
         };
       if (gstSetup !== "unregistered") {
-        const registrationRef = doc(firebaseClient.db, "gstRegistrations", registrationId),
+        const registrationRef = doc(
+            firebaseClient.db,
+            "businessTaxProfiles",
+            activeCompanyId,
+            "gstRegistrations",
+            registrationId,
+          ),
           registrationValues = {
             id: registrationId,
             companyId: activeCompanyId,

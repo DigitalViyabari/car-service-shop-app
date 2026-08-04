@@ -867,7 +867,11 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     settings = branchSettings.exists ? branchSettings : legacySettings!,
     registrationSettings =
       settings.exists && settings.get("gstRegistrationId")
-        ? await db.doc(`gstRegistrations/${String(settings.get("gstRegistrationId"))}`).get()
+        ? await db
+            .doc(
+              `businessTaxProfiles/${input.companyId}/gstRegistrations/${String(settings.get("gstRegistrationId"))}`,
+            )
+            .get()
         : null,
     taxRegistration = registrationSettings?.exists ? registrationSettings : settings,
     prefix =
