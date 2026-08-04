@@ -136,6 +136,14 @@ const businessSettingsSchema = z.object({
     state: z.string().min(2).max(100),
     stateCode: z.string().min(2).max(2),
     postalCode: z.string().min(4).max(10),
+    branchAddressName: z.string().max(180).optional().default(""),
+    registeredAddressLine1: z.string().max(240).optional().default(""),
+    registeredAddressLine2: z.string().max(240).optional().default(""),
+    registeredCity: z.string().max(100).optional().default(""),
+    registeredPostalCode: z.string().max(10).optional().default(""),
+    invoiceAddressMode: z.enum(["branch", "registered"]).default("branch"),
+    invoiceSeriesMode: z.enum(["shared", "branch"]).default("shared"),
+    invoiceSeriesId: z.string().max(180).optional().default("shared"),
     invoicePrefix: z.string().min(1).max(4),
     invoiceStartNumber: z.number().int().min(1).max(999999),
     invoiceTerms: z.string().max(2000).optional().default(""),
@@ -908,11 +916,18 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
         : null,
     taxRegistration = registrationSettings?.exists ? registrationSettings : settings,
     prefix =
-      String((taxRegistration.exists ? taxRegistration.get("invoicePrefix") : null) ?? "INV")
+      String(
+        (settings.exists ? settings.get("invoicePrefix") : null) ??
+          (taxRegistration.exists ? taxRegistration.get("invoicePrefix") : null) ??
+          "INV",
+      )
         .replace(/[^A-Za-z0-9]/g, "")
         .toUpperCase()
         .slice(0, 4) || "INV",
-    requestedStart = Number(taxRegistration.exists ? taxRegistration.get("invoiceStartNumber") : 1),
+    requestedStart = Number(
+      (settings.exists ? settings.get("invoiceStartNumber") : null) ??
+        (taxRegistration.exists ? taxRegistration.get("invoiceStartNumber") : 1),
+    ),
     configuredStart = Number.isInteger(requestedStart)
       ? Math.max(1, Math.min(999999, requestedStart))
       : 1,
@@ -920,9 +935,11 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
     seriesKey = String(
-      (taxRegistration.exists
-        ? taxRegistration.get("invoiceSeriesKey") || taxRegistration.get("gstin")
-        : null) || `${input.companyId}-UNREGISTERED-${input.branchId}`,
+      (settings.exists ? settings.get("invoiceSeriesKey") : null) ||
+        (taxRegistration.exists
+          ? taxRegistration.get("invoiceSeriesKey") || taxRegistration.get("gstin")
+          : null) ||
+        `${input.companyId}-UNREGISTERED-${input.branchId}`,
     ).replace(/[^A-Za-z0-9_-]/g, ""),
     sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${seriesKey}_${financialYear}`),
     legacySequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`),
@@ -1032,15 +1049,26 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       ),
       supplierTradeName: String(settings.exists ? (settings.get("tradeName") ?? "") : ""),
       supplierGstin: String(taxRegistration.exists ? (taxRegistration.get("gstin") ?? "") : ""),
-      supplierAddress: [
-        settings.exists ? settings.get("addressLine1") : "",
-        settings.exists ? settings.get("addressLine2") : "",
-        settings.exists ? settings.get("city") : "",
-        settings.exists ? settings.get("state") : "",
-        settings.exists ? settings.get("postalCode") : "",
-      ]
+      supplierAddress: (settings.get("invoiceAddressMode") === "registered"
+        ? [
+            taxRegistration.get("registeredAddressLine1"),
+            taxRegistration.get("registeredAddressLine2"),
+            taxRegistration.get("registeredCity"),
+            taxRegistration.get("state"),
+            taxRegistration.get("registeredPostalCode"),
+          ]
+        : [
+            settings.exists ? settings.get("addressLine1") : "",
+            settings.exists ? settings.get("addressLine2") : "",
+            settings.exists ? settings.get("city") : "",
+            settings.exists ? settings.get("state") : "",
+            settings.exists ? settings.get("postalCode") : "",
+          ]
+      )
         .filter(Boolean)
         .join(", "),
+      invoiceAddressMode: String(settings.get("invoiceAddressMode") ?? "branch"),
+      invoiceSeriesId: String(settings.get("invoiceSeriesId") ?? "shared"),
       customerId: String(job?.get("customerId") ?? input.customerId ?? "walk-in"),
       customerName: String(job?.get("customerName") ?? input.customerName ?? "Walk-In Customer"),
       vehicleId: String(job?.get("vehicleId") ?? ""),
@@ -1525,13 +1553,33 @@ async function getBusinessSettings(user: DecodedIdToken, companyId: string, bran
       ? null
       : await db.doc(`businessTaxProfiles/${companyId}`).get(),
     settings = branchSettings.exists ? branchSettings : legacySettings,
+    selectedRegistration =
+      settings?.exists && settings.get("gstRegistrationId")
+        ? await db
+            .doc(
+              `businessTaxProfiles/${companyId}/gstRegistrations/${String(settings.get("gstRegistrationId"))}`,
+            )
+            .get()
+        : null,
     registrations = await db
       .collection(`businessTaxProfiles/${companyId}/gstRegistrations`)
       .where("status", "==", "active")
       .get();
   return {
     exists: branchSettings.exists,
-    profile: settings?.exists ? settings.data() : null,
+    profile: settings?.exists
+      ? {
+          ...settings.data(),
+          ...(selectedRegistration?.exists
+            ? {
+                registeredAddressLine1: selectedRegistration.get("registeredAddressLine1") ?? "",
+                registeredAddressLine2: selectedRegistration.get("registeredAddressLine2") ?? "",
+                registeredCity: selectedRegistration.get("registeredCity") ?? "",
+                registeredPostalCode: selectedRegistration.get("registeredPostalCode") ?? "",
+              }
+            : {}),
+        }
+      : null,
     registrations: registrations.docs.map((item) => ({ id: item.id, ...item.data() })),
   };
 }
@@ -1547,6 +1595,14 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     invoicePrefix = profile.invoicePrefix.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
   if (input.gstSetup !== "unregistered" && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin))
     throw new ApiError(400, "Enter a valid 15-character GSTIN.");
+  if (!invoicePrefix) throw new ApiError(400, "Enter a valid invoice prefix.");
+  if (
+    input.gstSetup !== "unregistered" &&
+    (!profile.registeredAddressLine1.trim() ||
+      !profile.registeredCity.trim() ||
+      !profile.registeredPostalCode.trim())
+  )
+    throw new ApiError(400, "Complete the GST-registered address.");
   if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) throw new ApiError(400, "Enter a valid PAN.");
   const registrationId =
       input.gstSetup === "unregistered"
@@ -1562,14 +1618,67 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     throw new ApiError(404, "Select an existing GST registration.");
   if (input.gstSetup === "new" && existingRegistration?.exists)
     throw new ApiError(409, "This GSTIN already exists. Select the existing registration.");
-  const seriesKey =
+  const seriesMode = input.gstSetup === "unregistered" ? "branch" : profile.invoiceSeriesMode,
+    baseSeriesKey = String(existingRegistration?.get("invoiceSeriesKey") || gstin),
+    seriesId = seriesMode === "shared" ? "shared" : input.branchId,
+    seriesKey =
       input.gstSetup === "unregistered"
         ? `${input.companyId}-UNREGISTERED-${input.branchId}`
-        : String(existingRegistration?.get("invoiceSeriesKey") || gstin),
+        : seriesMode === "shared"
+          ? baseSeriesKey
+          : `${baseSeriesKey}-${input.branchId}`,
+    effectivePrefix =
+      seriesMode === "shared" && existingRegistration?.exists
+        ? String(existingRegistration.get("invoicePrefix") ?? invoicePrefix)
+        : invoicePrefix,
+    registrationPrefix = existingRegistration?.exists
+      ? String(existingRegistration.get("invoicePrefix") ?? invoicePrefix)
+      : invoicePrefix,
+    registrationStartNumber = existingRegistration?.exists
+      ? Number(existingRegistration.get("invoiceStartNumber") ?? profile.invoiceStartNumber)
+      : profile.invoiceStartNumber,
     now = FieldValue.serverTimestamp(),
     branchRef = db.doc(`businessTaxProfiles/${input.companyId}/branches/${input.branchId}`),
     existingBranch = await branchRef.get(),
     batch = db.batch();
+  if (registrationRef && seriesMode === "branch") {
+    const siblingSeries = await registrationRef.collection("invoiceSeries").get();
+    if (
+      siblingSeries.docs.some(
+        (series) =>
+          series.id !== seriesId &&
+          series.get("status") === "active" &&
+          String(series.get("prefix") ?? "").toUpperCase() === effectivePrefix,
+      )
+    )
+      throw new ApiError(409, "Use a unique invoice prefix for this branch series.");
+  }
+  if (existingBranch.exists) {
+    const nowDate = new Date(),
+      startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
+      financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
+      changedSeries =
+        String(existingBranch.get("gstRegistrationId") ?? "") !== registrationId ||
+        String(existingBranch.get("invoiceSeriesKey") ?? "") !== seriesKey ||
+        String(existingBranch.get("invoicePrefix") ?? "INV") !== effectivePrefix;
+    if (changedSeries) {
+      const branchInvoices = await db
+        .collection("invoices")
+        .where("branchId", "==", input.branchId)
+        .get();
+      if (
+        branchInvoices.docs.some(
+          (invoice) =>
+            invoice.get("companyId") === input.companyId &&
+            String(invoice.get("invoiceNumber") ?? "").includes(`/${financialYear}/`),
+        )
+      )
+        throw new ApiError(
+          409,
+          "This branch has invoices in the current financial year. Its GST and invoice series are locked.",
+        );
+    }
+  }
   if (registrationRef) {
     const registrationValues = {
       id: registrationId,
@@ -1580,9 +1689,13 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
       registrationType: profile.registrationType === "composition" ? "composition" : "regular",
       state: profile.state.trim(),
       stateCode: profile.stateCode.trim(),
-      invoicePrefix,
-      invoiceStartNumber: profile.invoiceStartNumber,
-      invoiceSeriesKey: seriesKey,
+      registeredAddressLine1: profile.registeredAddressLine1.trim(),
+      registeredAddressLine2: profile.registeredAddressLine2.trim(),
+      registeredCity: profile.registeredCity.trim(),
+      registeredPostalCode: profile.registeredPostalCode.trim(),
+      invoicePrefix: registrationPrefix,
+      invoiceStartNumber: registrationStartNumber,
+      invoiceSeriesKey: baseSeriesKey,
       status: "active",
       updatedAt: now,
       updatedBy: user.uid,
@@ -1592,6 +1705,26 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
       existingRegistration?.exists
         ? registrationValues
         : { ...registrationValues, createdAt: now, createdBy: user.uid },
+      { merge: true },
+    );
+    const seriesRef = registrationRef.collection("invoiceSeries").doc(seriesId),
+      existingSeries = await seriesRef.get();
+    batch.set(
+      seriesRef,
+      {
+        id: seriesId,
+        companyId: input.companyId,
+        gstRegistrationId: registrationId,
+        branchId: seriesMode === "branch" ? input.branchId : null,
+        mode: seriesMode,
+        prefix: effectivePrefix,
+        invoiceStartNumber: profile.invoiceStartNumber,
+        invoiceSeriesKey: seriesKey,
+        status: "active",
+        updatedAt: now,
+        updatedBy: user.uid,
+        ...(existingSeries.exists ? {} : { createdAt: now, createdBy: user.uid }),
+      },
       { merge: true },
     );
   }
@@ -1604,8 +1737,10 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     gstin,
     pan,
     registrationType: input.gstSetup === "unregistered" ? "unregistered" : profile.registrationType,
-    invoicePrefix,
+    invoicePrefix: effectivePrefix,
     invoiceSeriesKey: seriesKey,
+    invoiceSeriesId: seriesId,
+    invoiceSeriesMode: seriesMode,
     updatedAt: now,
     updatedBy: user.uid,
   };

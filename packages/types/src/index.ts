@@ -225,6 +225,10 @@ export interface GstRegistration extends AuditFields {
   registrationType: Exclude<GstRegistrationType, "unregistered">;
   state: string;
   stateCode: string;
+  registeredAddressLine1?: string;
+  registeredAddressLine2?: string;
+  registeredCity?: string;
+  registeredPostalCode?: string;
   invoicePrefix: string;
   invoiceStartNumber: number;
   invoiceSeriesKey: string;
@@ -236,6 +240,10 @@ export interface BusinessTaxProfile extends AuditFields {
   branchId?: string;
   gstRegistrationId?: string;
   invoiceSeriesKey?: string;
+  invoiceSeriesId?: string;
+  invoiceSeriesMode?: "shared" | "branch";
+  invoiceAddressMode?: "branch" | "registered";
+  branchAddressName?: string;
   legalName: string;
   tradeName: string;
   gstRegistered: boolean;
@@ -248,6 +256,10 @@ export interface BusinessTaxProfile extends AuditFields {
   state: string;
   stateCode: string;
   postalCode: string;
+  registeredAddressLine1?: string;
+  registeredAddressLine2?: string;
+  registeredCity?: string;
+  registeredPostalCode?: string;
   invoicePrefix: string;
   invoiceStartNumber?: number;
   invoiceTerms?: string;

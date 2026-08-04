@@ -21,6 +21,14 @@ const emptyDraft: Draft = {
   state: "Tamil Nadu",
   stateCode: "33",
   postalCode: "",
+  branchAddressName: "",
+  registeredAddressLine1: "",
+  registeredAddressLine2: "",
+  registeredCity: "",
+  registeredPostalCode: "",
+  invoiceAddressMode: "branch",
+  invoiceSeriesMode: "shared",
+  invoiceSeriesId: "shared",
   invoicePrefix: "INV",
   invoiceStartNumber: 1,
   invoiceTerms: "",
@@ -125,9 +133,15 @@ export default function BusinessSettingsPage() {
       registrationType: registration.registrationType,
       state: registration.state,
       stateCode: registration.stateCode,
+      registeredAddressLine1: registration.registeredAddressLine1 ?? "",
+      registeredAddressLine2: registration.registeredAddressLine2 ?? "",
+      registeredCity: registration.registeredCity ?? "",
+      registeredPostalCode: registration.registeredPostalCode ?? "",
       invoicePrefix: registration.invoicePrefix,
       invoiceStartNumber: registration.invoiceStartNumber,
       invoiceSeriesKey: registration.invoiceSeriesKey,
+      invoiceSeriesMode: "shared",
+      invoiceSeriesId: "shared",
     }));
   };
   async function save(event: FormEvent) {
@@ -279,6 +293,9 @@ export default function BusinessSettingsPage() {
                       gstRegistered: false,
                       gstin: "",
                       registrationType: "unregistered",
+                      invoiceAddressMode: "branch",
+                      invoiceSeriesMode: "branch",
+                      invoiceSeriesId: activeBranchId ?? "",
                     }));
                   } else if (value === "existing" && registrations[0]) {
                     chooseRegistration(registrations[0].id);
@@ -290,6 +307,9 @@ export default function BusinessSettingsPage() {
                       gstin: "",
                       registrationType: "regular",
                       invoiceSeriesKey: "",
+                      invoiceAddressMode: "branch",
+                      invoiceSeriesMode: "shared",
+                      invoiceSeriesId: "shared",
                     }));
                   }
                 }}
@@ -318,7 +338,9 @@ export default function BusinessSettingsPage() {
                     </option>
                   ))}
                 </select>
-                <small>This branch will share the GST registration and invoice series.</small>
+                <small>
+                  This selects the GST identity. Address and invoice series are chosen below.
+                </small>
               </label>
             ) : null}
           </div>
@@ -360,19 +382,60 @@ export default function BusinessSettingsPage() {
           <header>
             <span>02</span>
             <div>
-              <h2>Registered Address</h2>
-              <p>This branch invoice/operating address. It may differ under the same GSTIN.</p>
+              <h2>Branch &amp; Invoice Address</h2>
+              <p>Keep the workshop location separate from the GST-registered address.</p>
             </div>
           </header>
           <div className="form-grid">
-            {field("addressLine1", "Address Line 1", { required: true })}
-            {field("addressLine2", "Address Line 2")}
-            {field("city", "City", { required: true })}
-            {field("state", "State", { required: true })}
-            {field("stateCode", "GST State Code", { required: true })}
-            {field("postalCode", "PIN Code", { required: true })}
-            {field("phone", "Business Phone")}
-            {field("email", "Business Email", { type: "email" })}
+            <div className="settings-subheading span-2">
+              <strong>Branch / Workshop Address</strong>
+              <small>The physical location of this branch.</small>
+            </div>
+            {field("branchAddressName", "Location Name", { placeholder: "Chennai Workshop" })}
+            {field("addressLine1", "Branch Address Line 1", { required: true })}
+            {field("addressLine2", "Branch Address Line 2")}
+            {field("city", "Branch City", { required: true })}
+            {field("state", "Branch State", { required: true })}
+            {field("stateCode", "State Code", { required: true })}
+            {field("postalCode", "Branch PIN Code", { required: true })}
+            {field("phone", "Branch Phone")}
+            {field("email", "Branch Email", { type: "email" })}
+            {gstSetup !== "unregistered" ? (
+              <>
+                <div className="settings-subheading span-2">
+                  <strong>GST-Registered Address</strong>
+                  <small>
+                    Official address stored with this GSTIN. Existing registrations are read-only.
+                  </small>
+                </div>
+                {field("registeredAddressLine1", "Registered Address Line 1", {
+                  required: true,
+                })}
+                {field("registeredAddressLine2", "Registered Address Line 2")}
+                {field("registeredCity", "Registered City", {
+                  required: true,
+                })}
+                {field("registeredPostalCode", "Registered PIN Code", {
+                  required: true,
+                })}
+                <label className="span-2 settings-choice">
+                  Address Printed On This Branch&apos;s Invoice
+                  <select
+                    value={draft.invoiceAddressMode ?? "branch"}
+                    disabled={!isOwner}
+                    onChange={(event) =>
+                      update("invoiceAddressMode", event.target.value as "branch" | "registered")
+                    }
+                  >
+                    <option value="branch">Use This Branch Address</option>
+                    <option value="registered">Use GST-Registered Address</option>
+                  </select>
+                  <small>
+                    The selected address is permanently copied into every issued invoice.
+                  </small>
+                </label>
+              </>
+            ) : null}
           </div>
         </section>
         <section className="settings-card" id="invoice-payment">
@@ -388,7 +451,47 @@ export default function BusinessSettingsPage() {
             </div>
           </header>
           <div className="form-grid">
-            {field("invoicePrefix", "Invoice Prefix (Maximum 4 Characters)", { required: true })}
+            {gstSetup !== "unregistered" ? (
+              <label className="span-2 settings-choice">
+                Invoice Series For This Branch
+                <select
+                  value={draft.invoiceSeriesMode ?? "shared"}
+                  disabled={!isOwner}
+                  onChange={(event) => {
+                    const mode = event.target.value as "shared" | "branch";
+                    update("invoiceSeriesMode", mode);
+                    update(
+                      "invoiceSeriesId",
+                      mode === "shared" ? "shared" : (activeBranchId ?? ""),
+                    );
+                    if (mode === "shared" && draft.gstRegistrationId) {
+                      const registration = registrations.find(
+                        ({ id }) => id === draft.gstRegistrationId,
+                      );
+                      if (registration) update("invoicePrefix", registration.invoicePrefix);
+                    }
+                  }}
+                >
+                  <option value="shared">Share GST Invoice Series</option>
+                  <option value="branch">Create Separate Branch Series</option>
+                </select>
+                <small>
+                  Shared keeps one continuous sequence across branches. Separate gives this address
+                  its own prefix and sequence.
+                </small>
+              </label>
+            ) : null}
+            {field(
+              "invoicePrefix",
+              draft.invoiceSeriesMode === "branch"
+                ? "Branch Invoice Prefix (Maximum 4 Characters)"
+                : "Shared Invoice Prefix (Maximum 4 Characters)",
+              {
+                required: true,
+                disabled:
+                  gstSetup === "existing" && (draft.invoiceSeriesMode ?? "shared") === "shared",
+              },
+            )}
             <label>
               Invoice Starting Number
               <input
