@@ -216,10 +216,25 @@ export interface InventoryMovement extends AuditFields {
 }
 
 export type GstRegistrationType = "regular" | "composition" | "unregistered";
+export interface GstRegistration extends AuditFields {
+  id: string;
+  companyId: string;
+  gstin: string;
+  legalName: string;
+  pan?: string;
+  registrationType: Exclude<GstRegistrationType, "unregistered">;
+  state: string;
+  stateCode: string;
+  invoicePrefix: string;
+  invoiceStartNumber: number;
+  invoiceSeriesKey: string;
+  status: "active" | "inactive";
+}
 export interface BusinessTaxProfile extends AuditFields {
   id: string;
   companyId: string;
   branchId?: string;
+  gstRegistrationId?: string;
   invoiceSeriesKey?: string;
   legalName: string;
   tradeName: string;

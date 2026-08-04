@@ -6355,10 +6355,54 @@ textarea::placeholder {
 .settings-card > .form-grid {
   padding: 24px;
   align-items: start;
+  column-gap: 24px;
+  row-gap: 22px;
 }
 .settings-card > .form-grid > label {
-  align-content: start;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 8px;
   align-self: start;
+  min-width: 0;
+  margin: 0;
+}
+.settings-card > .form-grid > label > :is(input, select, textarea) {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+.settings-card > .form-grid > label > small {
+  display: block;
+  margin: 0;
+}
+.gst-setup-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding: 24px 24px 0;
+  background: #f8fafc;
+}
+.gst-setup-panel label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  color: #303844;
+  font-size: 14px;
+  font-weight: 800;
+}
+.gst-setup-panel :is(select, input) {
+  width: 100%;
+  min-height: 46px;
+  box-sizing: border-box;
+  margin: 0;
+}
+.gst-setup-panel small {
+  color: #78828e;
+  font-weight: 600;
+  line-height: 1.45;
 }
 .settings-card input:disabled,
 .settings-card select:disabled,
@@ -7379,6 +7423,12 @@ textarea:focus-visible {
   .content .form-grid {
     grid-template-columns: minmax(0, 1fr);
     gap: 16px;
+  }
+
+  .content .gst-setup-panel {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    padding: 18px 18px 0;
   }
 
   .content .form-grid :is(.span-2, .full) {

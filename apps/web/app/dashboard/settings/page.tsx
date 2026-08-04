@@ -1,7 +1,16 @@
 "use client";
 
-import type { BusinessTaxProfile, GstRegistrationType } from "@dvcs/types";
-import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
+import type { BusinessTaxProfile, GstRegistration, GstRegistrationType } from "@dvcs/types";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  where,
+  writeBatch,
+} from "firebase/firestore";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { firebaseClient } from "@/lib/firebase-client";
@@ -46,7 +55,9 @@ export default function BusinessSettingsPage() {
     [exists, setExists] = useState(false),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
-    [message, setMessage] = useState("");
+    [message, setMessage] = useState(""),
+    [registrations, setRegistrations] = useState<GstRegistration[]>([]),
+    [gstSetup, setGstSetup] = useState<"unregistered" | "existing" | "new">("unregistered");
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
     isOwner = (membership?.companyRoles ?? []).some(
       (role) => role === "company_owner" || role === "company_admin",
@@ -71,22 +82,43 @@ export default function BusinessSettingsPage() {
     setLoading(true);
     setMessage("");
     try {
-      const branchSnapshot = await getDoc(
-          doc(
-            firebaseClient.db,
-            "businessTaxProfiles",
-            activeCompanyId,
-            "branches",
-            activeBranchId,
+      const [branchSnapshot, registrationSnapshots] = await Promise.all([
+          getDoc(
+            doc(
+              firebaseClient.db,
+              "businessTaxProfiles",
+              activeCompanyId,
+              "branches",
+              activeBranchId,
+            ),
           ),
-        ),
+          getDocs(
+            query(
+              collection(firebaseClient.db, "gstRegistrations"),
+              where("companyId", "==", activeCompanyId),
+            ),
+          ),
+        ]),
         legacySnapshot = branchSnapshot.exists()
           ? null
           : await getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
-        snapshot = branchSnapshot.exists() ? branchSnapshot : legacySnapshot!;
+        snapshot = branchSnapshot.exists() ? branchSnapshot : legacySnapshot!,
+        availableRegistrations = registrationSnapshots.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        })) as GstRegistration[];
+      setRegistrations(availableRegistrations.filter(({ status }) => status !== "inactive"));
       if (snapshot.exists()) {
         const data = snapshot.data() as BusinessTaxProfile;
         setDraft({ ...emptyDraft, ...data });
+        setGstSetup(
+          !data.gstRegistered
+            ? "unregistered"
+            : data.gstRegistrationId &&
+                availableRegistrations.some(({ id }) => id === data.gstRegistrationId)
+              ? "existing"
+              : "new",
+        );
         setExists(branchSnapshot.exists());
       } else {
         setDraft({
@@ -107,13 +139,35 @@ export default function BusinessSettingsPage() {
   }, [load]);
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
+  const chooseRegistration = (registrationId: string) => {
+    const registration = registrations.find(({ id }) => id === registrationId);
+    if (!registration) return;
+    setDraft((current) => ({
+      ...current,
+      gstRegistrationId: registration.id,
+      gstRegistered: true,
+      gstin: registration.gstin,
+      legalName: registration.legalName,
+      pan: registration.pan ?? current.pan,
+      registrationType: registration.registrationType,
+      state: registration.state,
+      stateCode: registration.stateCode,
+      invoicePrefix: registration.invoicePrefix,
+      invoiceStartNumber: registration.invoiceStartNumber,
+      invoiceSeriesKey: registration.invoiceSeriesKey,
+    }));
+  };
   async function save(event: FormEvent) {
     event.preventDefault();
     if (!user || !activeCompanyId || !activeBranchId || !isOwner) return;
-    const gstin = draft.gstin?.trim().toUpperCase() ?? "",
+    const gstin = gstSetup === "unregistered" ? "" : (draft.gstin?.trim().toUpperCase() ?? ""),
       pan = draft.pan?.trim().toUpperCase() ?? "";
-    if (draft.gstRegistered && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin)) {
+    if (gstSetup !== "unregistered" && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin)) {
       setMessage("Enter a valid 15-character GSTIN.");
+      return;
+    }
+    if (gstSetup === "new" && registrations.some((item) => item.gstin === gstin)) {
+      setMessage("This GSTIN already exists. Choose Use Existing Company GSTIN.");
       return;
     }
     if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) {
@@ -137,6 +191,16 @@ export default function BusinessSettingsPage() {
     setMessage("");
     try {
       const now = serverTimestamp(),
+        batch = writeBatch(firebaseClient.db),
+        registrationId =
+          gstSetup === "unregistered"
+            ? ""
+            : draft.gstRegistrationId || `${activeCompanyId}_${gstin}`,
+        existingRegistration = registrations.find(({ id }) => id === registrationId),
+        seriesKey =
+          gstSetup === "unregistered"
+            ? `${activeCompanyId}-UNREGISTERED-${activeBranchId}`
+            : existingRegistration?.invoiceSeriesKey || draft.invoiceSeriesKey || gstin,
         ref = doc(
           firebaseClient.db,
           "businessTaxProfiles",
@@ -146,20 +210,51 @@ export default function BusinessSettingsPage() {
         ),
         values = {
           ...draft,
+          gstRegistrationId: registrationId,
+          gstRegistered: gstSetup !== "unregistered",
+          registrationType: gstSetup === "unregistered" ? "unregistered" : draft.registrationType,
           gstin,
           pan,
           invoicePrefix,
           invoiceStartNumber: Number(draft.invoiceStartNumber),
           companyId: activeCompanyId,
           branchId: activeBranchId,
-          invoiceSeriesKey: gstin || `${activeCompanyId}-UNREGISTERED`,
+          invoiceSeriesKey: seriesKey,
           updatedAt: now,
           updatedBy: user.uid,
         };
-      await setDoc(ref, exists ? values : { ...values, createdAt: now, createdBy: user.uid }, {
+      if (gstSetup !== "unregistered") {
+        const registrationRef = doc(firebaseClient.db, "gstRegistrations", registrationId),
+          registrationValues = {
+            id: registrationId,
+            companyId: activeCompanyId,
+            gstin,
+            legalName: draft.legalName.trim(),
+            pan,
+            registrationType: draft.registrationType === "composition" ? "composition" : "regular",
+            state: draft.state.trim(),
+            stateCode: draft.stateCode.trim(),
+            invoicePrefix,
+            invoiceStartNumber: Number(draft.invoiceStartNumber),
+            invoiceSeriesKey: seriesKey,
+            status: "active",
+            updatedAt: now,
+            updatedBy: user.uid,
+          };
+        batch.set(
+          registrationRef,
+          existingRegistration
+            ? registrationValues
+            : { ...registrationValues, createdAt: now, createdBy: user.uid },
+          { merge: true },
+        );
+      }
+      batch.set(ref, exists ? values : { ...values, createdAt: now, createdBy: user.uid }, {
         merge: true,
       });
+      await batch.commit();
       setExists(true);
+      await load();
       setMessage(`${activeBranch?.name ?? "Branch"} GST and invoice settings saved.`);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to save business settings.");
@@ -188,7 +283,7 @@ export default function BusinessSettingsPage() {
   const field = (
     key: keyof Draft,
     label: string,
-    options?: { type?: string; placeholder?: string; required?: boolean },
+    options?: { type?: string; placeholder?: string; required?: boolean; disabled?: boolean },
   ) => (
     <label>
       {label}
@@ -197,7 +292,7 @@ export default function BusinessSettingsPage() {
         value={String(draft[key] ?? "")}
         placeholder={options?.placeholder}
         required={options?.required}
-        disabled={!isOwner}
+        disabled={!isOwner || options?.disabled}
         onChange={(event) => update(key, event.target.value as never)}
       />
     </label>
@@ -238,30 +333,96 @@ export default function BusinessSettingsPage() {
               <p>Workshop details.</p>
             </div>
           </header>
-          <div className="form-grid">
-            {field("legalName", "Legal Business Name", { required: true })}
-            {field("tradeName", "Trade / Workshop Name", { required: true })}
+          <div className="gst-setup-panel">
             <label>
-              GST Registration
+              GST Setup For This Branch
               <select
-                value={draft.registrationType}
+                value={gstSetup}
                 disabled={!isOwner}
                 onChange={(event) => {
-                  const value = event.target.value as GstRegistrationType;
-                  update("registrationType", value);
-                  update("gstRegistered", value !== "unregistered");
+                  const value = event.target.value as typeof gstSetup;
+                  setGstSetup(value);
+                  if (value === "unregistered") {
+                    setDraft((current) => ({
+                      ...current,
+                      gstRegistrationId: "",
+                      gstRegistered: false,
+                      gstin: "",
+                      registrationType: "unregistered",
+                    }));
+                  } else if (value === "existing" && registrations[0]) {
+                    chooseRegistration(registrations[0].id);
+                  } else if (value === "new") {
+                    setDraft((current) => ({
+                      ...current,
+                      gstRegistrationId: "",
+                      gstRegistered: true,
+                      gstin: "",
+                      registrationType: "regular",
+                      invoiceSeriesKey: "",
+                    }));
+                  }
                 }}
               >
-                <option value="unregistered">Unregistered</option>
-                <option value="regular">Regular</option>
-                <option value="composition">Composition</option>
+                <option value="unregistered">Not GST Registered</option>
+                <option value="existing" disabled={!registrations.length}>
+                  Use Existing Company GSTIN
+                </option>
+                <option value="new">Add A Different GSTIN</option>
               </select>
+              <small>
+                Choose the GST registration deliberately. The system never guesses from an address.
+              </small>
             </label>
-            {field("gstin", "GSTIN", {
-              placeholder: "33ABCDE1234F1Z5",
-              required: draft.gstRegistered,
+            {gstSetup === "existing" ? (
+              <label>
+                Company GST Registration
+                <select
+                  value={draft.gstRegistrationId ?? ""}
+                  disabled={!isOwner}
+                  onChange={(event) => chooseRegistration(event.target.value)}
+                >
+                  {registrations.map((registration) => (
+                    <option key={registration.id} value={registration.id}>
+                      {registration.gstin} · {registration.legalName}
+                    </option>
+                  ))}
+                </select>
+                <small>This branch will share the GST registration and invoice series.</small>
+              </label>
+            ) : null}
+          </div>
+          <div className="form-grid settings-fields-grid">
+            {field("legalName", "Legal Business Name", {
+              required: true,
+              disabled: gstSetup === "existing",
             })}
-            {field("pan", "PAN", { placeholder: "ABCDE1234F" })}
+            {field("tradeName", "Trade / Workshop Name", { required: true })}
+            {gstSetup !== "unregistered" ? (
+              <label>
+                Registration Type
+                <select
+                  value={draft.registrationType}
+                  disabled={!isOwner || gstSetup === "existing"}
+                  onChange={(event) => {
+                    const value = event.target.value as GstRegistrationType;
+                    update("registrationType", value);
+                    update("gstRegistered", value !== "unregistered");
+                  }}
+                >
+                  <option value="regular">Regular</option>
+                  <option value="composition">Composition</option>
+                </select>
+              </label>
+            ) : null}
+            {gstSetup !== "unregistered"
+              ? field("gstin", "GSTIN", {
+                  placeholder: "33ABCDE1234F1Z5",
+                  required: true,
+                  disabled: gstSetup === "existing",
+                })
+              : null}
+            {field("pan", "PAN", { placeholder: "ABCDE1234F", disabled: gstSetup === "existing" })}
             {field("authorizedSignatory", "Authorized Signatory")}
           </div>
         </section>
@@ -270,7 +431,7 @@ export default function BusinessSettingsPage() {
             <span>02</span>
             <div>
               <h2>Registered Address</h2>
-              <p>Invoice address.</p>
+              <p>This branch invoice/operating address. It may differ under the same GSTIN.</p>
             </div>
           </header>
           <div className="form-grid">
@@ -289,7 +450,11 @@ export default function BusinessSettingsPage() {
             <span>03</span>
             <div>
               <h2>Invoice &amp; Payment Details</h2>
-              <p>Branches using the same GSTIN automatically share one invoice series.</p>
+              <p>
+                {gstSetup === "existing"
+                  ? "This branch shares the selected GST registration's invoice series."
+                  : "Invoice numbering is attached to this branch's selected GST registration."}
+              </p>
             </div>
           </header>
           <div className="form-grid">

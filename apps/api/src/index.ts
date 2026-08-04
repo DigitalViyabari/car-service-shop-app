@@ -865,12 +865,17 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       ? null
       : await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
     settings = branchSettings.exists ? branchSettings : legacySettings!,
+    registrationSettings =
+      settings.exists && settings.get("gstRegistrationId")
+        ? await db.doc(`gstRegistrations/${String(settings.get("gstRegistrationId"))}`).get()
+        : null,
+    taxRegistration = registrationSettings?.exists ? registrationSettings : settings,
     prefix =
-      String((settings.exists ? settings.get("invoicePrefix") : null) ?? "INV")
+      String((taxRegistration.exists ? taxRegistration.get("invoicePrefix") : null) ?? "INV")
         .replace(/[^A-Za-z0-9]/g, "")
         .toUpperCase()
         .slice(0, 4) || "INV",
-    requestedStart = Number(settings.exists ? settings.get("invoiceStartNumber") : 1),
+    requestedStart = Number(taxRegistration.exists ? taxRegistration.get("invoiceStartNumber") : 1),
     configuredStart = Number.isInteger(requestedStart)
       ? Math.max(1, Math.min(999999, requestedStart))
       : 1,
@@ -878,8 +883,9 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
     seriesKey = String(
-      (settings.exists ? settings.get("invoiceSeriesKey") || settings.get("gstin") : null) ||
-        `${input.companyId}-UNREGISTERED`,
+      (taxRegistration.exists
+        ? taxRegistration.get("invoiceSeriesKey") || taxRegistration.get("gstin")
+        : null) || `${input.companyId}-UNREGISTERED-${input.branchId}`,
     ).replace(/[^A-Za-z0-9_-]/g, ""),
     sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${seriesKey}_${financialYear}`),
     legacySequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`),
@@ -983,9 +989,12 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       jobNumber: String(job?.get("jobNumber") ?? ""),
       invoiceNumber: number,
       taxProfileId: settings.id,
-      supplierLegalName: String(settings.exists ? (settings.get("legalName") ?? "") : ""),
+      gstRegistrationId: String(settings.exists ? (settings.get("gstRegistrationId") ?? "") : ""),
+      supplierLegalName: String(
+        taxRegistration.exists ? (taxRegistration.get("legalName") ?? "") : "",
+      ),
       supplierTradeName: String(settings.exists ? (settings.get("tradeName") ?? "") : ""),
-      supplierGstin: String(settings.exists ? (settings.get("gstin") ?? "") : ""),
+      supplierGstin: String(taxRegistration.exists ? (taxRegistration.get("gstin") ?? "") : ""),
       supplierAddress: [
         settings.exists ? settings.get("addressLine1") : "",
         settings.exists ? settings.get("addressLine2") : "",
