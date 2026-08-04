@@ -76,10 +76,12 @@ export default function BusinessSettingsPage() {
     [saving, setSaving] = useState(false),
     [message, setMessage] = useState(""),
     [messageType, setMessageType] = useState<"success" | "error" | "">(""),
+    [prefixError, setPrefixError] = useState(""),
     [registrations, setRegistrations] = useState<GstRegistration[]>([]),
     [branchSetups, setBranchSetups] = useState<BranchTaxSetup[]>([]),
     [gstSetup, setGstSetup] = useState<"unregistered" | "existing" | "new">("unregistered"),
-    messageRef = useRef<HTMLDivElement>(null);
+    messageRef = useRef<HTMLDivElement>(null),
+    prefixRef = useRef<HTMLInputElement>(null);
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
     isOwner = (membership?.companyRoles ?? []).some(
       (role) => role === "company_owner" || role === "company_admin",
@@ -146,6 +148,7 @@ export default function BusinessSettingsPage() {
     setLoading(true);
     setMessage("");
     setMessageType("");
+    setPrefixError("");
     try {
       const response = await fetch(
           `/api/v1/settings/business?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
@@ -201,6 +204,13 @@ export default function BusinessSettingsPage() {
     setMessage(text);
     setMessageType(type);
   };
+  const showPrefixError = () => {
+    setPrefixError("Different address should have a different prefix.");
+    window.requestAnimationFrame(() => {
+      prefixRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      prefixRef.current?.focus({ preventScroll: true });
+    });
+  };
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const chooseRegistration = (registrationId: string) => {
@@ -251,9 +261,17 @@ export default function BusinessSettingsPage() {
         Number.isInteger(Number(draft.invoiceStartNumber)) && Number(draft.invoiceStartNumber) > 0
           ? Number(draft.invoiceStartNumber)
           : 1;
+    if (
+      setupResult === "branch" &&
+      sameGstBranches.some((branch) => branch.invoicePrefix.trim().toUpperCase() === invoicePrefix)
+    ) {
+      showPrefixError();
+      return;
+    }
     setSaving(true);
     setMessage("");
     setMessageType("");
+    setPrefixError("");
     try {
       const response = await fetch("/api/v1/settings/business", {
           method: "POST",
@@ -291,6 +309,13 @@ export default function BusinessSettingsPage() {
         "success",
       );
     } catch (reason) {
+      if (
+        reason instanceof Error &&
+        /invoice prefix is already used|different invoice prefix/i.test(reason.message)
+      ) {
+        showPrefixError();
+        return;
+      }
       showMessage(
         `Your changes were not saved. ${
           reason instanceof Error ? reason.message : "Unable to save business settings."
@@ -555,10 +580,28 @@ export default function BusinessSettingsPage() {
                     : `Example: This branch uses its own number, such as ${currentInvoiceExample}.`}
               </small>
             </div>
-            {field("invoicePrefix", "Invoice Prefix (Maximum 4 Characters)", {
-              required: true,
-              placeholder: "INV",
-            })}
+            <label className={prefixError ? "field-with-error" : ""}>
+              Invoice Prefix (Maximum 4 Characters)
+              <input
+                ref={prefixRef}
+                value={draft.invoicePrefix}
+                placeholder="INV"
+                required
+                disabled={!isOwner}
+                aria-invalid={Boolean(prefixError)}
+                aria-describedby={prefixError ? "invoice-prefix-error" : undefined}
+                title={prefixError || undefined}
+                onChange={(event) => {
+                  setPrefixError("");
+                  update("invoicePrefix", event.target.value);
+                }}
+              />
+              {prefixError ? (
+                <small className="field-error-tooltip" id="invoice-prefix-error" role="tooltip">
+                  <strong>Not Saved.</strong> {prefixError}
+                </small>
+              ) : null}
+            </label>
             <label>
               Invoice Starting Number
               <input

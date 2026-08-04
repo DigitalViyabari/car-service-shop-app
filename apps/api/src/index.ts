@@ -1829,7 +1829,10 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
       : profile.invoiceStartNumber,
     batch = db.batch();
   if (usedPrefixes.has(effectivePrefix))
-    throw new ApiError(409, "This invoice prefix is already used. Enter a different prefix.");
+    throw new ApiError(
+      409,
+      "This invoice prefix is already used. A different address needs a different invoice prefix.",
+    );
   if (existingBranch.exists) {
     const nowDate = new Date(),
       startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,

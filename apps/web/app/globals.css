@@ -1399,6 +1399,33 @@ button.platform-row:hover {
 .settings-page .module-alert span {
   min-width: 0;
 }
+.settings-page .field-with-error input {
+  border-color: #df3439;
+  background: #fff7f7;
+  box-shadow: 0 0 0 3px rgba(223, 52, 57, 0.12);
+}
+.field-error-tooltip {
+  position: relative;
+  display: block;
+  width: fit-content;
+  margin-top: 9px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: #a81921;
+  color: #fff;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.field-error-tooltip::before {
+  position: absolute;
+  top: -6px;
+  left: 18px;
+  width: 12px;
+  height: 12px;
+  background: #a81921;
+  content: "";
+  transform: rotate(45deg);
+}
 .customer-workspace {
   display: grid;
   grid-template-columns: minmax(350px, 0.82fr) minmax(500px, 1.4fr);
