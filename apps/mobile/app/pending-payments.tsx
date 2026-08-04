@@ -1,18 +1,24 @@
+import type { PaymentMethod } from "@dvcs/types";
 import { Ionicons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Linking,
-  SafeAreaView,
+  Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { apiGet } from "../lib/mobile-api";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { SelectField } from "../components/form-controls";
+import { apiGet, apiRequest } from "../lib/mobile-api";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { canViewFinance } from "../lib/mobile-roles";
 import { colours } from "../lib/theme";
@@ -20,7 +26,7 @@ import { colours } from "../lib/theme";
 type Pending = {
   id: string;
   invoiceNumber: string;
-  jobId: string;
+  jobNumber: string;
   customerName: string;
   phone: string;
   totalAmount: number;
@@ -43,6 +49,13 @@ export default function PendingPaymentsScreen() {
     [error, setError] = useState<string | null>(null);
   const [whatsappSent, setWhatsappSent] = useState<Record<string, number>>({});
   const [clock, setClock] = useState(Date.now());
+  const [paymentItem, setPaymentItem] = useState<Pending | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [savingPayment, setSavingPayment] = useState(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [receiptNumber, setReceiptNumber] = useState("");
   const whatsappHistoryKey = user ? `dvcs.whatsappFollowUp.${user.uid}` : "";
   const load = useCallback(async () => {
     if (!user || !company || !branch || !allowed) {
@@ -93,6 +106,41 @@ export default function PendingPaymentsScreen() {
   }
   const sentWithin24Hours = (invoiceId: string) =>
     clock - (whatsappSent[invoiceId] ?? 0) < 24 * 60 * 60 * 1000;
+  function openPayment(item: Pending) {
+    setPaymentItem(item);
+    setPaymentAmount("");
+    setPaymentMethod("cash");
+    setPaymentReference("");
+    setPaymentError(null);
+  }
+  async function recordPayment() {
+    if (!user || !company || !branch || !paymentItem) return;
+    const amount = Number(paymentAmount);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > paymentItem.balanceAmount + 0.001) {
+      setPaymentError(`Enter an amount between ₹0.01 and ${money(paymentItem.balanceAmount)}.`);
+      return;
+    }
+    setSavingPayment(true);
+    setPaymentError(null);
+    try {
+      const result = await apiRequest<{ receiptNumber: string }>(user, "/v1/payments/record", {
+        companyId: company.id,
+        branchId: branch.id,
+        invoiceId: paymentItem.id,
+        amount,
+        method: paymentMethod,
+        reference: paymentReference.trim(),
+        notes: "Payment received from mobile app",
+      });
+      setReceiptNumber(result.receiptNumber);
+      setPaymentItem(null);
+      await load();
+    } catch (reason) {
+      setPaymentError(reason instanceof Error ? reason.message : "Unable to record payment.");
+    } finally {
+      setSavingPayment(false);
+    }
+  }
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
@@ -113,6 +161,12 @@ export default function PendingPaymentsScreen() {
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
           {error ? <Text style={styles.error}>{error}</Text> : null}
+          {receiptNumber ? (
+            <View style={styles.receiptNotice}>
+              <Ionicons name="checkmark-circle" size={23} color={colours.green} />
+              <Text style={styles.receiptText}>Payment recorded · {receiptNumber}</Text>
+            </View>
+          ) : null}
           <View style={styles.summary}>
             <Text style={styles.summaryLabel}>TOTAL TO COLLECT</Text>
             <Text style={styles.summaryValue}>
@@ -128,7 +182,9 @@ export default function PendingPaymentsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{item.customerName}</Text>
                   <Text style={styles.invoice}>Invoice · {item.invoiceNumber}</Text>
-                  {item.jobId ? <Text style={styles.jobCard}>Job Card · {item.jobId}</Text> : null}
+                  {item.jobNumber ? (
+                    <Text style={styles.jobCard}>Job Card · {item.jobNumber}</Text>
+                  ) : null}
                 </View>
                 <Text style={styles.balance}>{money(item.balanceAmount)}</Text>
               </View>
@@ -136,6 +192,10 @@ export default function PendingPaymentsScreen() {
                 <Text style={styles.amountText}>Invoice {money(item.totalAmount)}</Text>
                 <Text style={styles.amountText}>Paid {money(item.paidAmount)}</Text>
               </View>
+              <TouchableOpacity style={styles.receive} onPress={() => openPayment(item)}>
+                <Ionicons name="wallet" size={21} color="#FFF" />
+                <Text style={styles.actionText}>Receive Payment</Text>
+              </TouchableOpacity>
               {item.phone ? (
                 <View style={styles.actions}>
                   <TouchableOpacity style={styles.call} onPress={() => void call(item.phone)}>
@@ -165,6 +225,97 @@ export default function PendingPaymentsScreen() {
           ) : null}
         </ScrollView>
       )}
+      <Modal visible={Boolean(paymentItem)} transparent animationType="fade">
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+        >
+          <ScrollView
+            contentContainerStyle={styles.modalScroll}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.eyebrow}>PAYMENT RECEIVED</Text>
+                  <Text style={styles.modalTitle}>Record Payment</Text>
+                  <Text style={styles.modalInvoice}>{paymentItem?.invoiceNumber}</Text>
+                </View>
+                <TouchableOpacity style={styles.close} onPress={() => setPaymentItem(null)}>
+                  <Ionicons name="close" size={25} color={colours.ink} />
+                </TouchableOpacity>
+              </View>
+              {paymentError ? <Text style={styles.error}>{paymentError}</Text> : null}
+              <Text style={styles.fieldLabel}>Amount Received *</Text>
+              <View style={styles.amountInputRow}>
+                <Text style={styles.rupee}>₹</Text>
+                <TextInput
+                  style={styles.amountInput}
+                  value={paymentAmount}
+                  onChangeText={setPaymentAmount}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                />
+              </View>
+              <View style={styles.balanceLine}>
+                <Text style={styles.balanceHint}>
+                  Balance {money(paymentItem?.balanceAmount ?? 0)}
+                </Text>
+                <TouchableOpacity
+                  onPress={() => setPaymentAmount(String(paymentItem?.balanceAmount ?? ""))}
+                >
+                  <Text style={styles.fullBalance}>Use Full Balance</Text>
+                </TouchableOpacity>
+              </View>
+              <SelectField
+                label="Payment Method"
+                value={paymentMethod}
+                onChange={(value) => setPaymentMethod(value as PaymentMethod)}
+                options={[
+                  { value: "cash", label: "Cash" },
+                  { value: "upi", label: "UPI" },
+                  { value: "card", label: "Card" },
+                  { value: "bank_transfer", label: "Bank Transfer" },
+                  { value: "cheque", label: "Cheque" },
+                  { value: "other", label: "Other" },
+                ]}
+              />
+              <Text style={styles.fieldLabel}>Transaction / Reference (Optional)</Text>
+              <TextInput
+                style={styles.referenceInput}
+                value={paymentReference}
+                onChangeText={setPaymentReference}
+                placeholder="UPI, card, bank or cheque reference"
+              />
+              {Number(paymentAmount) > 0 && paymentItem ? (
+                <View style={styles.paymentSummary}>
+                  <Text style={styles.paymentSummaryTitle}>
+                    {Number(paymentAmount) >= paymentItem.balanceAmount
+                      ? "Full Payment"
+                      : "Partial Payment"}
+                  </Text>
+                  <Text style={styles.paymentSummaryText}>
+                    Remaining{" "}
+                    {money(Math.max(0, paymentItem.balanceAmount - Number(paymentAmount)))}
+                  </Text>
+                </View>
+              ) : null}
+              <TouchableOpacity
+                style={styles.recordButton}
+                onPress={() => void recordPayment()}
+                disabled={savingPayment}
+              >
+                {savingPayment ? (
+                  <ActivityIndicator color="#FFF" />
+                ) : (
+                  <Text style={styles.recordButtonText}>Record & Generate Receipt</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -195,6 +346,15 @@ const styles = StyleSheet.create({
   summaryLabel: { fontSize: 11, fontWeight: "900", letterSpacing: 1, color: "#B8C0C8" },
   summaryValue: { fontSize: 32, fontWeight: "900", color: "#FFF", marginTop: 7 },
   summaryHint: { fontSize: 14, color: "#B8C0C8", marginTop: 4 },
+  receiptNotice: {
+    padding: 14,
+    borderRadius: 14,
+    backgroundColor: "#EAF8F2",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  receiptText: { flex: 1, color: "#176C48", fontSize: 14, fontWeight: "800" },
   card: {
     padding: 17,
     borderRadius: 18,
@@ -217,6 +377,16 @@ const styles = StyleSheet.create({
   },
   amountText: { fontSize: 13, fontWeight: "700", color: colours.muted },
   actions: { flexDirection: "row", gap: 9 },
+  receive: {
+    height: 54,
+    borderRadius: 14,
+    backgroundColor: colours.ink,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 9,
+  },
   call: {
     height: 52,
     flex: 1,
@@ -255,4 +425,63 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   emptyTitle: { fontSize: 18, fontWeight: "900", color: colours.ink },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(4, 9, 14, 0.66)",
+  },
+  modalScroll: { flexGrow: 1, justifyContent: "center", padding: 18 },
+  modalCard: { backgroundColor: colours.card, borderRadius: 24, padding: 20 },
+  modalHeader: { flexDirection: "row", alignItems: "flex-start", marginBottom: 16 },
+  modalTitle: { fontSize: 26, fontWeight: "900", color: colours.ink, marginTop: 2 },
+  modalInvoice: { color: colours.muted, fontSize: 14, fontWeight: "700", marginTop: 3 },
+  close: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colours.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  fieldLabel: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: colours.ink,
+    marginTop: 14,
+    marginBottom: 7,
+  },
+  amountInputRow: {
+    height: 60,
+    borderWidth: 1.5,
+    borderColor: colours.line,
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 15,
+  },
+  rupee: { fontSize: 23, fontWeight: "900", color: colours.ink },
+  amountInput: { flex: 1, height: 58, paddingHorizontal: 8, fontSize: 22, fontWeight: "900" },
+  balanceLine: { flexDirection: "row", justifyContent: "space-between", marginTop: 8 },
+  balanceHint: { color: colours.muted, fontWeight: "700" },
+  fullBalance: { color: colours.blue, fontWeight: "900" },
+  referenceInput: {
+    height: 56,
+    borderWidth: 1.5,
+    borderColor: colours.line,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    fontSize: 15,
+  },
+  paymentSummary: { backgroundColor: "#FFF4DF", borderRadius: 14, padding: 13, marginTop: 14 },
+  paymentSummaryTitle: { color: "#8A5A00", fontWeight: "900", fontSize: 15 },
+  paymentSummaryText: { color: "#8A5A00", marginTop: 2 },
+  recordButton: {
+    height: 60,
+    borderRadius: 16,
+    backgroundColor: colours.red,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+  },
+  recordButtonText: { color: "#FFF", fontSize: 16, fontWeight: "900" },
 });

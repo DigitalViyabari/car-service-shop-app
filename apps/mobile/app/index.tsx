@@ -6,7 +6,6 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
   ScrollView,
   type ScrollView as ScrollViewType,
   StyleSheet,
@@ -15,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { firebase } from "../lib/firebase";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { colours } from "../lib/theme";

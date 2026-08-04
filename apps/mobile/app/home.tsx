@@ -6,13 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   RefreshControl,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MobileNav } from "../components/mobile-nav";
 import { SelectField } from "../components/form-controls";
 import { firebase } from "../lib/firebase";

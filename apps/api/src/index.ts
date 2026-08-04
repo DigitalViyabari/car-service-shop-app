@@ -1824,7 +1824,7 @@ async function pendingPayments(user: DecodedIdToken, companyId: string, branchId
       .map((item) => ({
         id: item.id,
         invoiceNumber: String(item.get("invoiceNumber") ?? item.id),
-        jobId: String(item.get("jobId") ?? ""),
+        jobNumber: String(item.get("jobNumber") ?? ""),
         customerName: String(item.get("customerName") ?? "Customer"),
         phone: phones.get(String(item.get("customerId") ?? "")) ?? "",
         totalAmount: Number(item.get("totalAmount") ?? 0),

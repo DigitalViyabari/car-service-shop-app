@@ -1,11 +1,11 @@
-import type { JobSheet, JobStatus } from "@dvcs/types";
+import type { Invoice, JobSheet, JobStatus } from "@dvcs/types";
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { doc, getDoc } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
-  SafeAreaView,
+  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { apiGet, apiRequest } from "../../lib/mobile-api";
 import { SelectField } from "../../components/form-controls";
 import { useMobileAuth } from "../../lib/mobile-auth";
@@ -50,6 +51,7 @@ export default function JobDetailScreen() {
   const assignedAccess = canViewAssignedJobs(membership, branch?.id);
   const technicianOnly = !workshopAccess && assignedAccess;
   const [job, setJob] = useState<JobSheet | null>(null);
+  const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [technicians, setTechnicians] = useState<TeamMember[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState("");
   const [note, setNote] = useState("");
@@ -74,6 +76,12 @@ export default function JobDetailScreen() {
         const snapshot = await getDoc(doc(firebase.db, "jobSheets", id));
         if (!snapshot.exists()) throw new Error("Job card not found.");
         setJob({ ...snapshot.data(), id: snapshot.id } as JobSheet);
+        const invoiceSnapshot = await getDoc(doc(firebase.db, "invoices", id));
+        setInvoice(
+          invoiceSnapshot.exists()
+            ? ({ ...invoiceSnapshot.data(), id: invoiceSnapshot.id } as Invoice)
+            : null,
+        );
         const team = await apiGet<{ members: TeamMember[] }>(
           user,
           `/v1/team?companyId=${encodeURIComponent(company.id)}&branchId=${encodeURIComponent(branch.id)}`,
@@ -107,7 +115,8 @@ export default function JobDetailScreen() {
   const canAdvance = Boolean(
     next &&
     (workshopAccess || (technicianOnly && technicianStages.includes(next[0]))) &&
-    !(next?.[0] === "in_progress" && !job?.assignedTechnicianIds?.length && !selectedTechnician),
+    !(next?.[0] === "in_progress" && !job?.assignedTechnicianIds?.length && !selectedTechnician) &&
+    !(next?.[0] === "delivered" && !invoice),
   );
 
   async function advance() {
@@ -139,6 +148,29 @@ export default function JobDetailScreen() {
     } finally {
       setSaving(false);
     }
+  }
+
+  function requestAdvance() {
+    if (!next) return;
+    if (next[0] === "delivered") {
+      if (!invoice) {
+        setError("Issue the final invoice before delivering this vehicle.");
+        return;
+      }
+      if (invoice.balanceAmount > 0.001) {
+        const paymentState = invoice.paidAmount > 0 ? "partially paid" : "not paid";
+        Alert.alert(
+          "Payment Still Pending",
+          `This invoice is ${paymentState}. Paid ${money(invoice.paidAmount)} · Balance ${money(invoice.balanceAmount)}. Deliver with this balance?`,
+          [
+            { text: "Go Back", style: "cancel" },
+            { text: "Deliver Anyway", style: "destructive", onPress: () => void advance() },
+          ],
+        );
+        return;
+      }
+    }
+    void advance();
   }
 
   return (
@@ -232,6 +264,36 @@ export default function JobDetailScreen() {
                   ]}
                 />
               ) : null}
+              {next?.[0] === "delivered" && workshopAccess ? (
+                <View
+                  style={[
+                    styles.paymentStatus,
+                    !invoice
+                      ? styles.paymentMissing
+                      : invoice.balanceAmount <= 0.001
+                        ? styles.paymentPaid
+                        : invoice.paidAmount > 0
+                          ? styles.paymentPartial
+                          : styles.paymentUnpaid,
+                  ]}
+                >
+                  <Text style={styles.paymentStatusLabel}>PAYMENT STATUS</Text>
+                  <Text style={styles.paymentStatusTitle}>
+                    {!invoice
+                      ? "Invoice Required"
+                      : invoice.balanceAmount <= 0.001
+                        ? "Fully Paid"
+                        : invoice.paidAmount > 0
+                          ? "Partially Paid"
+                          : "Not Paid"}
+                  </Text>
+                  <Text style={styles.paymentStatusText}>
+                    {invoice
+                      ? `${money(invoice.paidAmount)} paid · ${money(invoice.balanceAmount)} balance`
+                      : "Create the final invoice before delivery."}
+                  </Text>
+                </View>
+              ) : null}
               {next ? (
                 <View style={styles.next}>
                   <Text style={styles.nextLabel}>NEXT STAGE</Text>
@@ -244,16 +306,16 @@ export default function JobDetailScreen() {
                 </View>
               ) : null}
               {canAdvance ? (
-                <TouchableOpacity
-                  style={styles.advance}
-                  onPress={() => void advance()}
-                  disabled={saving}
-                >
+                <TouchableOpacity style={styles.advance} onPress={requestAdvance} disabled={saving}>
                   {saving ? (
                     <ActivityIndicator color="#FFF" />
                   ) : (
                     <>
-                      <Text style={styles.advanceText}>Move To {next?.[1]}</Text>
+                      <Text style={styles.advanceText}>
+                        {next?.[0] === "delivered" && invoice?.balanceAmount
+                          ? "Confirm Delivery With Balance"
+                          : `Move To ${next?.[1]}`}
+                      </Text>
                       <Ionicons name="arrow-forward" size={22} color="#FFF" />
                     </>
                   )}
@@ -274,6 +336,9 @@ function Info({ label, value }: { label: string; value: string }) {
       <Text style={styles.infoValue}>{value}</Text>
     </View>
   );
+}
+function money(value: number) {
+  return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colours.canvas },
@@ -343,6 +408,14 @@ const styles = StyleSheet.create({
   nextLabel: { fontSize: 11, fontWeight: "900", letterSpacing: 1, color: colours.blue },
   nextTitle: { fontSize: 20, fontWeight: "900", color: colours.ink, marginTop: 4 },
   warning: { fontSize: 14, lineHeight: 20, color: "#9B6200", marginTop: 8, fontWeight: "700" },
+  paymentStatus: { padding: 17, borderRadius: 17, borderLeftWidth: 5 },
+  paymentMissing: { backgroundColor: "#FDEBEC", borderLeftColor: colours.red },
+  paymentPaid: { backgroundColor: "#EAF8F2", borderLeftColor: colours.green },
+  paymentPartial: { backgroundColor: "#FFF4DF", borderLeftColor: colours.amber },
+  paymentUnpaid: { backgroundColor: "#FDEBEC", borderLeftColor: colours.red },
+  paymentStatusLabel: { fontSize: 11, fontWeight: "900", letterSpacing: 1, color: colours.muted },
+  paymentStatusTitle: { fontSize: 19, fontWeight: "900", color: colours.ink, marginTop: 4 },
+  paymentStatusText: { fontSize: 14, fontWeight: "700", color: colours.muted, marginTop: 4 },
   advance: {
     height: 62,
     borderRadius: 17,

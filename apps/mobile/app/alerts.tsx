@@ -1,5 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { MobileNav } from "../components/mobile-nav";
 import { colours } from "../lib/theme";
 

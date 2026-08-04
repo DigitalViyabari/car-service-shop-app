@@ -2,7 +2,7 @@
   "expo": {
     "name": "Digital Viyabari Car Service",
     "slug": "digital-viyabari-car-service",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "orientation": "portrait",
     "scheme": "dvcs",
     "icon": "./assets/icon.png",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.digitalviyabari.carserviceshopapp",
-      "versionCode": 5,
+      "versionCode": 6,
       "icon": "./assets/icon.png",
       "googleServicesFile": "./google-services.json",
       "userInterfaceStyle": "light",

@@ -22,7 +22,6 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -30,6 +29,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { firebase } from "../lib/firebase";
 import { DateField, SelectField } from "../components/form-controls";
 import { useMobileAuth } from "../lib/mobile-auth";
