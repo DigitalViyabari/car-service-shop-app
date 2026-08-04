@@ -1929,6 +1929,7 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     invoiceSeriesKey: seriesKey,
     invoiceSeriesId: seriesId,
     invoiceSeriesMode: seriesMode,
+    invoiceAddressMode: "branch",
     addressFingerprint,
     updatedAt: now,
     updatedBy: user.uid,

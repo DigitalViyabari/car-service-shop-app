@@ -271,6 +271,7 @@ export default function BusinessSettingsPage() {
               pan,
               invoicePrefix,
               invoiceStartNumber,
+              invoiceAddressMode: "branch",
             },
           }),
         }),
@@ -496,13 +497,11 @@ export default function BusinessSettingsPage() {
             {field("postalCode", "Branch PIN Code", { required: true })}
             {field("phone", "Branch Phone")}
             {field("email", "Branch Email", { type: "email" })}
-            {gstSetup !== "unregistered" ? (
+            {gstSetup === "new" ? (
               <>
                 <div className="settings-subheading span-2">
                   <strong>GST-Registered Address</strong>
-                  <small>
-                    Official address stored with this GSTIN. Existing registrations are read-only.
-                  </small>
+                  <small>Enter this once for the new GST registration.</small>
                 </div>
                 {field("registeredAddressLine1", "Registered Address Line 1", {
                   required: true,
@@ -514,22 +513,6 @@ export default function BusinessSettingsPage() {
                 {field("registeredPostalCode", "Registered PIN Code", {
                   required: true,
                 })}
-                <label className="span-2 settings-choice">
-                  Address Printed On This Branch&apos;s Invoice
-                  <select
-                    value={draft.invoiceAddressMode ?? "branch"}
-                    disabled={!isOwner}
-                    onChange={(event) =>
-                      update("invoiceAddressMode", event.target.value as "branch" | "registered")
-                    }
-                  >
-                    <option value="branch">Use This Branch Address</option>
-                    <option value="registered">Use GST-Registered Address</option>
-                  </select>
-                  <small>
-                    The selected address is permanently copied into every issued invoice.
-                  </small>
-                </label>
               </>
             ) : null}
           </div>
