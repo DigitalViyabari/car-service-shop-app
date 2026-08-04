@@ -1,13 +1,14 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { signInWithEmailAndPassword } from "firebase/auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
   ScrollView,
+  type ScrollView as ScrollViewType,
   StyleSheet,
   Text,
   TextInput,
@@ -24,6 +25,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const scrollRef = useRef<ScrollViewType>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,8 +56,10 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <ScrollView
+          ref={scrollRef}
           contentContainerStyle={styles.scroll}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
         >
         <View style={styles.brandBlock}>
@@ -90,6 +94,7 @@ export default function LoginScreen() {
               placeholder="Enter password"
               secureTextEntry={!showPassword}
               editable={!submitting}
+              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250)}
               onSubmitEditing={() => void submit()}
             />
             <TouchableOpacity
@@ -124,7 +129,7 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colours.ink },
   scroll: { flexGrow: 1 },
-  brandBlock: { paddingHorizontal: 26, paddingTop: 38, paddingBottom: 30 },
+  brandBlock: { paddingHorizontal: 26, paddingTop: 22, paddingBottom: 18 },
   brandIcon: {
     width: 56,
     height: 56,
@@ -132,17 +137,17 @@ const styles = StyleSheet.create({
     backgroundColor: colours.red,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 18,
+    marginBottom: 10,
   },
   brand: { color: "#FFFFFF", fontSize: 18, fontWeight: "900", letterSpacing: 1.1 },
-  title: { color: "#FFFFFF", fontSize: 34, lineHeight: 39, fontWeight: "900", marginTop: 18 },
-  subtitle: { color: "#B9C3CD", fontSize: 17, lineHeight: 24, marginTop: 10 },
+  title: { color: "#FFFFFF", fontSize: 27, lineHeight: 32, fontWeight: "900", marginTop: 10 },
+  subtitle: { color: "#B9C3CD", fontSize: 15, lineHeight: 21, marginTop: 6 },
   form: {
-    flex: 1,
     backgroundColor: colours.canvas,
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
-    padding: 26,
+    padding: 24,
+    paddingBottom: 46,
   },
   heading: { color: colours.ink, fontSize: 30, fontWeight: "900" },
   help: { color: colours.muted, fontSize: 16, marginTop: 4, marginBottom: 8 },

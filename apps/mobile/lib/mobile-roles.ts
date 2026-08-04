@@ -44,3 +44,12 @@ export function canViewFinance(membership: Membership | null, branchId?: string)
     ["branch_manager", "finance_manager"].includes(role),
   );
 }
+
+export function canViewInventory(membership: Membership | null, branchId?: string) {
+  if (!membership) return false;
+  if (membership.companyRoles?.some((role) => role === "company_owner" || role === "company_admin"))
+    return true;
+  return branchRoles(membership, branchId).some((role) =>
+    ["branch_manager", "inventory_manager"].includes(role),
+  );
+}

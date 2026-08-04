@@ -18,7 +18,7 @@ export function MobileNav() {
   const items = canViewFinance(membership, branch?.id)
     ? [
         ...baseItems.slice(0, 2),
-        { label: "Money", icon: "stats-chart" as const, path: "/reports" as const },
+        { label: "Reports", icon: "stats-chart" as const, path: "/reports" as const },
         ...baseItems.slice(2),
       ]
     : baseItems;
