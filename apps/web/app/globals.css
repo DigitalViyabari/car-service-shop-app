@@ -6444,7 +6444,23 @@ textarea::placeholder {
 .automatic-series-card p {
   color: #526860;
   line-height: 1.5;
-  margin: 0;
+  margin: 0 0 8px;
+}
+.automatic-series-card small {
+  color: #40564e;
+  display: block;
+  font-weight: 700;
+  line-height: 1.45;
+}
+.automatic-series-card--branch {
+  border-color: #f0ce8a;
+  border-left-color: #df9718;
+  background: #fff9ed;
+}
+.automatic-series-card--gst {
+  border-color: #b9cfe5;
+  border-left-color: #287dc7;
+  background: #f2f7fc;
 }
 .settings-card input:disabled,
 .settings-card select:disabled,

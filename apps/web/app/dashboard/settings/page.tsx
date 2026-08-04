@@ -8,6 +8,31 @@ type Draft = Omit<
   BusinessTaxProfile,
   "id" | "companyId" | "createdAt" | "createdBy" | "updatedAt" | "updatedBy"
 >;
+type BranchTaxSetup = {
+  branchId: string;
+  branchName: string;
+  gstRegistrationId: string;
+  gstin: string;
+  addressLine1: string;
+  addressLine2: string;
+  city: string;
+  state: string;
+  stateCode: string;
+  postalCode: string;
+  invoicePrefix: string;
+  invoiceStartNumber: number;
+};
+function comparableAddress(...parts: Array<string | undefined>) {
+  return parts
+    .map((part) =>
+      (part ?? "")
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, ""),
+    )
+    .filter(Boolean)
+    .join("|");
+}
 const emptyDraft: Draft = {
   legalName: "",
   tradeName: "",
@@ -51,6 +76,7 @@ export default function BusinessSettingsPage() {
     [saving, setSaving] = useState(false),
     [message, setMessage] = useState(""),
     [registrations, setRegistrations] = useState<GstRegistration[]>([]),
+    [branchSetups, setBranchSetups] = useState<BranchTaxSetup[]>([]),
     [gstSetup, setGstSetup] = useState<"unregistered" | "existing" | "new">("unregistered");
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
     isOwner = (membership?.companyRoles ?? []).some(
@@ -70,7 +96,49 @@ export default function BusinessSettingsPage() {
         .replace(/[^A-Za-z0-9]/g, "")
         .toUpperCase()
         .slice(0, 4) || "INV",
-    invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`;
+    invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`,
+    currentAddress = comparableAddress(
+      draft.addressLine1,
+      draft.addressLine2,
+      draft.city,
+      draft.state,
+      draft.stateCode,
+      draft.postalCode,
+    ),
+    otherBranches = branchSetups.filter(({ branchId }) => branchId !== activeBranchId),
+    sameGstBranches = otherBranches.filter(
+      (branch) =>
+        gstSetup !== "unregistered" &&
+        ((draft.gstRegistrationId && branch.gstRegistrationId === draft.gstRegistrationId) ||
+          (!!draft.gstin && branch.gstin.toUpperCase() === draft.gstin.trim().toUpperCase())),
+    ),
+    sameAddressBranch = sameGstBranches.find(
+      (branch) =>
+        comparableAddress(
+          branch.addressLine1,
+          branch.addressLine2,
+          branch.city,
+          branch.state,
+          branch.stateCode,
+          branch.postalCode,
+        ) === currentAddress,
+    ),
+    setupResult =
+      gstSetup === "unregistered"
+        ? "branch"
+        : sameAddressBranch
+          ? "shared"
+          : sameGstBranches.length
+            ? "branch"
+            : "gst",
+    referenceBranch = sameAddressBranch ?? sameGstBranches[0],
+    currentStart = Math.max(1, Number(draft.invoiceStartNumber) || 1),
+    currentInvoiceExample = `${invoicePrefixPreview}/${financialYearCode}/${String(currentStart).padStart(6, "0")}`,
+    referencePrefix =
+      referenceBranch?.invoicePrefix.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "INV",
+    referenceStart = Math.max(1, Number(referenceBranch?.invoiceStartNumber) || 1),
+    referenceInvoiceExample = `${referencePrefix}/${financialYearCode}/${String(referenceStart).padStart(6, "0")}`,
+    sharedNextExample = `${invoicePrefixPreview}/${financialYearCode}/${String(currentStart + 1).padStart(6, "0")}`;
   const load = useCallback(async () => {
     if (!user || !activeCompanyId || !activeBranchId || !canView) return;
     setLoading(true);
@@ -84,11 +152,13 @@ export default function BusinessSettingsPage() {
           exists?: boolean;
           profile?: BusinessTaxProfile | null;
           registrations?: GstRegistration[];
+          branchSetups?: BranchTaxSetup[];
           error?: string;
         };
       if (!response.ok) throw new Error(result.error ?? "Unable to load business settings.");
       const availableRegistrations = result.registrations ?? [];
       setRegistrations(availableRegistrations.filter(({ status }) => status !== "inactive"));
+      setBranchSetups(result.branchSetups ?? []);
       if (result.profile) {
         const data = result.profile;
         setDraft({ ...emptyDraft, ...data });
@@ -445,13 +515,34 @@ export default function BusinessSettingsPage() {
             </div>
           </header>
           <div className="form-grid">
-            <div className="span-2 automatic-series-card" role="status">
-              <strong>Invoice Setup</strong>
+            <div
+              className={`span-2 automatic-series-card automatic-series-card--${setupResult}`}
+              role="status"
+              aria-live="polite"
+            >
+              <strong>
+                {setupResult === "shared"
+                  ? "Invoice Numbers Will Be Shared"
+                  : setupResult === "branch"
+                    ? "This Branch Will Have Separate Invoice Numbers"
+                    : "This GSTIN Will Have Separate Invoice Numbers"}
+              </strong>
               <p>
-                {gstSetup === "unregistered" || draft.invoiceSeriesMode === "branch"
-                  ? "Separate For This Branch"
-                  : "Shared With Main Branch"}
+                {setupResult === "shared"
+                  ? `Same GSTIN and same address as ${referenceBranch?.branchName ?? "Main Branch"}. Both branches will continue one numbering list.`
+                  : setupResult === "branch" && sameGstBranches.length
+                    ? `The GSTIN is the same, but this branch address is different from ${referenceBranch?.branchName ?? "the other branch"}. Each address will have its own numbering.`
+                    : gstSetup === "unregistered"
+                      ? "This branch is not GST registered, so it will keep its own invoice numbers."
+                      : "This GSTIN is different from the other branches, so it will keep its own invoice numbers."}
               </p>
+              <small>
+                {setupResult === "shared"
+                  ? `Example: ${referenceBranch?.branchName ?? "Main Branch"} uses ${currentInvoiceExample}; this branch continues with ${sharedNextExample}.`
+                  : setupResult === "branch" && referenceBranch
+                    ? `Example: ${referenceBranch.branchName} uses ${referenceInvoiceExample}; this branch starts separately with ${currentInvoiceExample}.`
+                    : `Example: This branch uses its own number, such as ${currentInvoiceExample}.`}
+              </small>
             </div>
             {field("invoicePrefix", "Invoice Prefix (Maximum 4 Characters)", {
               required: true,

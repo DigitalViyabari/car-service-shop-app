@@ -1637,7 +1637,12 @@ async function getBusinessSettings(user: DecodedIdToken, companyId: string, bran
     registrations = await db
       .collection(`businessTaxProfiles/${companyId}/gstRegistrations`)
       .where("status", "==", "active")
-      .get();
+      .get(),
+    branchProfiles = await db.collection(`businessTaxProfiles/${companyId}/branches`).get(),
+    branches = await db.collection("branches").where("companyId", "==", companyId).get(),
+    branchNames = new Map(
+      branches.docs.map((branch) => [branch.id, String(branch.get("name") ?? "Branch")]),
+    );
   return {
     exists: branchSettings.exists,
     profile: settings?.exists
@@ -1654,6 +1659,20 @@ async function getBusinessSettings(user: DecodedIdToken, companyId: string, bran
         }
       : null,
     registrations: registrations.docs.map((item) => ({ id: item.id, ...item.data() })),
+    branchSetups: branchProfiles.docs.map((item) => ({
+      branchId: item.id,
+      branchName: branchNames.get(item.id) ?? "Branch",
+      gstRegistrationId: String(item.get("gstRegistrationId") ?? ""),
+      gstin: String(item.get("gstin") ?? ""),
+      addressLine1: String(item.get("addressLine1") ?? ""),
+      addressLine2: String(item.get("addressLine2") ?? ""),
+      city: String(item.get("city") ?? ""),
+      state: String(item.get("state") ?? ""),
+      stateCode: String(item.get("stateCode") ?? ""),
+      postalCode: String(item.get("postalCode") ?? ""),
+      invoicePrefix: String(item.get("invoicePrefix") ?? "INV"),
+      invoiceStartNumber: Number(item.get("invoiceStartNumber") ?? 1),
+    })),
   };
 }
 async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdToken) {
