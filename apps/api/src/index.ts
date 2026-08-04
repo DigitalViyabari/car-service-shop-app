@@ -1618,19 +1618,66 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     throw new ApiError(404, "Select an existing GST registration.");
   if (input.gstSetup === "new" && existingRegistration?.exists)
     throw new ApiError(409, "This GSTIN already exists. Select the existing registration.");
-  const seriesMode = input.gstSetup === "unregistered" ? "branch" : profile.invoiceSeriesMode,
+  const normalizeAddress = (...parts: string[]) =>
+      parts
+        .map((part) =>
+          part
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]/g, ""),
+        )
+        .filter(Boolean)
+        .join("|"),
+    addressFingerprint = normalizeAddress(
+      profile.addressLine1,
+      profile.addressLine2,
+      profile.city,
+      profile.state,
+      profile.stateCode,
+      profile.postalCode,
+    ),
+    branchProfiles = await db.collection(`businessTaxProfiles/${input.companyId}/branches`).get(),
+    siblingProfiles = branchProfiles.docs.filter(
+      (branch) =>
+        branch.id !== input.branchId &&
+        String(branch.get("gstRegistrationId") ?? "") === registrationId,
+    ),
+    matchingAddress = siblingProfiles.find((branch) => {
+      const savedFingerprint = String(branch.get("addressFingerprint") ?? "");
+      return (
+        (savedFingerprint ||
+          normalizeAddress(
+            String(branch.get("addressLine1") ?? ""),
+            String(branch.get("addressLine2") ?? ""),
+            String(branch.get("city") ?? ""),
+            String(branch.get("state") ?? ""),
+            String(branch.get("stateCode") ?? ""),
+            String(branch.get("postalCode") ?? ""),
+          )) === addressFingerprint
+      );
+    }),
+    seriesMode =
+      input.gstSetup === "unregistered"
+        ? "branch"
+        : matchingAddress
+          ? String(matchingAddress.get("invoiceSeriesMode") ?? "shared")
+          : siblingProfiles.length > 0
+            ? "branch"
+            : "shared",
     baseSeriesKey = String(existingRegistration?.get("invoiceSeriesKey") || gstin),
-    seriesId = seriesMode === "shared" ? "shared" : input.branchId,
+    seriesId = matchingAddress
+      ? String(matchingAddress.get("invoiceSeriesId") ?? "shared")
+      : seriesMode === "shared"
+        ? "shared"
+        : input.branchId,
     seriesKey =
       input.gstSetup === "unregistered"
         ? `${input.companyId}-UNREGISTERED-${input.branchId}`
-        : seriesMode === "shared"
-          ? baseSeriesKey
-          : `${baseSeriesKey}-${input.branchId}`,
-    effectivePrefix =
-      seriesMode === "shared" && existingRegistration?.exists
-        ? String(existingRegistration.get("invoicePrefix") ?? invoicePrefix)
-        : invoicePrefix,
+        : matchingAddress
+          ? String(matchingAddress.get("invoiceSeriesKey") ?? baseSeriesKey)
+          : seriesMode === "shared"
+            ? baseSeriesKey
+            : `${baseSeriesKey}-${input.branchId}`,
     registrationPrefix = existingRegistration?.exists
       ? String(existingRegistration.get("invoicePrefix") ?? invoicePrefix)
       : invoicePrefix,
@@ -1640,19 +1687,48 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     now = FieldValue.serverTimestamp(),
     branchRef = db.doc(`businessTaxProfiles/${input.companyId}/branches/${input.branchId}`),
     existingBranch = await branchRef.get(),
-    batch = db.batch();
-  if (registrationRef && seriesMode === "branch") {
-    const siblingSeries = await registrationRef.collection("invoiceSeries").get();
-    if (
-      siblingSeries.docs.some(
-        (series) =>
-          series.id !== seriesId &&
-          series.get("status") === "active" &&
-          String(series.get("prefix") ?? "").toUpperCase() === effectivePrefix,
+    branchRecord = await db.doc(`branches/${input.branchId}`).get(),
+    siblingSeries = registrationRef
+      ? await registrationRef.collection("invoiceSeries").get()
+      : null,
+    prefixBase =
+      String(branchRecord.get("code") ?? profile.branchAddressName ?? "BR")
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, 4) || "BR",
+    usedPrefixes = new Set(
+      (siblingSeries?.docs ?? [])
+        .filter((series) => series.id !== seriesId && series.get("status") === "active")
+        .map((series) => String(series.get("prefix") ?? "").toUpperCase()),
+    ),
+    automaticBranchPrefix = (() => {
+      if (
+        existingBranch.exists &&
+        existingBranch.get("invoiceSeriesMode") === "branch" &&
+        existingBranch.get("addressFingerprint") === addressFingerprint
       )
-    )
-      throw new ApiError(409, "Use a unique invoice prefix for this branch series.");
-  }
+        return String(existingBranch.get("invoicePrefix") ?? prefixBase);
+      if (!usedPrefixes.has(prefixBase)) return prefixBase;
+      for (let index = 1; index <= 99; index += 1) {
+        const candidate = `${prefixBase.slice(0, Math.max(1, 4 - String(index).length))}${index}`;
+        if (!usedPrefixes.has(candidate)) return candidate;
+      }
+      return input.branchId
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(-4);
+    })(),
+    effectivePrefix = matchingAddress
+      ? String(matchingAddress.get("invoicePrefix") ?? registrationPrefix)
+      : seriesMode === "shared"
+        ? registrationPrefix
+        : automaticBranchPrefix,
+    effectiveStartNumber = matchingAddress
+      ? Number(matchingAddress.get("invoiceStartNumber") ?? registrationStartNumber)
+      : seriesMode === "shared"
+        ? registrationStartNumber
+        : profile.invoiceStartNumber,
+    batch = db.batch();
   if (existingBranch.exists) {
     const nowDate = new Date(),
       startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
@@ -1715,10 +1791,11 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
         id: seriesId,
         companyId: input.companyId,
         gstRegistrationId: registrationId,
-        branchId: seriesMode === "branch" ? input.branchId : null,
+        branchId:
+          seriesMode === "branch" ? String(existingSeries.get("branchId") ?? input.branchId) : null,
         mode: seriesMode,
         prefix: effectivePrefix,
-        invoiceStartNumber: profile.invoiceStartNumber,
+        invoiceStartNumber: effectiveStartNumber,
         invoiceSeriesKey: seriesKey,
         status: "active",
         updatedAt: now,
@@ -1738,9 +1815,11 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     pan,
     registrationType: input.gstSetup === "unregistered" ? "unregistered" : profile.registrationType,
     invoicePrefix: effectivePrefix,
+    invoiceStartNumber: effectiveStartNumber,
     invoiceSeriesKey: seriesKey,
     invoiceSeriesId: seriesId,
     invoiceSeriesMode: seriesMode,
+    addressFingerprint,
     updatedAt: now,
     updatedBy: user.uid,
   };
@@ -1750,7 +1829,12 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     { merge: true },
   );
   await batch.commit();
-  return { saved: true, gstRegistrationId: registrationId };
+  return {
+    saved: true,
+    gstRegistrationId: registrationId,
+    invoiceSeriesMode: seriesMode,
+    invoicePrefix: effectivePrefix,
+  };
 }
 async function jobManager(uid: string, companyId: string, branchId: string) {
   await requireActiveSubscription(companyId, branchId);

@@ -6428,6 +6428,24 @@ textarea::placeholder {
   border-radius: 14px;
   background: #fbfcfd;
 }
+.automatic-series-card {
+  border: 1px solid #b9d8ca;
+  border-left: 5px solid #168a5b;
+  border-radius: 16px;
+  background: #f1faf6;
+  padding: 18px 20px;
+}
+.automatic-series-card strong {
+  display: block;
+  color: #102d24;
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+.automatic-series-card p {
+  color: #526860;
+  line-height: 1.5;
+  margin: 0;
+}
 .settings-card input:disabled,
 .settings-card select:disabled,
 .settings-card textarea:disabled {

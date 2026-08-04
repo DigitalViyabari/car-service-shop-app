@@ -27,8 +27,6 @@ const emptyDraft: Draft = {
   registeredCity: "",
   registeredPostalCode: "",
   invoiceAddressMode: "branch",
-  invoiceSeriesMode: "shared",
-  invoiceSeriesId: "shared",
   invoicePrefix: "INV",
   invoiceStartNumber: 1,
   invoiceTerms: "",
@@ -140,8 +138,6 @@ export default function BusinessSettingsPage() {
       invoicePrefix: registration.invoicePrefix,
       invoiceStartNumber: registration.invoiceStartNumber,
       invoiceSeriesKey: registration.invoiceSeriesKey,
-      invoiceSeriesMode: "shared",
-      invoiceSeriesId: "shared",
     }));
   };
   async function save(event: FormEvent) {
@@ -196,10 +192,21 @@ export default function BusinessSettingsPage() {
             },
           }),
         }),
-        result = (await response.json()) as { saved?: boolean; error?: string };
+        result = (await response.json()) as {
+          saved?: boolean;
+          invoiceSeriesMode?: "shared" | "branch";
+          invoicePrefix?: string;
+          error?: string;
+        };
       if (!response.ok) throw new Error(result.error ?? "Unable to save business settings.");
       await load();
-      setMessage(`${activeBranch?.name ?? "Branch"} GST and invoice settings saved.`);
+      setMessage(
+        `${activeBranch?.name ?? "Branch"} saved. ${
+          result.invoiceSeriesMode === "branch"
+            ? `This address now has separate invoice numbers beginning with ${result.invoicePrefix ?? "its branch prefix"}.`
+            : "Branches with this same GSTIN and address will share one invoice number sequence."
+        }`,
+      );
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to save business settings.");
     } finally {
@@ -294,8 +301,6 @@ export default function BusinessSettingsPage() {
                       gstin: "",
                       registrationType: "unregistered",
                       invoiceAddressMode: "branch",
-                      invoiceSeriesMode: "branch",
-                      invoiceSeriesId: activeBranchId ?? "",
                     }));
                   } else if (value === "existing" && registrations[0]) {
                     chooseRegistration(registrations[0].id);
@@ -308,8 +313,6 @@ export default function BusinessSettingsPage() {
                       registrationType: "regular",
                       invoiceSeriesKey: "",
                       invoiceAddressMode: "branch",
-                      invoiceSeriesMode: "shared",
-                      invoiceSeriesId: "shared",
                     }));
                   }
                 }}
@@ -443,53 +446,30 @@ export default function BusinessSettingsPage() {
             <span>03</span>
             <div>
               <h2>Invoice &amp; Payment Details</h2>
-              <p>
-                {gstSetup === "existing"
-                  ? "This branch shares the selected GST registration's invoice series."
-                  : "Invoice numbering is attached to this branch's selected GST registration."}
-              </p>
+              <p>Invoice numbering is handled automatically.</p>
             </div>
           </header>
           <div className="form-grid">
-            {gstSetup !== "unregistered" ? (
-              <label className="span-2 settings-choice">
-                Invoice Series For This Branch
-                <select
-                  value={draft.invoiceSeriesMode ?? "shared"}
-                  disabled={!isOwner}
-                  onChange={(event) => {
-                    const mode = event.target.value as "shared" | "branch";
-                    update("invoiceSeriesMode", mode);
-                    update(
-                      "invoiceSeriesId",
-                      mode === "shared" ? "shared" : (activeBranchId ?? ""),
-                    );
-                    if (mode === "shared" && draft.gstRegistrationId) {
-                      const registration = registrations.find(
-                        ({ id }) => id === draft.gstRegistrationId,
-                      );
-                      if (registration) update("invoicePrefix", registration.invoicePrefix);
-                    }
-                  }}
-                >
-                  <option value="shared">Share GST Invoice Series</option>
-                  <option value="branch">Create Separate Branch Series</option>
-                </select>
-                <small>
-                  Shared keeps one continuous sequence across branches. Separate gives this address
-                  its own prefix and sequence.
-                </small>
-              </label>
-            ) : null}
+            <div className="span-2 automatic-series-card" role="status">
+              <strong>
+                {gstSetup === "unregistered"
+                  ? "Separate numbering for this branch"
+                  : "Automatic invoice numbering — no selection needed"}
+              </strong>
+              <p>
+                {gstSetup === "unregistered"
+                  ? "This branch is not GST registered, so it keeps its own invoice numbers."
+                  : "Nothing to choose. The app compares the GSTIN and full branch address when you save. Same GSTIN and same address share numbers; a different GSTIN or address gets separate numbers."}
+              </p>
+            </div>
             {field(
               "invoicePrefix",
               draft.invoiceSeriesMode === "branch"
-                ? "Branch Invoice Prefix (Maximum 4 Characters)"
-                : "Shared Invoice Prefix (Maximum 4 Characters)",
+                ? "Automatic Branch Invoice Prefix"
+                : "Invoice Prefix (Maximum 4 Characters)",
               {
                 required: true,
-                disabled:
-                  gstSetup === "existing" && (draft.invoiceSeriesMode ?? "shared") === "shared",
+                disabled: gstSetup === "existing" || draft.invoiceSeriesMode === "branch",
               },
             )}
             <label>
