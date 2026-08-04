@@ -229,9 +229,28 @@ export default function ReportsScreen() {
           />
         }
       >
-        <Text style={styles.eyebrow}>BUSINESS INTELLIGENCE</Text>
-        <Text style={styles.title}>Reports</Text>
-        <Text style={styles.sub}>Workshop and financial performance.</Text>
+        <View style={styles.titleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.eyebrow}>BUSINESS INTELLIGENCE</Text>
+            <Text style={styles.title}>Reports</Text>
+            <Text style={styles.sub}>Workshop and financial performance.</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.refreshButton}
+            accessibilityLabel="Refresh reports"
+            onPress={async () => {
+              setRefreshing(true);
+              await load();
+              setRefreshing(false);
+            }}
+          >
+            {refreshing ? (
+              <ActivityIndicator color={colours.ink} />
+            ) : (
+              <Ionicons name="refresh" size={24} color={colours.ink} />
+            )}
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity
           style={styles.pendingButton}
           onPress={() => router.push("/pending-payments")}
@@ -426,6 +445,17 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colours.canvas },
   content: { padding: 20, paddingBottom: 105 },
   header: { padding: 20 },
+  titleRow: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  refreshButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: colours.card,
+    borderWidth: 1,
+    borderColor: colours.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   eyebrow: { color: colours.red, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   title: { fontSize: 31, fontWeight: "900", color: colours.ink, marginTop: 4 },
   sub: { fontSize: 15, color: colours.muted, fontWeight: "700", marginTop: 4 },

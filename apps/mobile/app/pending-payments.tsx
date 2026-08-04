@@ -46,6 +46,7 @@ export default function PendingPaymentsScreen() {
   const allowed = canViewFinance(membership, branch?.id);
   const [items, setItems] = useState<Pending[]>([]),
     [loading, setLoading] = useState(true),
+    [refreshing, setRefreshing] = useState(false),
     [error, setError] = useState<string | null>(null);
   const [whatsappSent, setWhatsappSent] = useState<Record<string, number>>({});
   const [clock, setClock] = useState(Date.now());
@@ -147,10 +148,25 @@ export default function PendingPaymentsScreen() {
         <TouchableOpacity style={styles.back} onPress={() => router.back()}>
           <Ionicons name="arrow-back" size={25} color={colours.ink} />
         </TouchableOpacity>
-        <View>
+        <View style={{ flex: 1 }}>
           <Text style={styles.eyebrow}>COLLECTION FOLLOW-UP</Text>
           <Text style={styles.title}>Pending Payments</Text>
         </View>
+        <TouchableOpacity
+          style={styles.refresh}
+          accessibilityLabel="Refresh pending payments"
+          onPress={async () => {
+            setRefreshing(true);
+            await load();
+            setRefreshing(false);
+          }}
+        >
+          {refreshing ? (
+            <ActivityIndicator color={colours.ink} />
+          ) : (
+            <Ionicons name="refresh" size={24} color={colours.ink} />
+          )}
+        </TouchableOpacity>
       </View>
       {!allowed ? (
         <View style={styles.empty}>
@@ -325,6 +341,16 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colours.canvas },
   header: { padding: 20, flexDirection: "row", alignItems: "center", gap: 13 },
   back: {
+    width: 48,
+    height: 48,
+    borderRadius: 15,
+    backgroundColor: colours.card,
+    borderWidth: 1,
+    borderColor: colours.line,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  refresh: {
     width: 48,
     height: 48,
     borderRadius: 15,

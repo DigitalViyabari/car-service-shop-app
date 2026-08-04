@@ -112,8 +112,8 @@ export default function JobsScreen() {
               <Ionicons name="add" size={27} color="#FFF" />
             </TouchableOpacity>
           ) : null}
-          <TouchableOpacity style={styles.refresh} onPress={() => void load()}>
-            <Ionicons name="refresh" size={25} color={colours.ink} />
+          <TouchableOpacity style={styles.refresh} onPress={() => router.replace("/home")}>
+            <Ionicons name="home" size={24} color={colours.ink} />
           </TouchableOpacity>
         </View>
       </View>

@@ -1,10 +1,8 @@
 "use client";
 
 import type { BusinessTaxProfile, GstRegistration, GstRegistrationType } from "@dvcs/types";
-import { collection, doc, getDoc, getDocs, serverTimestamp, writeBatch } from "firebase/firestore";
 import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { firebaseClient } from "@/lib/firebase-client";
 
 type Draft = Omit<
   BusinessTaxProfile,
@@ -43,7 +41,6 @@ export default function BusinessSettingsPage() {
   const { user, memberships, activeCompany, activeCompanyId, activeBranchId, activeBranch } =
     useAuth();
   const [draft, setDraft] = useState<Draft>(emptyDraft),
-    [exists, setExists] = useState(false),
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
     [message, setMessage] = useState(""),
@@ -69,38 +66,25 @@ export default function BusinessSettingsPage() {
         .slice(0, 4) || "INV",
     invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`;
   const load = useCallback(async () => {
-    if (!activeCompanyId || !activeBranchId || !canView) return;
+    if (!user || !activeCompanyId || !activeBranchId || !canView) return;
     setLoading(true);
     setMessage("");
     try {
-      const branchSnapshot = await getDoc(
-          doc(
-            firebaseClient.db,
-            "businessTaxProfiles",
-            activeCompanyId,
-            "branches",
-            activeBranchId,
-          ),
+      const response = await fetch(
+          `/api/v1/settings/business?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
+          { headers: { authorization: `Bearer ${await user.getIdToken()}` } },
         ),
-        registrationSnapshots = await getDocs(
-          collection(firebaseClient.db, "businessTaxProfiles", activeCompanyId, "gstRegistrations"),
-        ).catch(() => null),
-        legacySnapshot = branchSnapshot.exists()
-          ? null
-          : await getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
-        snapshot = branchSnapshot.exists() ? branchSnapshot : legacySnapshot!,
-        availableRegistrations = registrationSnapshots
-          ? (registrationSnapshots.docs.map((item) => ({
-              id: item.id,
-              ...item.data(),
-            })) as GstRegistration[])
-          : [];
-      if (!registrationSnapshots) {
-        setMessage("GST registration access is not active yet. Deploy the latest Firestore rules.");
-      }
+        result = (await response.json()) as {
+          exists?: boolean;
+          profile?: BusinessTaxProfile | null;
+          registrations?: GstRegistration[];
+          error?: string;
+        };
+      if (!response.ok) throw new Error(result.error ?? "Unable to load business settings.");
+      const availableRegistrations = result.registrations ?? [];
       setRegistrations(availableRegistrations.filter(({ status }) => status !== "inactive"));
-      if (snapshot.exists()) {
-        const data = snapshot.data() as BusinessTaxProfile;
+      if (result.profile) {
+        const data = result.profile;
         setDraft({ ...emptyDraft, ...data });
         setGstSetup(
           !data.gstRegistered
@@ -110,21 +94,19 @@ export default function BusinessSettingsPage() {
               ? "existing"
               : "new",
         );
-        setExists(branchSnapshot.exists());
       } else {
         setDraft({
           ...emptyDraft,
           legalName: activeCompany?.name ?? "",
           tradeName: activeCompany?.name ?? "",
         });
-        setExists(false);
       }
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to load business settings.");
     } finally {
       setLoading(false);
     }
-  }, [activeBranchId, activeCompany?.name, activeCompanyId, canView]);
+  }, [activeBranchId, activeCompany?.name, activeCompanyId, canView, user]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -181,76 +163,27 @@ export default function BusinessSettingsPage() {
     setSaving(true);
     setMessage("");
     try {
-      const now = serverTimestamp(),
-        batch = writeBatch(firebaseClient.db),
-        registrationId =
-          gstSetup === "unregistered"
-            ? ""
-            : draft.gstRegistrationId || `${activeCompanyId}_${gstin}`,
-        existingRegistration = registrations.find(({ id }) => id === registrationId),
-        seriesKey =
-          gstSetup === "unregistered"
-            ? `${activeCompanyId}-UNREGISTERED-${activeBranchId}`
-            : existingRegistration?.invoiceSeriesKey || draft.invoiceSeriesKey || gstin,
-        ref = doc(
-          firebaseClient.db,
-          "businessTaxProfiles",
-          activeCompanyId,
-          "branches",
-          activeBranchId,
-        ),
-        values = {
-          ...draft,
-          gstRegistrationId: registrationId,
-          gstRegistered: gstSetup !== "unregistered",
-          registrationType: gstSetup === "unregistered" ? "unregistered" : draft.registrationType,
-          gstin,
-          pan,
-          invoicePrefix,
-          invoiceStartNumber: Number(draft.invoiceStartNumber),
-          companyId: activeCompanyId,
-          branchId: activeBranchId,
-          invoiceSeriesKey: seriesKey,
-          updatedAt: now,
-          updatedBy: user.uid,
-        };
-      if (gstSetup !== "unregistered") {
-        const registrationRef = doc(
-            firebaseClient.db,
-            "businessTaxProfiles",
-            activeCompanyId,
-            "gstRegistrations",
-            registrationId,
-          ),
-          registrationValues = {
-            id: registrationId,
+      const response = await fetch("/api/v1/settings/business", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${await user.getIdToken()}`,
+          },
+          body: JSON.stringify({
             companyId: activeCompanyId,
-            gstin,
-            legalName: draft.legalName.trim(),
-            pan,
-            registrationType: draft.registrationType === "composition" ? "composition" : "regular",
-            state: draft.state.trim(),
-            stateCode: draft.stateCode.trim(),
-            invoicePrefix,
-            invoiceStartNumber: Number(draft.invoiceStartNumber),
-            invoiceSeriesKey: seriesKey,
-            status: "active",
-            updatedAt: now,
-            updatedBy: user.uid,
-          };
-        batch.set(
-          registrationRef,
-          existingRegistration
-            ? registrationValues
-            : { ...registrationValues, createdAt: now, createdBy: user.uid },
-          { merge: true },
-        );
-      }
-      batch.set(ref, exists ? values : { ...values, createdAt: now, createdBy: user.uid }, {
-        merge: true,
-      });
-      await batch.commit();
-      setExists(true);
+            branchId: activeBranchId,
+            gstSetup,
+            profile: {
+              ...draft,
+              gstin,
+              pan,
+              invoicePrefix,
+              invoiceStartNumber: Number(draft.invoiceStartNumber),
+            },
+          }),
+        }),
+        result = (await response.json()) as { saved?: boolean; error?: string };
+      if (!response.ok) throw new Error(result.error ?? "Unable to save business settings.");
       await load();
       setMessage(`${activeBranch?.name ?? "Branch"} GST and invoice settings saved.`);
     } catch (reason) {

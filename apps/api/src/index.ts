@@ -119,6 +119,39 @@ const paymentFollowUpSchema = z.object({
   branchId: z.string().min(2).max(128),
   invoiceId: z.string().min(2).max(128),
 });
+const businessSettingsSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  gstSetup: z.enum(["unregistered", "existing", "new"]),
+  profile: z.object({
+    gstRegistrationId: z.string().max(180).optional().default(""),
+    legalName: z.string().min(2).max(180),
+    tradeName: z.string().min(2).max(180),
+    gstin: z.string().max(15).optional().default(""),
+    pan: z.string().max(10).optional().default(""),
+    registrationType: z.enum(["regular", "composition", "unregistered"]),
+    addressLine1: z.string().min(2).max(240),
+    addressLine2: z.string().max(240).optional().default(""),
+    city: z.string().min(2).max(100),
+    state: z.string().min(2).max(100),
+    stateCode: z.string().min(2).max(2),
+    postalCode: z.string().min(4).max(10),
+    invoicePrefix: z.string().min(1).max(4),
+    invoiceStartNumber: z.number().int().min(1).max(999999),
+    invoiceTerms: z.string().max(2000).optional().default(""),
+    authorizedSignatory: z.string().max(180).optional().default(""),
+    phone: z.string().max(30).optional().default(""),
+    email: z.string().max(180).optional().default(""),
+    bankName: z.string().max(180).optional().default(""),
+    accountName: z.string().max(180).optional().default(""),
+    accountNumber: z.string().max(60).optional().default(""),
+    ifscCode: z.string().max(20).optional().default(""),
+    upiId: z.string().max(180).optional().default(""),
+    invoiceLogoUrl: z.string().max(1000).optional().default(""),
+    invoiceAccentColor: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
+    invoicePaperSize: z.enum(["A4", "A5"]),
+  }),
+});
 const createPlatformAdminSchema = z.object({
   displayName: z.string().min(2).max(100),
   email: z.email(),
@@ -1482,6 +1515,107 @@ async function financeManager(uid: string, companyId: string, branchId: string) 
       );
   if (!member.exists || member.get("status") !== "active" || !allowed)
     throw new ApiError(403, "Finance Manager access is required.");
+}
+async function getBusinessSettings(user: DecodedIdToken, companyId: string, branchId: string) {
+  if (!companyId || !branchId) throw new ApiError(400, "Company and branch are required.");
+  await financeManager(user.uid, companyId, branchId);
+  const branchRef = db.doc(`businessTaxProfiles/${companyId}/branches/${branchId}`),
+    branchSettings = await branchRef.get(),
+    legacySettings = branchSettings.exists
+      ? null
+      : await db.doc(`businessTaxProfiles/${companyId}`).get(),
+    settings = branchSettings.exists ? branchSettings : legacySettings,
+    registrations = await db
+      .collection(`businessTaxProfiles/${companyId}/gstRegistrations`)
+      .where("status", "==", "active")
+      .get();
+  return {
+    exists: branchSettings.exists,
+    profile: settings?.exists ? settings.data() : null,
+    registrations: registrations.docs.map((item) => ({ id: item.id, ...item.data() })),
+  };
+}
+async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = businessSettingsSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Check the required business and GST fields.");
+  const input = parsed.data,
+    access = await teamManager(user.uid, input.companyId, input.branchId);
+  if (!access.owner) throw new ApiError(403, "Only the business owner can change GST settings.");
+  const profile = input.profile,
+    gstin = input.gstSetup === "unregistered" ? "" : profile.gstin.trim().toUpperCase(),
+    pan = profile.pan.trim().toUpperCase(),
+    invoicePrefix = profile.invoicePrefix.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (input.gstSetup !== "unregistered" && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin))
+    throw new ApiError(400, "Enter a valid 15-character GSTIN.");
+  if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) throw new ApiError(400, "Enter a valid PAN.");
+  const registrationId =
+      input.gstSetup === "unregistered"
+        ? ""
+        : input.gstSetup === "existing"
+          ? profile.gstRegistrationId
+          : `${input.companyId}_${gstin}`,
+    registrationRef = registrationId
+      ? db.doc(`businessTaxProfiles/${input.companyId}/gstRegistrations/${registrationId}`)
+      : null,
+    existingRegistration = registrationRef ? await registrationRef.get() : null;
+  if (input.gstSetup === "existing" && !existingRegistration?.exists)
+    throw new ApiError(404, "Select an existing GST registration.");
+  if (input.gstSetup === "new" && existingRegistration?.exists)
+    throw new ApiError(409, "This GSTIN already exists. Select the existing registration.");
+  const seriesKey =
+      input.gstSetup === "unregistered"
+        ? `${input.companyId}-UNREGISTERED-${input.branchId}`
+        : String(existingRegistration?.get("invoiceSeriesKey") || gstin),
+    now = FieldValue.serverTimestamp(),
+    branchRef = db.doc(`businessTaxProfiles/${input.companyId}/branches/${input.branchId}`),
+    existingBranch = await branchRef.get(),
+    batch = db.batch();
+  if (registrationRef) {
+    const registrationValues = {
+      id: registrationId,
+      companyId: input.companyId,
+      gstin,
+      legalName: profile.legalName.trim(),
+      pan,
+      registrationType: profile.registrationType === "composition" ? "composition" : "regular",
+      state: profile.state.trim(),
+      stateCode: profile.stateCode.trim(),
+      invoicePrefix,
+      invoiceStartNumber: profile.invoiceStartNumber,
+      invoiceSeriesKey: seriesKey,
+      status: "active",
+      updatedAt: now,
+      updatedBy: user.uid,
+    };
+    batch.set(
+      registrationRef,
+      existingRegistration?.exists
+        ? registrationValues
+        : { ...registrationValues, createdAt: now, createdBy: user.uid },
+      { merge: true },
+    );
+  }
+  const values = {
+    ...profile,
+    companyId: input.companyId,
+    branchId: input.branchId,
+    gstRegistrationId: registrationId,
+    gstRegistered: input.gstSetup !== "unregistered",
+    gstin,
+    pan,
+    registrationType: input.gstSetup === "unregistered" ? "unregistered" : profile.registrationType,
+    invoicePrefix,
+    invoiceSeriesKey: seriesKey,
+    updatedAt: now,
+    updatedBy: user.uid,
+  };
+  batch.set(
+    branchRef,
+    existingBranch.exists ? values : { ...values, createdAt: now, createdBy: user.uid },
+    { merge: true },
+  );
+  await batch.commit();
+  return { saved: true, gstRegistrationId: registrationId };
 }
 async function jobManager(uid: string, companyId: string, branchId: string) {
   await requireActiveSubscription(companyId, branchId);
@@ -3158,6 +3292,16 @@ const server = createServer(async (request, response) => {
           url.searchParams.get("branchId") ?? "",
         ),
       );
+    if (request.method === "GET" && url.pathname === "/v1/settings/business")
+      return reply(
+        response,
+        200,
+        await getBusinessSettings(
+          user,
+          url.searchParams.get("companyId") ?? "",
+          url.searchParams.get("branchId") ?? "",
+        ),
+      );
     if (request.method === "GET" && url.pathname === "/v1/notifications")
       return reply(
         response,
@@ -3184,6 +3328,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await impersonateAccount(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/reset-password")
       return reply(response, 200, await resetAccountPassword(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/settings/business")
+      return reply(response, 200, await saveBusinessSettings(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/issue")
       return reply(response, 200, await issueInvoice(request, user));
     if (request.method === "POST" && url.pathname === "/v1/invoices/amend")
