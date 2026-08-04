@@ -1315,7 +1315,7 @@ export default function ProductsPage() {
             </div>
             <div className="form-section">
               <h3>Price &amp; Tax</h3>
-              <div className="form-grid">
+              <div className="form-grid product-pricing-grid">
                 <label>
                   Purchase Price
                   <input
@@ -1353,7 +1353,7 @@ export default function ProductsPage() {
             </div>
             <div className="form-section">
               <h3>{activeBranch?.name} Inventory</h3>
-              <div className="form-grid">
+              <div className="form-grid product-stock-grid">
                 <label>
                   Current Stock
                   <input
@@ -1364,7 +1364,6 @@ export default function ProductsPage() {
                     value={draft.currentStock}
                     onChange={(e) => setDraft({ ...draft, currentStock: e.target.value })}
                   />
-                  <small>Changes are saved in Stock History as an adjustment.</small>
                 </label>
                 <label>
                   Reorder Level
@@ -1377,6 +1376,9 @@ export default function ProductsPage() {
                     onChange={(e) => setDraft({ ...draft, reorderLevel: e.target.value })}
                   />
                 </label>
+                <small className="span-2 field-note">
+                  Changes are saved in Stock History as an adjustment.
+                </small>
               </div>
               <details className="product-advanced-fields inventory-options">
                 <summary>More Inventory Details (Optional)</summary>

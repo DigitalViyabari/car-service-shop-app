@@ -256,6 +256,7 @@ export default function PendingPaymentsScreen() {
                   onChangeText={setPaymentAmount}
                   keyboardType="decimal-pad"
                   placeholder="0.00"
+                  placeholderTextColor="#AAB2BC"
                 />
               </View>
               <View style={styles.balanceLine}>
@@ -287,6 +288,7 @@ export default function PendingPaymentsScreen() {
                 value={paymentReference}
                 onChangeText={setPaymentReference}
                 placeholder="UPI, card, bank or cheque reference"
+                placeholderTextColor="#AAB2BC"
               />
               {Number(paymentAmount) > 0 && paymentItem ? (
                 <View style={styles.paymentSummary}>

@@ -283,7 +283,7 @@ export default function BusinessSettingsPage() {
               />
               <small>Used only when a new financial-year series starts.</small>
             </label>
-            <label>
+            <label className="invoice-format-field span-2">
               Current Financial-Year Format
               <input value={invoiceNumberPreview} readOnly />
               <small>

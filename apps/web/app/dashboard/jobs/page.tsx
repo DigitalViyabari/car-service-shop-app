@@ -2034,22 +2034,6 @@ export default function JobsPage() {
                   <option value="product">Product / Part</option>
                 </select>
               </label>
-              <label className="gst-choice">
-                GST Rate *
-                <select
-                  value={lineDraft.gstRate}
-                  onChange={(e) => setLineDraft({ ...lineDraft, gstRate: e.target.value })}
-                  required
-                >
-                  <option value="">Select GST</option>
-                  {[0, 5, 12, 18, 28, 40].map((value) => (
-                    <option value={value} key={value}>
-                      {value}%
-                    </option>
-                  ))}
-                </select>
-                <small>Choose 0% when GST does not apply.</small>
-              </label>
               {lineDraft.type === "product" ? (
                 <label>
                   Product *
@@ -2109,6 +2093,21 @@ export default function JobsPage() {
                   value={lineDraft.unitPrice}
                   onChange={(e) => setLineDraft({ ...lineDraft, unitPrice: e.target.value })}
                 />
+              </label>
+              <label>
+                GST Rate *
+                <select
+                  value={lineDraft.gstRate}
+                  onChange={(e) => setLineDraft({ ...lineDraft, gstRate: e.target.value })}
+                  required
+                >
+                  <option value="">Select GST</option>
+                  {[0, 5, 12, 18, 28, 40].map((value) => (
+                    <option value={value} key={value}>
+                      {value}%
+                    </option>
+                  ))}
+                </select>
               </label>
               <label>
                 Discount Amount

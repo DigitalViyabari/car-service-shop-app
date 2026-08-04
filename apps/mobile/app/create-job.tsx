@@ -235,6 +235,7 @@ export default function CreateJobScreen() {
           onChangeText={setComplaints}
           multiline
           placeholder="Describe the work needed"
+          placeholderTextColor="#AAB2BC"
           textAlignVertical="top"
         />
         <Text style={styles.label}>Odometer (Optional)</Text>
@@ -244,6 +245,7 @@ export default function CreateJobScreen() {
           onChangeText={setOdometer}
           keyboardType="number-pad"
           placeholder="Kilometres"
+          placeholderTextColor="#AAB2BC"
         />
         <SelectField
           label="Fuel Level"
@@ -272,6 +274,7 @@ export default function CreateJobScreen() {
           onChangeText={setInternalNotes}
           multiline
           placeholder="Notes visible to workshop team"
+          placeholderTextColor="#AAB2BC"
           textAlignVertical="top"
         />
         <TouchableOpacity

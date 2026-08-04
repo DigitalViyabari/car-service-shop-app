@@ -218,6 +218,12 @@ const updateSubscriptionSchema = z.object({
   plan: z.enum(["trial", "monthly", "yearly"]),
   trialDays: z.number().int().min(1).max(365).default(30),
 });
+const createBranchSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchName: z.string().min(2).max(120),
+  plan: z.enum(["trial", "monthly", "yearly"]),
+  trialDays: z.number().int().min(1).max(365).default(30),
+});
 type Encrypted = { ciphertext: string; iv: string; tag: string };
 type Credential = { authKey: Encrypted; integratedNumber?: Encrypted; provider: "msg91" };
 type RateWindow = { count: number; resetAt: number };
@@ -601,6 +607,65 @@ async function updateCompanySubscription(request: IncomingMessage, user: Decoded
     plan: input.plan,
     status,
     branchCount: branches.size,
+    currentPeriodEnd: periodEnd.toISOString(),
+  };
+}
+
+async function createCompanyBranch(request: IncomingMessage, user: DecodedIdToken) {
+  if (!(await platformAdministrator(user.uid)))
+    throw new ApiError(403, "Platform Admin access is required.");
+  const parsed = createBranchSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Enter valid branch and subscription details.");
+  const input = parsed.data,
+    company = await db.doc(`companies/${input.companyId}`).get();
+  if (!company.exists) throw new ApiError(404, "Company not found.");
+  const branchRef = db.collection("branches").doc(),
+    periodStart = new Date(),
+    periodEnd = new Date(periodStart);
+  if (input.plan === "trial") periodEnd.setDate(periodEnd.getDate() + input.trialDays);
+  if (input.plan === "monthly") periodEnd.setMonth(periodEnd.getMonth() + 1);
+  if (input.plan === "yearly") periodEnd.setFullYear(periodEnd.getFullYear() + 1);
+  const now = FieldValue.serverTimestamp(),
+    batch = db.batch(),
+    status = input.plan === "trial" ? "trialing" : "active";
+  batch.create(branchRef, {
+    companyId: input.companyId,
+    name: input.branchName,
+    code: `BR${branchRef.id.slice(0, 4).toUpperCase()}`,
+    status: "active",
+    timezone: "Asia/Kolkata",
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.create(db.doc(`branchSubscriptions/${branchRef.id}`), {
+    companyId: input.companyId,
+    branchId: branchRef.id,
+    planId: input.plan,
+    billingCycle: input.plan === "trial" ? "monthly" : input.plan,
+    status,
+    trialDays: input.plan === "trial" ? input.trialDays : 0,
+    currentPeriodStart: Timestamp.fromDate(periodStart),
+    currentPeriodEnd: Timestamp.fromDate(periodEnd),
+    createdAt: now,
+    createdBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  batch.create(db.collection("platformAuditLogs").doc(), {
+    action: "company_branch_created",
+    actorUserId: user.uid,
+    companyId: input.companyId,
+    branchId: branchRef.id,
+    plan: input.plan,
+    createdAt: now,
+  });
+  await batch.commit();
+  return {
+    created: true,
+    branchId: branchRef.id,
+    plan: input.plan,
     currentPeriodEnd: periodEnd.toISOString(),
   };
 }
@@ -2907,6 +2972,8 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await createPlatformAdmin(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/companies")
       return reply(response, 200, await createCompany(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/admin/branches")
+      return reply(response, 200, await createCompanyBranch(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/subscriptions")
       return reply(response, 200, await updateCompanySubscription(request, user));
     if (request.method === "POST" && url.pathname === "/v1/admin/impersonate")

@@ -554,6 +554,7 @@ function Field({
         value={value}
         onChangeText={set}
         placeholder={placeholder}
+        placeholderTextColor="#AAB2BC"
         keyboardType={keyboard}
         autoCapitalize={keyboard === "email-address" ? "none" : undefined}
         multiline={multiline}

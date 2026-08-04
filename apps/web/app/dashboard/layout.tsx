@@ -173,33 +173,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (loading) {
     return (
       <main className="state-page" aria-live="polite">
-        <div className="car-loader" aria-hidden="true">
-          <svg viewBox="0 0 112 48" role="presentation">
-            <path
-              className="car-loader-body"
-              d="M16 31.5h4.5l6.2-13.2c1.1-2.3 3.4-3.8 6-3.8h35.8c2.7 0 5.2 1.2 6.9 3.3l10.8 13.7h7.3c2.5 0 4.5 2 4.5 4.5v2.5H14V34c0-1.4.9-2.5 2-2.5Z"
-            />
-            <path
-              className="car-loader-window"
-              d="m32 19-5.2 12.5h23.7v-13H34.2c-1 0-1.8.5-2.2 1.4Zm23.2-.5v13h24L69 20.2a5 5 0 0 0-3.7-1.7H55.2Z"
-            />
-            <path className="car-loader-detail" d="M55 18.5v13M14 35.5h84M19 31.5h8M88 31.5h5" />
-            <g className="car-loader-wheel">
-              <circle cx="34" cy="37" r="7" />
-              <path d="M34 32v10M29 37h10M30.5 33.5l7 7M37.5 33.5l-7 7" />
-            </g>
-            <g className="car-loader-wheel">
-              <circle cx="79" cy="37" r="7" />
-              <path d="M79 32v10M74 37h10M75.5 33.5l7 7M82.5 33.5l-7 7" />
-            </g>
-          </svg>
-          <div className="car-loader-road">
-            <span />
-            <span />
-            <span />
-            <span />
-          </div>
-        </div>
+        <div className="car-loader" aria-hidden="true" />
         <h1>Preparing your workshop</h1>
         <p className="muted">Starting the engine and loading your workspace…</p>
       </main>
@@ -313,13 +287,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="shell">
       <aside className="sidebar">
         <div className="brand">
-          <i className="brand-mark" aria-hidden="true" />
-          <div>
-            DIGITAL <span>VIYABARI</span>
-          </div>
+          <img src="/digital-viyabari-logo.png" alt="Digital Viyabari" />
+          <small>Car Service App</small>
         </div>
         <div className="nav-label">Workshop control</div>
         <nav className="nav" aria-label="Primary navigation">
+          {!technicianOnly ? (
+            <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
+              <NavIcon name="overview" />
+              Overview
+            </Link>
+          ) : null}
           <Link
             href="/dashboard/jobs"
             className={pathname.startsWith("/dashboard/jobs") ? "is-active" : ""}
@@ -327,12 +305,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <NavIcon name="operations" />
             Job Cards
           </Link>
-          {!technicianOnly ? (
-            <Link href="/dashboard" className={pathname === "/dashboard" ? "is-active" : ""}>
-              <NavIcon name="overview" />
-              Overview
-            </Link>
-          ) : null}
           {!technicianOnly ? (
             <Link
               href="/dashboard/customers"
@@ -455,16 +427,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   ? `Subscription ${subscription.status.replaceAll("_", " ")}`
                   : "No subscription"}
               </StatusBadge>
-            ) : null}
-            {isCompanyOwner ? (
-              <Link
-                className="topbar-settings topbar-communications"
-                href="/dashboard/communications"
-                aria-label="Communications"
-                title="Communications"
-              >
-                <NavIcon name="communications" />
-              </Link>
             ) : null}
             {isCompanyOwner ? (
               <Link className="topbar-settings" href="/dashboard/settings" aria-label="Settings">

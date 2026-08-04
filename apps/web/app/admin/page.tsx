@@ -53,6 +53,12 @@ export default function PlatformAdminPage() {
       billingCycle: "monthly",
       trialDays: 30,
     }),
+    [branchDraft, setBranchDraft] = useState({
+      companyId: "",
+      branchName: "",
+      plan: "trial" as "trial" | "monthly" | "yearly",
+      trialDays: 30,
+    }),
     [subscriptionDraft, setSubscriptionDraft] = useState<{
       companyId: string;
       companyName: string;
@@ -146,6 +152,25 @@ export default function PlatformAdminPage() {
     const overview = await api("/api/v1/admin/overview");
     setBusinesses(overview.companies ?? []);
     setAccounts(overview.accounts ?? []);
+  }
+  async function createBranch() {
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await api("/api/v1/admin/branches", {
+        method: "POST",
+        body: JSON.stringify({ ...branchDraft, trialDays: Number(branchDraft.trialDays) }),
+      });
+      setBranchDraft({ companyId: "", branchName: "", plan: "trial", trialDays: 30 });
+      await refreshOverview();
+      setMessage(
+        `Branch created with ${result.plan} access until ${new Date(result.currentPeriodEnd).toLocaleDateString("en-IN")}.`,
+      );
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : "Unable to create branch.");
+    } finally {
+      setBusy(false);
+    }
   }
   async function updateSubscription() {
     if (!subscriptionDraft) return;
@@ -430,6 +455,80 @@ export default function PlatformAdminPage() {
             onClick={() => void createCompany()}
           >
             {busy ? "Creating…" : "Create Company"}
+          </button>
+        </div>
+      </section>
+      <section className="platform-company-create platform-branch-create">
+        <header>
+          <div>
+            <span className="heading-kicker">Additional Paid Branch</span>
+            <h2>Add Branch To Existing Company</h2>
+            <p>Each branch receives its own access period and subscription.</p>
+          </div>
+        </header>
+        <div className="form-grid">
+          <label>
+            Company
+            <select
+              value={branchDraft.companyId}
+              onChange={(event) =>
+                setBranchDraft({ ...branchDraft, companyId: event.target.value })
+              }
+            >
+              <option value="">Select Company</option>
+              {businesses.map((business) => (
+                <option key={business.id} value={business.id}>
+                  {business.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Branch Name
+            <input
+              value={branchDraft.branchName}
+              placeholder="Example: Anna Nagar Branch"
+              onChange={(event) =>
+                setBranchDraft({ ...branchDraft, branchName: event.target.value })
+              }
+            />
+          </label>
+          <label>
+            Subscription
+            <select
+              value={branchDraft.plan}
+              onChange={(event) =>
+                setBranchDraft({
+                  ...branchDraft,
+                  plan: event.target.value as "trial" | "monthly" | "yearly",
+                })
+              }
+            >
+              <option value="trial">Trial</option>
+              <option value="monthly">Monthly</option>
+              <option value="yearly">Yearly</option>
+            </select>
+          </label>
+          {branchDraft.plan === "trial" ? (
+            <label>
+              Trial Days
+              <input
+                type="number"
+                min="1"
+                max="365"
+                value={branchDraft.trialDays}
+                onChange={(event) =>
+                  setBranchDraft({ ...branchDraft, trialDays: Number(event.target.value) })
+                }
+              />
+            </label>
+          ) : null}
+          <button
+            className="dv-button"
+            disabled={busy || !branchDraft.companyId || branchDraft.branchName.trim().length < 2}
+            onClick={() => void createBranch()}
+          >
+            {busy ? "Creating…" : "Create Branch"}
           </button>
         </div>
       </section>
