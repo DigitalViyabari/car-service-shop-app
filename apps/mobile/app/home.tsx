@@ -17,6 +17,7 @@ import { MobileNav } from "../components/mobile-nav";
 import { firebase } from "../lib/firebase";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { colours } from "../lib/theme";
+import { canCreateOperations, canManageCustomers, isTechnicianOnly } from "../lib/mobile-roles";
 
 const activeStatuses = [
   "check_in",
@@ -32,17 +33,9 @@ export default function HomeScreen() {
   const { user, profile, membership, company, branch, loading, error } = useMobileAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const technician = useMemo(
-    () =>
-      Boolean(
-        branch &&
-        membership?.branchAssignments
-          ?.find(({ branchId }) => branchId === branch.id)
-          ?.roles.includes("technician") &&
-        !membership.companyRoles.length,
-      ),
-    [branch, membership],
-  );
+  const technician = useMemo(() => isTechnicianOnly(membership, branch?.id), [branch, membership]);
+  const canCreate = canCreateOperations(membership, branch?.id);
+  const canCustomers = canManageCustomers(membership, branch?.id);
 
   const loadJobs = useCallback(async () => {
     if (!user || !company || !branch) return;
@@ -137,7 +130,20 @@ export default function HomeScreen() {
           <Metric icon="car" colour={colours.purple} value={active.length} label="Open Jobs" />
         </View>
 
+        <Text style={styles.sectionTitle}>What Should I Do Next?</Text>
+        <View style={styles.guide}>
+          <View style={styles.guideNumber}><Text style={styles.guideNumberText}>1</Text></View>
+          <View style={styles.guideText}><Text style={styles.guideTitle}>{technician ? "Open Your Assigned Job" : urgent ? "Handle The Urgent Job" : active.length ? "Continue Active Work" : "Create The Next Job"}</Text><Text style={styles.guideHint}>{technician ? "Open Jobs and continue the current workshop stage." : urgent ? `${urgent} very urgent job${urgent===1?' needs':'s need'} attention.` : active.length ? `${active.length} job${active.length===1?' is':'s are'} waiting in the workshop.` : "The workshop queue is clear."}</Text></View>
+          <Ionicons name="arrow-forward-circle" size={31} color={colours.blue}/>
+        </View>
+
         <Text style={styles.sectionTitle}>Quick actions</Text>
+        {canCreate ? <TouchableOpacity style={styles.action} onPress={() => router.push("/create-job")}>
+          <View style={[styles.actionIcon,{backgroundColor:'#FDEBEC'}]}><Ionicons name="add-circle" size={26} color={colours.red}/></View><View style={styles.actionText}><Text style={styles.actionTitle}>Create New Job</Text><Text style={styles.actionHint}>Open a job card quickly</Text></View><Ionicons name="chevron-forward" size={23} color={colours.muted}/>
+        </TouchableOpacity> : null}
+        {canCustomers ? <TouchableOpacity style={styles.action} onPress={() => router.push("/customers")}>
+          <View style={[styles.actionIcon,{backgroundColor:'#E9F7F1'}]}><Ionicons name="people" size={25} color={colours.green}/></View><View style={styles.actionText}><Text style={styles.actionTitle}>Customers</Text><Text style={styles.actionHint}>View or create customer</Text></View><Ionicons name="chevron-forward" size={23} color={colours.muted}/>
+        </TouchableOpacity> : null}
         <TouchableOpacity style={styles.action} onPress={() => router.push("/jobs")}>
           <View style={[styles.actionIcon, { backgroundColor: "#E9F2FC" }]}>
             <Ionicons name="car-sport" size={25} color={colours.blue} />
@@ -188,7 +194,7 @@ function Metric({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colours.canvas },
-  content: { padding: 20, paddingBottom: 28 },
+  content: { padding: 20, paddingBottom: 104 },
   loading: {
     flex: 1,
     alignItems: "center",
@@ -263,6 +269,8 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   metrics: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
+  guide:{minHeight:98,backgroundColor:'#EAF3FC',borderRadius:18,borderLeftWidth:6,borderLeftColor:colours.blue,padding:15,flexDirection:'row',alignItems:'center',gap:12},
+  guideNumber:{width:38,height:38,borderRadius:12,backgroundColor:colours.blue,alignItems:'center',justifyContent:'center'},guideNumberText:{color:'#FFF',fontWeight:'900',fontSize:18},guideText:{flex:1},guideTitle:{color:colours.ink,fontSize:17,fontWeight:'900'},guideHint:{color:colours.muted,fontSize:14,lineHeight:20,marginTop:3},
   metric: {
     width: "48%",
     minHeight: 118,

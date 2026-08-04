@@ -16,7 +16,8 @@
     "android": {
       "package": "com.digitalviyabari.carserviceshopapp",
       "googleServicesFile": "./google-services.json",
-      "userInterfaceStyle": "light"
+      "userInterfaceStyle": "light",
+      "softwareKeyboardLayoutMode": "resize"
     }
   }
 }

@@ -7,6 +7,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -22,6 +23,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -49,8 +51,13 @@ export default function LoginScreen() {
     <SafeAreaView style={styles.screen}>
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
+        <ScrollView
+          contentContainerStyle={styles.scroll}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.brandBlock}>
           <View style={styles.brandIcon}>
             <Ionicons name="car-sport" size={30} color="#FFFFFF" />
@@ -75,15 +82,24 @@ export default function LoginScreen() {
             editable={!submitting}
           />
           <Text style={styles.label}>Password</Text>
-          <TextInput
-            style={styles.input}
-            value={password}
-            onChangeText={setPassword}
-            placeholder="Enter password"
-            secureTextEntry
-            editable={!submitting}
-            onSubmitEditing={() => void submit()}
-          />
+          <View style={styles.passwordField}>
+            <TextInput
+              style={styles.passwordInput}
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Enter password"
+              secureTextEntry={!showPassword}
+              editable={!submitting}
+              onSubmitEditing={() => void submit()}
+            />
+            <TouchableOpacity
+              style={styles.eye}
+              onPress={() => setShowPassword((current) => !current)}
+              accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+            >
+              <Ionicons name={showPassword ? "eye-off" : "eye"} size={25} color={colours.navy} />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
             style={[styles.button, submitting && styles.disabled]}
             onPress={() => void submit()}
@@ -99,6 +115,7 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
         </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -106,6 +123,7 @@ export default function LoginScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colours.ink },
+  scroll: { flexGrow: 1 },
   brandBlock: { paddingHorizontal: 26, paddingTop: 38, paddingBottom: 30 },
   brandIcon: {
     width: 56,
@@ -148,6 +166,17 @@ const styles = StyleSheet.create({
     color: colours.ink,
     fontSize: 17,
   },
+  passwordField: {
+    height: 58,
+    backgroundColor: colours.card,
+    borderColor: colours.line,
+    borderWidth: 1.5,
+    borderRadius: 15,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  passwordInput: { flex: 1, height: "100%", paddingHorizontal: 16, color: colours.ink, fontSize: 17 },
+  eye: { width: 56, height: 56, alignItems: "center", justifyContent: "center" },
   button: {
     height: 60,
     backgroundColor: colours.red,

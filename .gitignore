@@ -19,3 +19,8 @@ apps/functions/.env
 service-account*.json
 GoogleService-Info.plist
 google-services.json
+
+# Local Android test builds and generated native project
+Mobile APK/
+apps/mobile/android/
+apps/mobile/.gitignore

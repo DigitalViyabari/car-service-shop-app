@@ -96,6 +96,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
+    marginBottom: 96,
   },
   logoutText: { color: colours.red, fontSize: 17, fontWeight: "900" },
 });

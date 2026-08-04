@@ -16,6 +16,7 @@ import { MobileNav } from "../components/mobile-nav";
 import { firebase } from "../lib/firebase";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { colours, statusColours } from "../lib/theme";
+import { canCreateOperations, isTechnicianOnly } from "../lib/mobile-roles";
 
 const labels: Record<string, string> = {
   check_in: "Check-In",
@@ -33,20 +34,16 @@ export default function JobsScreen() {
   const { user, membership, company, branch, loading: authLoading } = useMobileAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const technician = useMemo(
-    () =>
-      Boolean(
-        branch &&
-        membership?.branchAssignments
-          .find(({ branchId }) => branchId === branch.id)
-          ?.roles.includes("technician") &&
-        !membership.companyRoles.length,
-      ),
+    () => isTechnicianOnly(membership, branch?.id),
     [branch, membership],
   );
+  const canCreate = canCreateOperations(membership, branch?.id);
   const load = useCallback(async () => {
     if (!user || !company || !branch) return;
     setLoading(true);
+    setError(null);
     try {
       const snapshot = await getDocs(
         technician
@@ -71,6 +68,9 @@ export default function JobsScreen() {
           )
           .sort((a, b) => (a.priority === "breakdown" ? -1 : b.priority === "breakdown" ? 1 : 0)),
       );
+    } catch (reason) {
+      setJobs([]);
+      setError(reason instanceof Error ? reason.message : "Unable to load assigned jobs.");
     } finally {
       setLoading(false);
     }
@@ -90,10 +90,9 @@ export default function JobsScreen() {
           <Text style={styles.title}>Job Cards</Text>
           <Text style={styles.sub}>{jobs.length} active</Text>
         </View>
-        <TouchableOpacity style={styles.refresh} onPress={() => void load()}>
-          <Ionicons name="refresh" size={25} color={colours.ink} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>{canCreate?<TouchableOpacity style={styles.create} onPress={()=>router.push('/create-job')}><Ionicons name="add" size={27} color="#FFF"/></TouchableOpacity>:null}<TouchableOpacity style={styles.refresh} onPress={() => void load()}><Ionicons name="refresh" size={25} color={colours.ink} /></TouchableOpacity></View>
       </View>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={colours.red} />
@@ -173,7 +172,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  list: { padding: 16, paddingTop: 4, gap: 12, flexGrow: 1 },
+  list: { padding: 16, paddingTop: 4, paddingBottom: 96, gap: 12, flexGrow: 1 },
+  headerActions:{flexDirection:'row',gap:8},create:{width:50,height:50,borderRadius:16,backgroundColor:colours.red,alignItems:'center',justifyContent:'center'},error:{marginHorizontal:16,marginBottom:10,padding:13,borderRadius:12,backgroundColor:'#FDEBEC',color:'#A82024',fontWeight:'700'},
   job: {
     minHeight: 145,
     backgroundColor: colours.card,
