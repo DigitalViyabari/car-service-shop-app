@@ -1770,12 +1770,14 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
           : seriesMode === "shared"
             ? baseSeriesKey
             : `${baseSeriesKey}-${input.branchId}`,
-    registrationPrefix =
-      seriesMode === "shared"
+    registrationPrefix = matchingAddress
+      ? String(matchingAddress.get("invoicePrefix") ?? invoicePrefix)
+      : seriesMode === "shared"
         ? invoicePrefix
         : String(existingRegistration?.get("invoicePrefix") ?? invoicePrefix),
-    registrationStartNumber =
-      seriesMode === "shared"
+    registrationStartNumber = matchingAddress
+      ? Number(matchingAddress.get("invoiceStartNumber") ?? profile.invoiceStartNumber)
+      : seriesMode === "shared"
         ? profile.invoiceStartNumber
         : Number(existingRegistration?.get("invoiceStartNumber") ?? profile.invoiceStartNumber),
     now = FieldValue.serverTimestamp(),
@@ -1812,13 +1814,19 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
         .toUpperCase()
         .slice(-4);
     })(),
-    effectivePrefix =
-      seriesMode === "branch" &&
-      existingBranch.get("invoiceSeriesMode") !== "branch" &&
-      usedPrefixes.has(invoicePrefix)
+    movingToExistingSeries =
+      Boolean(matchingAddress) &&
+      String(existingBranch.get("invoiceSeriesKey") ?? "") !== seriesKey,
+    effectivePrefix = movingToExistingSeries
+      ? String(matchingAddress?.get("invoicePrefix") ?? registrationPrefix)
+      : seriesMode === "branch" &&
+          existingBranch.get("invoiceSeriesMode") !== "branch" &&
+          usedPrefixes.has(invoicePrefix)
         ? automaticBranchPrefix
         : invoicePrefix || automaticBranchPrefix,
-    effectiveStartNumber = profile.invoiceStartNumber,
+    effectiveStartNumber = movingToExistingSeries
+      ? Number(matchingAddress?.get("invoiceStartNumber") ?? registrationStartNumber)
+      : profile.invoiceStartNumber,
     batch = db.batch();
   if (usedPrefixes.has(effectivePrefix))
     throw new ApiError(409, "This invoice prefix is already used. Enter a different prefix.");
@@ -1826,12 +1834,14 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     const nowDate = new Date(),
       startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
       financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
-      changedSeries =
-        String(existingBranch.get("gstRegistrationId") ?? "") !== registrationId ||
-        String(existingBranch.get("invoiceSeriesKey") ?? "") !== seriesKey ||
-        String(existingBranch.get("invoicePrefix") ?? "INV") !== effectivePrefix ||
-        Number(existingBranch.get("invoiceStartNumber") ?? 1) !== effectiveStartNumber;
-    if (changedSeries) {
+      staysInSameSeries =
+        String(existingBranch.get("gstRegistrationId") ?? "") === registrationId &&
+        String(existingBranch.get("invoiceSeriesKey") ?? "") === seriesKey,
+      changedNumberConfiguration =
+        staysInSameSeries &&
+        (String(existingBranch.get("invoicePrefix") ?? "INV") !== effectivePrefix ||
+          Number(existingBranch.get("invoiceStartNumber") ?? 1) !== effectiveStartNumber);
+    if (changedNumberConfiguration) {
       const companyInvoices = await db
         .collection("invoices")
         .where("companyId", "==", input.companyId)

@@ -246,6 +246,11 @@ a {
   background: #fff0f0;
   color: #a81921;
 }
+.alert--success {
+  border: 1px solid #a9dfc4;
+  background: #effbf5;
+  color: #146c43;
+}
 .login-help {
   margin-top: 16px;
   text-align: center;
@@ -1380,6 +1385,19 @@ button.platform-row:hover {
   color: inherit;
   cursor: pointer;
   font-size: 20px;
+}
+.settings-page .module-alert {
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 5px;
+  padding: 16px 18px;
+  scroll-margin-block: 110px;
+}
+.settings-page .module-alert strong {
+  flex: 0 0 auto;
+}
+.settings-page .module-alert span {
+  min-width: 0;
 }
 .customer-workspace {
   display: grid;

@@ -1,7 +1,7 @@
 "use client";
 
 import type { BusinessTaxProfile, GstRegistration, GstRegistrationType } from "@dvcs/types";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
 
 type Draft = Omit<
@@ -75,9 +75,11 @@ export default function BusinessSettingsPage() {
     [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
     [message, setMessage] = useState(""),
+    [messageType, setMessageType] = useState<"success" | "error" | "">(""),
     [registrations, setRegistrations] = useState<GstRegistration[]>([]),
     [branchSetups, setBranchSetups] = useState<BranchTaxSetup[]>([]),
-    [gstSetup, setGstSetup] = useState<"unregistered" | "existing" | "new">("unregistered");
+    [gstSetup, setGstSetup] = useState<"unregistered" | "existing" | "new">("unregistered"),
+    messageRef = useRef<HTMLDivElement>(null);
   const membership = memberships.find(({ companyId }) => companyId === activeCompanyId),
     isOwner = (membership?.companyRoles ?? []).some(
       (role) => role === "company_owner" || role === "company_admin",
@@ -143,6 +145,7 @@ export default function BusinessSettingsPage() {
     if (!user || !activeCompanyId || !activeBranchId || !canView) return;
     setLoading(true);
     setMessage("");
+    setMessageType("");
     try {
       const response = await fetch(
           `/api/v1/settings/business?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
@@ -179,6 +182,7 @@ export default function BusinessSettingsPage() {
       }
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to load business settings.");
+      setMessageType("error");
     } finally {
       setLoading(false);
     }
@@ -186,6 +190,17 @@ export default function BusinessSettingsPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (!message) return;
+    window.requestAnimationFrame(() => {
+      messageRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      messageRef.current?.focus({ preventScroll: true });
+    });
+  }, [message]);
+  const showMessage = (text: string, type: "success" | "error") => {
+    setMessage(text);
+    setMessageType(type);
+  };
   const update = <K extends keyof Draft>(key: K, value: Draft[K]) =>
     setDraft((current) => ({ ...current, [key]: value }));
   const chooseRegistration = (registrationId: string) => {
@@ -216,15 +231,15 @@ export default function BusinessSettingsPage() {
     const gstin = gstSetup === "unregistered" ? "" : (draft.gstin?.trim().toUpperCase() ?? ""),
       pan = draft.pan?.trim().toUpperCase() ?? "";
     if (gstSetup !== "unregistered" && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin)) {
-      setMessage("Enter a valid 15-character GSTIN.");
+      showMessage("Enter a valid 15-character GSTIN.", "error");
       return;
     }
     if (gstSetup === "new" && registrations.some((item) => item.gstin === gstin)) {
-      setMessage("This GSTIN already exists. Choose Use Existing Company GSTIN.");
+      showMessage("This GSTIN already exists. Choose Use Existing Company GSTIN.", "error");
       return;
     }
     if (pan && !/^[A-Z]{5}\d{4}[A-Z]$/.test(pan)) {
-      setMessage("Enter a valid PAN.");
+      showMessage("Enter a valid PAN.", "error");
       return;
     }
     const invoicePrefix =
@@ -238,6 +253,7 @@ export default function BusinessSettingsPage() {
           : 1;
     setSaving(true);
     setMessage("");
+    setMessageType("");
     try {
       const response = await fetch("/api/v1/settings/business", {
           method: "POST",
@@ -265,15 +281,21 @@ export default function BusinessSettingsPage() {
         };
       if (!response.ok) throw new Error(result.error ?? "Unable to save business settings.");
       await load();
-      setMessage(
-        `${activeBranch?.name ?? "Branch"} saved. ${
+      showMessage(
+        `${activeBranch?.name ?? "Branch"} was saved successfully. ${
           result.invoiceSeriesMode === "branch"
             ? "Invoice Setup: Separate For This Branch."
             : "Invoice Setup: Shared With Main Branch."
         }`,
+        "success",
       );
     } catch (reason) {
-      setMessage(reason instanceof Error ? reason.message : "Unable to save business settings.");
+      showMessage(
+        `Your changes were not saved. ${
+          reason instanceof Error ? reason.message : "Unable to save business settings."
+        }`,
+        "error",
+      );
     } finally {
       setSaving(false);
     }
@@ -336,8 +358,14 @@ export default function BusinessSettingsPage() {
         </a>
       </nav>
       {message ? (
-        <div className={`alert module-alert ${message.includes("saved") ? "" : "alert--error"}`}>
-          {message}
+        <div
+          ref={messageRef}
+          className={`alert module-alert ${messageType === "error" ? "alert--error" : "alert--success"}`}
+          role={messageType === "error" ? "alert" : "status"}
+          tabIndex={-1}
+        >
+          <strong>{messageType === "error" ? "Not Saved" : "Saved"}</strong>
+          <span>{message}</span>
         </div>
       ) : null}
       <form className="settings-form" onSubmit={save}>
