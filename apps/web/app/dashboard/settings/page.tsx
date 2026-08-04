@@ -62,15 +62,6 @@ export default function BusinessSettingsPage() {
       (membership?.branchAssignments ?? []).some(({ roles }) =>
         roles.some((role) => role === "branch_manager" || role === "finance_manager"),
       );
-  const today = new Date(),
-    financialYearStart = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1,
-    financialYearCode = `${String(financialYearStart).slice(-2)}${String(financialYearStart + 1).slice(-2)}`,
-    invoicePrefixPreview =
-      draft.invoicePrefix
-        .replace(/[^A-Za-z0-9]/g, "")
-        .toUpperCase()
-        .slice(0, 4) || "INV",
-    invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`;
   const load = useCallback(async () => {
     if (!user || !activeCompanyId || !activeBranchId || !canView) return;
     setLoading(true);
@@ -157,19 +148,15 @@ export default function BusinessSettingsPage() {
       setMessage("Enter a valid PAN.");
       return;
     }
-    const invoicePrefix = draft.invoicePrefix.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-    if (!invoicePrefix || invoicePrefix.length > 4) {
-      setMessage("Invoice Prefix must contain 1 to 4 letters or numbers.");
-      return;
-    }
-    if (
-      !Number.isInteger(Number(draft.invoiceStartNumber)) ||
-      Number(draft.invoiceStartNumber) < 1 ||
-      Number(draft.invoiceStartNumber) > 999999
-    ) {
-      setMessage("Invoice Starting Number must be between 1 and 999999.");
-      return;
-    }
+    const invoicePrefix =
+        draft.invoicePrefix
+          .replace(/[^A-Za-z0-9]/g, "")
+          .toUpperCase()
+          .slice(0, 4) || "INV",
+      invoiceStartNumber =
+        Number.isInteger(Number(draft.invoiceStartNumber)) && Number(draft.invoiceStartNumber) > 0
+          ? Number(draft.invoiceStartNumber)
+          : 1;
     setSaving(true);
     setMessage("");
     try {
@@ -188,14 +175,13 @@ export default function BusinessSettingsPage() {
               gstin,
               pan,
               invoicePrefix,
-              invoiceStartNumber: Number(draft.invoiceStartNumber),
+              invoiceStartNumber,
             },
           }),
         }),
         result = (await response.json()) as {
           saved?: boolean;
           invoiceSeriesMode?: "shared" | "branch";
-          invoicePrefix?: string;
           error?: string;
         };
       if (!response.ok) throw new Error(result.error ?? "Unable to save business settings.");
@@ -203,8 +189,8 @@ export default function BusinessSettingsPage() {
       setMessage(
         `${activeBranch?.name ?? "Branch"} saved. ${
           result.invoiceSeriesMode === "branch"
-            ? `This address now has separate invoice numbers beginning with ${result.invoicePrefix ?? "its branch prefix"}.`
-            : "Branches with this same GSTIN and address will share one invoice number sequence."
+            ? "Invoice Setup: Separate For This Branch."
+            : "Invoice Setup: Shared With Main Branch."
         }`,
       );
     } catch (reason) {
@@ -446,56 +432,18 @@ export default function BusinessSettingsPage() {
             <span>03</span>
             <div>
               <h2>Invoice &amp; Payment Details</h2>
-              <p>Invoice numbering is handled automatically.</p>
+              <p>No invoice setup needed.</p>
             </div>
           </header>
           <div className="form-grid">
             <div className="span-2 automatic-series-card" role="status">
-              <strong>
-                {gstSetup === "unregistered"
-                  ? "Separate numbering for this branch"
-                  : "Automatic invoice numbering — no selection needed"}
-              </strong>
+              <strong>Invoice Setup</strong>
               <p>
-                {gstSetup === "unregistered"
-                  ? "This branch is not GST registered, so it keeps its own invoice numbers."
-                  : "Nothing to choose. The app compares the GSTIN and full branch address when you save. Same GSTIN and same address share numbers; a different GSTIN or address gets separate numbers."}
+                {gstSetup === "unregistered" || draft.invoiceSeriesMode === "branch"
+                  ? "Separate For This Branch"
+                  : "Shared With Main Branch"}
               </p>
             </div>
-            {field(
-              "invoicePrefix",
-              draft.invoiceSeriesMode === "branch"
-                ? "Automatic Branch Invoice Prefix"
-                : "Invoice Prefix (Maximum 4 Characters)",
-              {
-                required: true,
-                disabled: gstSetup === "existing" || draft.invoiceSeriesMode === "branch",
-              },
-            )}
-            <label>
-              Invoice Starting Number
-              <input
-                type="number"
-                min="1"
-                max="999999"
-                value={draft.invoiceStartNumber ?? 1}
-                disabled={!isOwner}
-                onChange={(event) => update("invoiceStartNumber", Number(event.target.value))}
-              />
-              <small>Used only when a new financial-year series starts.</small>
-            </label>
-            <label className="invoice-format-field span-2">
-              Current Financial-Year Format
-              <input value={invoiceNumberPreview} readOnly />
-              <small>
-                FY {financialYearStart}–{String(financialYearStart + 1).slice(-2)} · Consecutive and
-                unique within this financial year.
-              </small>
-              <small>
-                On 1 April, the FY code changes automatically and a new sequence starts from the
-                configured starting number. The invoice prefix remains unchanged.
-              </small>
-            </label>
             {field("upiId", "UPI ID")}
             {field("bankName", "Bank Name")}
             {field("accountName", "Account Name")}
