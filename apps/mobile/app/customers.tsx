@@ -1,4 +1,11 @@
-import type { Customer, Vehicle, VehicleFuelType } from "@dvcs/types";
+import type {
+  Customer,
+  CustomerType,
+  Vehicle,
+  VehicleCatalogEntry,
+  VehicleFuelType,
+  VehicleTransmission,
+} from "@dvcs/types";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import {
@@ -24,9 +31,11 @@ import {
   View,
 } from "react-native";
 import { firebase } from "../lib/firebase";
+import { DateField, SelectField } from "../components/form-controls";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { canManageCustomers } from "../lib/mobile-roles";
 import { colours } from "../lib/theme";
+import { indianVehicleCatalogue } from "../../web/lib/indian-vehicle-catalogue";
 
 const fuels: Array<[VehicleFuelType, string]> = [
   ["petrol", "Petrol"],
@@ -37,18 +46,29 @@ const fuels: Array<[VehicleFuelType, string]> = [
   ["hybrid", "Hybrid"],
   ["other", "Other"],
 ];
+const transmissions: Array<[VehicleTransmission, string]> = [
+  ["manual", "Manual"],
+  ["automatic", "Automatic"],
+  ["amt", "AMT"],
+  ["cvt", "CVT"],
+  ["dct", "DCT"],
+  ["other", "Other"],
+];
 export default function CustomersScreen() {
   const { user, membership, company, branch } = useMobileAuth();
   const [customers, setCustomers] = useState<Customer[]>([]),
-    [vehicles, setVehicles] = useState<Vehicle[]>([]);
+    [vehicles, setVehicles] = useState<Vehicle[]>([]),
+    [catalogue, setCatalogue] = useState<VehicleCatalogEntry[]>([]);
   const [customerForm, setCustomerForm] = useState(false),
     [vehicleCustomerId, setVehicleCustomerId] = useState<string | null>(null);
-  const [name, setName] = useState(""),
+  const [customerType, setCustomerType] = useState<CustomerType>("individual"),
+    [name, setName] = useState(""),
     [phone, setPhone] = useState(""),
     [alternatePhone, setAlternatePhone] = useState(""),
     [email, setEmail] = useState(""),
     [gstin, setGstin] = useState(""),
-    [address, setAddress] = useState("");
+    [address, setAddress] = useState(""),
+    [customerNotes, setCustomerNotes] = useState("");
   const [registration, setRegistration] = useState(""),
     [make, setMake] = useState(""),
     [model, setModel] = useState(""),
@@ -57,7 +77,12 @@ export default function CustomersScreen() {
     [year, setYear] = useState(""),
     [fuel, setFuel] = useState<VehicleFuelType>("petrol"),
     [odometer, setOdometer] = useState(""),
-    [insurance, setInsurance] = useState("");
+    [insurance, setInsurance] = useState(""),
+    [transmission, setTransmission] = useState<VehicleTransmission>("manual"),
+    [vin, setVin] = useState(""),
+    [vehicleNotes, setVehicleNotes] = useState("");
+  const [customMake, setCustomMake] = useState(false),
+    [customModel, setCustomModel] = useState(false);
   const [loading, setLoading] = useState(true),
     [saving, setSaving] = useState(false),
     [error, setError] = useState<string | null>(null);
@@ -66,7 +91,7 @@ export default function CustomersScreen() {
     if (!company || !branch || !allowed) return setLoading(false);
     setLoading(true);
     try {
-      const [c, v] = await Promise.all([
+      const [c, v, vc] = await Promise.all([
         getDocs(
           query(
             collection(firebase.db, "customers"),
@@ -81,6 +106,9 @@ export default function CustomersScreen() {
             where("branchId", "==", branch.id),
           ),
         ),
+        getDocs(
+          query(collection(firebase.db, "vehicleCatalog"), where("companyId", "==", company.id)),
+        ),
       ]);
       setCustomers(
         c.docs
@@ -91,6 +119,11 @@ export default function CustomersScreen() {
       setVehicles(
         v.docs
           .map((x) => ({ ...x.data(), id: x.id }) as Vehicle)
+          .filter((x) => x.status === "active"),
+      );
+      setCatalogue(
+        vc.docs
+          .map((x) => ({ ...x.data(), id: x.id }) as VehicleCatalogEntry)
           .filter((x) => x.status === "active"),
       );
     } catch (reason) {
@@ -117,14 +150,14 @@ export default function CustomersScreen() {
         .set(ref, {
           companyId: company.id,
           branchId: branch.id,
-          type: "individual",
+          type: customerType,
           name: name.trim(),
           phone: cleanPhone,
           alternatePhone: alternatePhone.replace(/\D/g, ""),
           email: email.trim().toLowerCase(),
           gstin: gstin.trim().toUpperCase(),
           address: address.trim(),
-          notes: "",
+          notes: customerNotes.trim(),
           searchName: name.trim().toLowerCase(),
           searchPhone: cleanPhone,
           vehicleCount: 0,
@@ -141,6 +174,8 @@ export default function CustomersScreen() {
       setEmail("");
       setGstin("");
       setAddress("");
+      setCustomerNotes("");
+      setCustomerType("individual");
       setCustomerForm(false);
       setVehicleCustomerId(ref.id);
       await load();
@@ -182,12 +217,12 @@ export default function CustomersScreen() {
         colour: colour.trim(),
         year: year ? Number(year) : null,
         fuelType: fuel,
-        transmission: "manual",
-        vin: "",
+        transmission,
+        vin: vin.trim().toUpperCase(),
         odometer: odometer ? Number(odometer) : null,
         insuranceExpiryDate: insurance || "",
         insuranceReminderEnabled: Boolean(insurance),
-        notes: "",
+        notes: vehicleNotes.trim(),
         status: "active",
         createdAt: now,
         createdBy: user.uid,
@@ -219,7 +254,29 @@ export default function CustomersScreen() {
     setFuel("petrol");
     setOdometer("");
     setInsurance("");
+    setTransmission("manual");
+    setVin("");
+    setVehicleNotes("");
+    setCustomMake(false);
+    setCustomModel(false);
   }
+  const makes = [
+    ...new Set([...indianVehicleCatalogue.map((x) => x.make), ...catalogue.map((x) => x.make)]),
+  ].sort();
+  const models = [
+    ...new Set([
+      ...indianVehicleCatalogue.filter((x) => x.make === make).map((x) => x.model),
+      ...catalogue.filter((x) => x.make === make).map((x) => x.model),
+    ]),
+  ].sort();
+  const variants = [
+    ...new Set(
+      catalogue
+        .filter((x) => x.make === make && x.model === model)
+        .map((x) => x.variant)
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
   if (!allowed)
     return (
       <SafeAreaView style={styles.screen}>
@@ -240,6 +297,15 @@ export default function CustomersScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <Text style={styles.formTitle}>New Customer</Text>
+          <SelectField
+            label="Customer Type"
+            value={customerType}
+            onChange={(value) => setCustomerType(value as CustomerType)}
+            options={[
+              { value: "individual", label: "Individual" },
+              { value: "business", label: "Business" },
+            ]}
+          />
           <Field label="Customer Name *" value={name} set={setName} placeholder="Full name" />
           <Field
             label="Mobile Number *"
@@ -264,6 +330,13 @@ export default function CustomersScreen() {
           />
           <Field label="GSTIN" value={gstin} set={setGstin} placeholder="For business customers" />
           <Field label="Address" value={address} set={setAddress} placeholder="Optional" />
+          <Field
+            label="Notes"
+            value={customerNotes}
+            set={setCustomerNotes}
+            placeholder="Optional"
+            multiline
+          />
           <Buttons
             cancel={() => setCustomerForm(false)}
             save={() => void saveCustomer()}
@@ -285,11 +358,55 @@ export default function CustomersScreen() {
             set={setRegistration}
             placeholder="TN01AB1234"
           />
-          <Field label="Make *" value={make} set={setMake} placeholder="Example: Maruti Suzuki" />
-          <Field label="Model *" value={model} set={setModel} placeholder="Example: Swift" />
+          <SelectField
+            label="Make *"
+            value={customMake ? "__custom__" : make}
+            onChange={(value) => {
+              setCustomMake(value === "__custom__");
+              setMake(value === "__custom__" ? "" : value);
+              setModel("");
+            }}
+            options={[
+              { value: "", label: "Select Make" },
+              ...makes.map((value) => ({ value, label: value })),
+              { value: "__custom__", label: "+ Add Another Make" },
+            ]}
+          />
+          {customMake ? (
+            <Field label="New Make *" value={make} set={setMake} placeholder="Enter make" />
+          ) : null}
+          <SelectField
+            label="Model *"
+            value={customModel ? "__custom__" : model}
+            onChange={(value) => {
+              setCustomModel(value === "__custom__");
+              setModel(value === "__custom__" ? "" : value);
+            }}
+            enabled={Boolean(make)}
+            options={[
+              { value: "", label: "Select Model" },
+              ...models.map((value) => ({ value, label: value })),
+              { value: "__custom__", label: "+ Add Another Model" },
+            ]}
+          />
+          {customModel ? (
+            <Field label="New Model *" value={model} set={setModel} placeholder="Enter model" />
+          ) : null}
           <View style={styles.row}>
             <View style={styles.half}>
-              <Field label="Variant" value={variant} set={setVariant} placeholder="Optional" />
+              {variants.length ? (
+                <SelectField
+                  label="Variant"
+                  value={variant}
+                  onChange={setVariant}
+                  options={[
+                    { value: "", label: "Select Variant" },
+                    ...variants.map((value) => ({ value, label: value })),
+                  ]}
+                />
+              ) : (
+                <Field label="Variant" value={variant} set={setVariant} placeholder="Optional" />
+              )}
             </View>
             <View style={styles.half}>
               <Field label="Colour" value={colour} set={setColour} placeholder="White" />
@@ -315,25 +432,26 @@ export default function CustomersScreen() {
               />
             </View>
           </View>
-          <Text style={styles.label}>Fuel Type *</Text>
-          <View style={styles.chips}>
-            {fuels.map(([value, label]) => (
-              <TouchableOpacity
-                key={value}
-                style={[styles.chip, fuel === value && styles.chipActive]}
-                onPress={() => setFuel(value)}
-              >
-                <Text style={[styles.chipText, fuel === value && styles.chipTextActive]}>
-                  {label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <SelectField
+            label="Fuel Type *"
+            value={fuel}
+            onChange={(value) => setFuel(value as VehicleFuelType)}
+            options={fuels.map(([value, label]) => ({ value, label }))}
+          />
+          <SelectField
+            label="Transmission"
+            value={transmission}
+            onChange={(value) => setTransmission(value as VehicleTransmission)}
+            options={transmissions.map(([value, label]) => ({ value, label }))}
+          />
+          <Field label="VIN / Chassis Number" value={vin} set={setVin} placeholder="Optional" />
+          <DateField label="Insurance Expiry Date" value={insurance} onChange={setInsurance} />
           <Field
-            label="Insurance Expiry (YYYY-MM-DD)"
-            value={insurance}
-            set={setInsurance}
-            placeholder="2027-08-04"
+            label="Vehicle Notes"
+            value={vehicleNotes}
+            set={setVehicleNotes}
+            placeholder="Optional"
+            multiline
           />
           <Buttons
             cancel={closeVehicle}
@@ -419,23 +537,27 @@ function Field({
   set,
   placeholder,
   keyboard,
+  multiline,
 }: {
   label: string;
   value: string;
   set: (v: string) => void;
   placeholder: string;
   keyboard?: "phone-pad" | "email-address" | "number-pad";
+  multiline?: boolean;
 }) {
   return (
     <>
       <Text style={styles.label}>{label}</Text>
       <TextInput
-        style={styles.input}
+        style={[styles.input, multiline && styles.textarea]}
         value={value}
         onChangeText={set}
         placeholder={placeholder}
         keyboardType={keyboard}
         autoCapitalize={keyboard === "email-address" ? "none" : undefined}
+        multiline={multiline}
+        textAlignVertical={multiline ? "top" : "center"}
       />
     </>
   );
@@ -517,6 +639,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colours.ink,
   },
+  textarea: { height: 92, paddingTop: 14 },
   row: { flexDirection: "row", gap: 10 },
   half: { flex: 1 },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

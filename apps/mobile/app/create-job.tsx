@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { firebase } from "../lib/firebase";
 import { apiRequest } from "../lib/mobile-api";
+import { DateField, SelectField } from "../components/form-controls";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { canCreateOperations } from "../lib/mobile-roles";
 import { colours } from "../lib/theme";
@@ -35,7 +36,7 @@ export default function CreateJobScreen() {
     [services, setServices] = useState<string[]>(defaults);
   const [customerId, setCustomerId] = useState(""),
     [vehicleId, setVehicleId] = useState(""),
-    [serviceType, setServiceType] = useState(defaults[0]),
+    [serviceType, setServiceType] = useState(defaults[0]!),
     [complaints, setComplaints] = useState(""),
     [odometer, setOdometer] = useState(""),
     [priority, setPriority] = useState<JobPriority>("normal");
@@ -171,77 +172,62 @@ export default function CreateJobScreen() {
       <Header />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {error ? <Text style={styles.error}>{error}</Text> : null}
-        <Text style={styles.label}>Customer *</Text>
-        <View style={styles.choices}>
-          {customers.map((item) => (
-            <Choice
-              key={item.id}
-              active={customerId === item.id}
-              label={item.name}
-              onPress={() => {
-                setCustomerId(item.id);
-                setVehicleId("");
-              }}
-            />
-          ))}
-        </View>
+        <SelectField
+          label="Customer *"
+          value={customerId}
+          onChange={(value) => {
+            setCustomerId(value);
+            setVehicleId("");
+          }}
+          options={[
+            { value: "", label: "Select Customer" },
+            ...customers.map((item) => ({ value: item.id, label: `${item.name} · ${item.phone}` })),
+          ]}
+        />
         {!customers.length ? (
           <TouchableOpacity style={styles.link} onPress={() => router.push("/customers")}>
             <Text style={styles.linkText}>Create a customer first</Text>
           </TouchableOpacity>
         ) : null}
-        <Text style={styles.label}>Vehicle *</Text>
-        <View style={styles.choices}>
-          {customerVehicles.map((item) => (
-            <Choice
-              key={item.id}
-              active={vehicleId === item.id}
-              label={`${item.registrationNumber} · ${item.make} ${item.model}`}
-              onPress={() => setVehicleId(item.id)}
-            />
-          ))}
-        </View>
+        <SelectField
+          label="Vehicle *"
+          value={vehicleId}
+          enabled={Boolean(customerId)}
+          onChange={(value) => {
+            setVehicleId(value);
+            const selected = vehicles.find((item) => item.id === value);
+            if (selected?.odometer != null) setOdometer(String(selected.odometer));
+          }}
+          options={[
+            { value: "", label: "Select Vehicle" },
+            ...customerVehicles.map((item) => ({
+              value: item.id,
+              label: `${item.registrationNumber} · ${item.make} ${item.model}`,
+            })),
+          ]}
+        />
         {customerId && !customerVehicles.length ? (
-          <Text style={styles.hint}>
-            Add a vehicle from the web customer screen before creating this job.
-          </Text>
+          <Text style={styles.hint}>Add a vehicle from Customers before creating this job.</Text>
         ) : null}
         {activeJob ? (
           <Text style={styles.warning}>Vehicle already in workshop: {activeJob.jobNumber}</Text>
         ) : null}
-        <Text style={styles.label}>Service Type *</Text>
-        <View style={styles.choices}>
-          {services.map((item) => (
-            <Choice
-              key={item}
-              active={serviceType === item}
-              label={item}
-              onPress={() => setServiceType(item)}
-            />
-          ))}
-        </View>
-        <Text style={styles.label}>Priority</Text>
-        <View style={styles.priority}>
-          {(
-            [
-              ["normal", "Normal", colours.green],
-              ["urgent", "Priority", colours.amber],
-              ["breakdown", "Very Urgent", colours.red],
-            ] as const
-          ).map(([value, label, color]) => (
-            <TouchableOpacity
-              key={value}
-              style={[
-                styles.priorityItem,
-                priority === value && { borderColor: color, backgroundColor: `${color}12` },
-              ]}
-              onPress={() => setPriority(value)}
-            >
-              <View style={[styles.dot, { backgroundColor: color }]} />
-              <Text style={styles.priorityText}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+        <SelectField
+          label="Service Type *"
+          value={serviceType}
+          onChange={setServiceType}
+          options={services.map((value) => ({ value, label: value }))}
+        />
+        <SelectField
+          label="Priority"
+          value={priority}
+          onChange={(value) => setPriority(value as JobPriority)}
+          options={[
+            { value: "normal", label: "🟢 Normal" },
+            { value: "urgent", label: "🟡 Priority" },
+            { value: "breakdown", label: "🔴 Very Urgent / Breakdown" },
+          ]}
+        />
         <Text style={styles.label}>Customer Complaint *</Text>
         <TextInput
           style={styles.area}
@@ -259,35 +245,25 @@ export default function CreateJobScreen() {
           keyboardType="number-pad"
           placeholder="Kilometres"
         />
-        <Text style={styles.label}>Fuel Level</Text>
-        <View style={styles.chips}>
-          {(
-            [
-              ["unknown", "Unknown / Not Recorded"],
-              ["0", "Empty"],
-              ["25", "¼ Tank"],
-              ["50", "½ Tank"],
-              ["75", "¾ Tank"],
-              ["100", "Full"],
-            ] as const
-          ).map(([value, label]) => (
-            <TouchableOpacity
-              key={value}
-              style={[styles.chip, fuelLevel === value && styles.chipActive]}
-              onPress={() => setFuelLevel(value)}
-            >
-              <Text style={[styles.chipText, fuelLevel === value && styles.chipTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        <Text style={styles.label}>Promised Delivery (Optional)</Text>
-        <TextInput
-          style={styles.input}
+        <SelectField
+          label="Fuel Level"
+          value={fuelLevel}
+          onChange={setFuelLevel}
+          options={[
+            { value: "unknown", label: "Unknown / Not Recorded" },
+            { value: "0", label: "0% · Empty" },
+            { value: "10", label: "10%" },
+            { value: "25", label: "25% · Quarter" },
+            { value: "50", label: "50% · Half" },
+            { value: "75", label: "75% · Three Quarters" },
+            { value: "100", label: "100% · Full" },
+          ]}
+        />
+        <DateField
+          label="Promised Delivery"
           value={promisedAt}
-          onChangeText={setPromisedAt}
-          placeholder="Example: 2026-08-05 18:00"
+          onChange={setPromisedAt}
+          includeTime
         />
         <Text style={styles.label}>Internal Workshop Notes (Optional)</Text>
         <TextInput
@@ -327,26 +303,6 @@ function Header() {
         <Text style={styles.title}>Create Job</Text>
       </View>
     </View>
-  );
-}
-function Choice({
-  active,
-  label,
-  onPress,
-}: {
-  active: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  return (
-    <TouchableOpacity style={[styles.choice, active && styles.choiceActive]} onPress={onPress}>
-      <Ionicons
-        name={active ? "checkmark-circle" : "ellipse-outline"}
-        size={20}
-        color={active ? colours.red : colours.muted}
-      />
-      <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{label}</Text>
-    </TouchableOpacity>
   );
 }
 const styles = StyleSheet.create({

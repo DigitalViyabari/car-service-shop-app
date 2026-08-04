@@ -3,25 +3,21 @@ import { router, usePathname } from "expo-router";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { colours } from "../lib/theme";
 import { useMobileAuth } from "../lib/mobile-auth";
-import { canViewFinance } from "../lib/mobile-roles";
-
-const baseItems = [
-  { label: "Home", icon: "grid" as const, path: "/home" as const },
-  { label: "Jobs", icon: "car-sport" as const, path: "/jobs" as const },
-  { label: "Alerts", icon: "notifications" as const, path: "/alerts" as const },
-  { label: "More", icon: "menu" as const, path: "/more" as const },
-];
+import { canViewAssignedJobs, canViewFinance, canViewWorkshopJobs } from "../lib/mobile-roles";
 
 export function MobileNav() {
   const pathname = usePathname();
   const { membership, branch } = useMobileAuth();
-  const items = canViewFinance(membership, branch?.id)
-    ? [
-        ...baseItems.slice(0, 2),
-        { label: "Reports", icon: "stats-chart" as const, path: "/reports" as const },
-        ...baseItems.slice(2),
-      ]
-    : baseItems;
+  const items = [
+    { label: "Home", icon: "grid" as const, path: "/home" as const },
+    ...(canViewWorkshopJobs(membership, branch?.id) || canViewAssignedJobs(membership, branch?.id)
+      ? [{ label: "Jobs", icon: "car-sport" as const, path: "/jobs" as const }]
+      : []),
+    ...(canViewFinance(membership, branch?.id)
+      ? [{ label: "Reports", icon: "stats-chart" as const, path: "/reports" as const }]
+      : []),
+    { label: "More", icon: "menu" as const, path: "/more" as const },
+  ];
   return (
     <View style={styles.nav}>
       {items.map((item) => {

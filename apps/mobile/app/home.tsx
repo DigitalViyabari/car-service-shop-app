@@ -21,8 +21,9 @@ import {
   canCreateOperations,
   canManageCustomers,
   canViewFinance,
+  canViewAssignedJobs,
   canViewInventory,
-  isTechnicianOnly,
+  canViewWorkshopJobs,
 } from "../lib/mobile-roles";
 
 const activeStatuses = [
@@ -42,7 +43,9 @@ export default function HomeScreen() {
     [payments, setPayments] = useState<Payment[]>([]),
     [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const technician = useMemo(() => isTechnicianOnly(membership, branch?.id), [branch, membership]);
+  const workshopJobs = canViewWorkshopJobs(membership, branch?.id);
+  const assignedJobs = canViewAssignedJobs(membership, branch?.id);
+  const technician = useMemo(() => !workshopJobs && assignedJobs, [assignedJobs, workshopJobs]);
   const canCreate = canCreateOperations(membership, branch?.id);
   const canCustomers = canManageCustomers(membership, branch?.id);
   const finance = canViewFinance(membership, branch?.id),
@@ -50,20 +53,25 @@ export default function HomeScreen() {
 
   const loadJobs = useCallback(async () => {
     if (!user || !company || !branch) return;
-    const snapshot = await getDocs(
-      technician
-        ? query(
-            collection(firebase.db, "jobSheets"),
-            where("assignedTechnicianIds", "array-contains", user.uid),
+    const snapshot =
+      workshopJobs || assignedJobs
+        ? await getDocs(
+            technician
+              ? query(
+                  collection(firebase.db, "jobSheets"),
+                  where("companyId", "==", company.id),
+                  where("branchId", "==", branch.id),
+                  where("assignedTechnicianIds", "array-contains", user.uid),
+                )
+              : query(
+                  collection(firebase.db, "jobSheets"),
+                  where("companyId", "==", company.id),
+                  where("branchId", "==", branch.id),
+                ),
           )
-        : query(
-            collection(firebase.db, "jobSheets"),
-            where("companyId", "==", company.id),
-            where("branchId", "==", branch.id),
-          ),
-    );
+        : null;
     setJobs(
-      snapshot.docs
+      (snapshot?.docs ?? [])
         .map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
         .filter((job) => job.companyId === company.id && job.branchId === branch.id),
     );
@@ -85,7 +93,7 @@ export default function HomeScreen() {
       setPayments(p?.docs.map((x) => ({ ...x.data(), id: x.id }) as Payment) ?? []);
       setInventory(stock?.docs.map((x) => ({ ...x.data(), id: x.id }) as InventoryItem) ?? []);
     }
-  }, [branch, company, finance, inventoryAccess, technician, user]);
+  }, [assignedJobs, branch, company, finance, inventoryAccess, technician, user, workshopJobs]);
 
   useEffect(() => {
     if (!loading && !user) router.replace("/");

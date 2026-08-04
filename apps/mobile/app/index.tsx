@@ -62,64 +62,72 @@ export default function LoginScreen() {
           keyboardDismissMode="interactive"
           showsVerticalScrollIndicator={false}
         >
-        <View style={styles.brandBlock}>
-          <View style={styles.brandIcon}>
-            <Ionicons name="car-sport" size={30} color="#FFFFFF" />
+          <View style={styles.brandBlock}>
+            <View style={styles.brandIcon}>
+              <Ionicons name="car-sport" size={30} color="#FFFFFF" />
+            </View>
+            <Text style={styles.brand}>DIGITAL VIYABARI</Text>
+            <Text style={styles.title}>Workshop control in your hand.</Text>
+            <Text style={styles.subtitle}>Fast, clear and built for daily service work.</Text>
           </View>
-          <Text style={styles.brand}>DIGITAL VIYABARI</Text>
-          <Text style={styles.title}>Workshop control in your hand.</Text>
-          <Text style={styles.subtitle}>Fast, clear and built for daily service work.</Text>
-        </View>
-        <View style={styles.form}>
-          <Text style={styles.heading}>Sign in</Text>
-          <Text style={styles.help}>Use your workshop account.</Text>
-          {error ? <Text style={styles.error}>{error}</Text> : null}
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="name@example.com"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!submitting}
-          />
-          <Text style={styles.label}>Password</Text>
-          <View style={styles.passwordField}>
+          <View style={styles.form}>
+            <Text style={styles.heading}>Sign in</Text>
+            <Text style={styles.help}>Use your workshop account.</Text>
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Text style={styles.label}>Email</Text>
             <TextInput
-              style={styles.passwordInput}
-              value={password}
-              onChangeText={setPassword}
-              placeholder="Enter password"
-              secureTextEntry={!showPassword}
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="name@example.com"
+              keyboardType="email-address"
+              autoComplete="email"
+              textContentType="username"
+              importantForAutofill="yes"
+              autoCapitalize="none"
+              autoCorrect={false}
               editable={!submitting}
-              onFocus={() => setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250)}
-              onSubmitEditing={() => void submit()}
             />
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.passwordField}>
+              <TextInput
+                style={styles.passwordInput}
+                value={password}
+                onChangeText={setPassword}
+                placeholder="Enter password"
+                secureTextEntry={!showPassword}
+                autoComplete="current-password"
+                textContentType="password"
+                importantForAutofill="yes"
+                editable={!submitting}
+                onFocus={() =>
+                  setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 250)
+                }
+                onSubmitEditing={() => void submit()}
+              />
+              <TouchableOpacity
+                style={styles.eye}
+                onPress={() => setShowPassword((current) => !current)}
+                accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+              >
+                <Ionicons name={showPassword ? "eye-off" : "eye"} size={25} color={colours.navy} />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
-              style={styles.eye}
-              onPress={() => setShowPassword((current) => !current)}
-              accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+              style={[styles.button, submitting && styles.disabled]}
+              onPress={() => void submit()}
+              disabled={submitting}
             >
-              <Ionicons name={showPassword ? "eye-off" : "eye"} size={25} color={colours.navy} />
+              {submitting ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <>
+                  <Text style={styles.buttonText}>Open Workshop</Text>
+                  <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
+                </>
+              )}
             </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            style={[styles.button, submitting && styles.disabled]}
-            onPress={() => void submit()}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#FFFFFF" />
-            ) : (
-              <>
-                <Text style={styles.buttonText}>Open Workshop</Text>
-                <Ionicons name="arrow-forward" size={22} color="#FFFFFF" />
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -180,7 +188,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  passwordInput: { flex: 1, height: "100%", paddingHorizontal: 16, color: colours.ink, fontSize: 17 },
+  passwordInput: {
+    flex: 1,
+    height: "100%",
+    paddingHorizontal: 16,
+    color: colours.ink,
+    fontSize: 17,
+  },
   eye: { width: 56, height: 56, alignItems: "center", justifyContent: "center" },
   button: {
     height: 60,

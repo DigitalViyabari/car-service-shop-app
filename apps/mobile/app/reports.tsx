@@ -8,11 +8,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
-  TouchableOpacity,
   View,
 } from "react-native";
 import { MobileNav } from "../components/mobile-nav";
+import { DateField, SelectField } from "../components/form-controls";
 import { firebase } from "../lib/firebase";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { canViewFinance } from "../lib/mobile-roles";
@@ -230,37 +229,32 @@ export default function ReportsScreen() {
         <Text style={styles.eyebrow}>BUSINESS INTELLIGENCE</Text>
         <Text style={styles.title}>Reports</Text>
         <Text style={styles.sub}>Workshop and financial performance.</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.periods}
-        >
-          {periods.map(([value, label]) => (
-            <TouchableOpacity
-              key={value}
-              style={[styles.period, period === value && styles.periodActive]}
-              onPress={() => setPeriod(value)}
-            >
-              <Text style={[styles.periodText, period === value && styles.periodTextActive]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={styles.periodSelect}>
+          <SelectField
+            label="Report Period"
+            value={period}
+            onChange={(value) => setPeriod(value as Period)}
+            options={periods.map(([value, label]) => ({ value, label }))}
+          />
+        </View>
         {period === "custom" ? (
           <View style={styles.custom}>
-            <TextInput
-              style={styles.date}
-              value={customStart}
-              onChangeText={setCustomStart}
-              placeholder="From YYYY-MM-DD"
-            />
-            <TextInput
-              style={styles.date}
-              value={customEnd}
-              onChangeText={setCustomEnd}
-              placeholder="To YYYY-MM-DD"
-            />
+            <View style={styles.customHalf}>
+              <DateField
+                label="Start Date"
+                value={customStart}
+                onChange={setCustomStart}
+                optional={false}
+              />
+            </View>
+            <View style={styles.customHalf}>
+              <DateField
+                label="End Date"
+                value={customEnd}
+                onChange={setCustomEnd}
+                optional={false}
+              />
+            </View>
           </View>
         ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -420,6 +414,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 31, fontWeight: "900", color: colours.ink, marginTop: 4 },
   sub: { fontSize: 15, color: colours.muted, fontWeight: "700", marginTop: 4 },
   periods: { gap: 8, paddingVertical: 18 },
+  periodSelect: { marginBottom: 4 },
   period: {
     paddingHorizontal: 14,
     height: 44,
@@ -434,6 +429,7 @@ const styles = StyleSheet.create({
   periodText: { fontSize: 13, fontWeight: "900", color: colours.ink },
   periodTextActive: { color: "#FFF" },
   custom: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  customHalf: { flex: 1 },
   date: {
     flex: 1,
     height: 50,

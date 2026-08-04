@@ -16,7 +16,7 @@ import { MobileNav } from "../components/mobile-nav";
 import { firebase } from "../lib/firebase";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { colours, statusColours } from "../lib/theme";
-import { canCreateOperations, isTechnicianOnly } from "../lib/mobile-roles";
+import { canCreateOperations, canViewAssignedJobs, canViewWorkshopJobs } from "../lib/mobile-roles";
 
 const labels: Record<string, string> = {
   check_in: "Check-In",
@@ -35,10 +35,13 @@ export default function JobsScreen() {
   const [jobs, setJobs] = useState<JobSheet[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const technician = useMemo(
-    () => isTechnicianOnly(membership, branch?.id),
+  const assignedOnly = useMemo(
+    () =>
+      !canViewWorkshopJobs(membership, branch?.id) && canViewAssignedJobs(membership, branch?.id),
     [branch, membership],
   );
+  const canView =
+    canViewWorkshopJobs(membership, branch?.id) || canViewAssignedJobs(membership, branch?.id);
   const canCreate = canCreateOperations(membership, branch?.id);
   const load = useCallback(async () => {
     if (!user || !company || !branch) return;
@@ -46,9 +49,11 @@ export default function JobsScreen() {
     setError(null);
     try {
       const snapshot = await getDocs(
-        technician
+        assignedOnly
           ? query(
               collection(firebase.db, "jobSheets"),
+              where("companyId", "==", company.id),
+              where("branchId", "==", branch.id),
               where("assignedTechnicianIds", "array-contains", user.uid),
             )
           : query(
@@ -74,23 +79,41 @@ export default function JobsScreen() {
     } finally {
       setLoading(false);
     }
-  }, [branch, company, technician, user]);
+  }, [assignedOnly, branch, company, user]);
   useEffect(() => {
     if (!authLoading && !user) router.replace("/");
     if (branch) void load();
   }, [authLoading, branch, load, user]);
 
+  if (!canView)
+    return (
+      <SafeAreaView style={styles.screen}>
+        <View style={styles.empty}>
+          <Text style={styles.emptyTitle}>Job cards are not assigned to this role.</Text>
+        </View>
+        <MobileNav />
+      </SafeAreaView>
+    );
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
         <View>
           <Text style={styles.eyebrow}>
-            {technician ? "MY ASSIGNED WORK" : "WORKSHOP OPERATIONS"}
+            {assignedOnly ? "MY ASSIGNED WORK" : "WORKSHOP OPERATIONS"}
           </Text>
           <Text style={styles.title}>Job Cards</Text>
           <Text style={styles.sub}>{jobs.length} active</Text>
         </View>
-        <View style={styles.headerActions}>{canCreate?<TouchableOpacity style={styles.create} onPress={()=>router.push('/create-job')}><Ionicons name="add" size={27} color="#FFF"/></TouchableOpacity>:null}<TouchableOpacity style={styles.refresh} onPress={() => void load()}><Ionicons name="refresh" size={25} color={colours.ink} /></TouchableOpacity></View>
+        <View style={styles.headerActions}>
+          {canCreate ? (
+            <TouchableOpacity style={styles.create} onPress={() => router.push("/create-job")}>
+              <Ionicons name="add" size={27} color="#FFF" />
+            </TouchableOpacity>
+          ) : null}
+          <TouchableOpacity style={styles.refresh} onPress={() => void load()}>
+            <Ionicons name="refresh" size={25} color={colours.ink} />
+          </TouchableOpacity>
+        </View>
       </View>
       {error ? <Text style={styles.error}>{error}</Text> : null}
       {loading ? (
@@ -107,7 +130,7 @@ export default function JobsScreen() {
               <Ionicons name="checkmark-circle" size={46} color={colours.green} />
               <Text style={styles.emptyTitle}>No active jobs</Text>
               <Text style={styles.emptyText}>
-                {technician
+                {assignedOnly
                   ? "New assigned work will appear here."
                   : "The workshop queue is clear."}
               </Text>
@@ -173,7 +196,24 @@ const styles = StyleSheet.create({
   },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   list: { padding: 16, paddingTop: 4, paddingBottom: 96, gap: 12, flexGrow: 1 },
-  headerActions:{flexDirection:'row',gap:8},create:{width:50,height:50,borderRadius:16,backgroundColor:colours.red,alignItems:'center',justifyContent:'center'},error:{marginHorizontal:16,marginBottom:10,padding:13,borderRadius:12,backgroundColor:'#FDEBEC',color:'#A82024',fontWeight:'700'},
+  headerActions: { flexDirection: "row", gap: 8 },
+  create: {
+    width: 50,
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: colours.red,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  error: {
+    marginHorizontal: 16,
+    marginBottom: 10,
+    padding: 13,
+    borderRadius: 12,
+    backgroundColor: "#FDEBEC",
+    color: "#A82024",
+    fontWeight: "700",
+  },
   job: {
     minHeight: 145,
     backgroundColor: colours.card,
