@@ -1544,6 +1544,79 @@ async function financeManager(uid: string, companyId: string, branchId: string) 
   if (!member.exists || member.get("status") !== "active" || !allowed)
     throw new ApiError(403, "Finance Manager access is required.");
 }
+function apiDocumentData(value: unknown): unknown {
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (Array.isArray(value)) return value.map(apiDocumentData);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, item]) => [
+        key,
+        apiDocumentData(item),
+      ]),
+    );
+  return value;
+}
+async function invoiceWorkspace(user: DecodedIdToken, companyId: string, branchId: string) {
+  if (!companyId || !branchId) throw new ApiError(400, "Company and branch are required.");
+  await financeManager(user.uid, companyId, branchId);
+  const branchQuery = (collectionName: string) =>
+      db
+        .collection(collectionName)
+        .where("companyId", "==", companyId)
+        .where("branchId", "==", branchId)
+        .get(),
+    [
+      invoices,
+      jobs,
+      jobLines,
+      invoiceLines,
+      payments,
+      customers,
+      products,
+      inventory,
+      branchProfile,
+      legacyProfile,
+    ] = await Promise.all([
+      branchQuery("invoices"),
+      branchQuery("jobSheets"),
+      branchQuery("jobLineItems"),
+      branchQuery("invoiceLines"),
+      branchQuery("payments"),
+      branchQuery("customers"),
+      db.collection("products").where("companyId", "==", companyId).get(),
+      branchQuery("inventoryItems"),
+      db.doc(`businessTaxProfiles/${companyId}/branches/${branchId}`).get(),
+      db.doc(`businessTaxProfiles/${companyId}`).get(),
+    ]),
+    documents = (snapshot: Awaited<ReturnType<typeof branchQuery>>) =>
+      snapshot.docs.map((item) => apiDocumentData({ id: item.id, ...item.data() }));
+  return {
+    invoices: documents(invoices),
+    jobs: documents(jobs),
+    jobLines: documents(jobLines),
+    invoiceLines: documents(invoiceLines),
+    payments: documents(payments),
+    customers: customers.docs.map((item) =>
+      apiDocumentData({
+        id: item.id,
+        name: item.get("name") ?? "Customer",
+        phone: item.get("phone") ?? "",
+        gstin: item.get("gstin") ?? "",
+        address: item.get("address") ?? "",
+        status: item.get("status") ?? "active",
+      }),
+    ),
+    products: documents(products),
+    inventory: documents(inventory),
+    taxProfile: apiDocumentData(
+      branchProfile.exists
+        ? { id: branchProfile.id, ...branchProfile.data() }
+        : legacyProfile.exists
+          ? { id: legacyProfile.id, ...legacyProfile.data() }
+          : null,
+    ),
+  };
+}
 async function getBusinessSettings(user: DecodedIdToken, companyId: string, branchId: string) {
   if (!companyId || !branchId) throw new ApiError(400, "Company and branch are required.");
   await financeManager(user.uid, companyId, branchId);
@@ -1678,12 +1751,14 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
           : seriesMode === "shared"
             ? baseSeriesKey
             : `${baseSeriesKey}-${input.branchId}`,
-    registrationPrefix = existingRegistration?.exists
-      ? String(existingRegistration.get("invoicePrefix") ?? invoicePrefix)
-      : invoicePrefix,
-    registrationStartNumber = existingRegistration?.exists
-      ? Number(existingRegistration.get("invoiceStartNumber") ?? profile.invoiceStartNumber)
-      : profile.invoiceStartNumber,
+    registrationPrefix =
+      seriesMode === "shared"
+        ? invoicePrefix
+        : String(existingRegistration?.get("invoicePrefix") ?? invoicePrefix),
+    registrationStartNumber =
+      seriesMode === "shared"
+        ? profile.invoiceStartNumber
+        : Number(existingRegistration?.get("invoiceStartNumber") ?? profile.invoiceStartNumber),
     now = FieldValue.serverTimestamp(),
     branchRef = db.doc(`businessTaxProfiles/${input.companyId}/branches/${input.branchId}`),
     existingBranch = await branchRef.get(),
@@ -1718,17 +1793,16 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
         .toUpperCase()
         .slice(-4);
     })(),
-    effectivePrefix = matchingAddress
-      ? String(matchingAddress.get("invoicePrefix") ?? registrationPrefix)
-      : seriesMode === "shared"
-        ? registrationPrefix
-        : automaticBranchPrefix,
-    effectiveStartNumber = matchingAddress
-      ? Number(matchingAddress.get("invoiceStartNumber") ?? registrationStartNumber)
-      : seriesMode === "shared"
-        ? registrationStartNumber
-        : profile.invoiceStartNumber,
+    effectivePrefix =
+      seriesMode === "branch" &&
+      existingBranch.get("invoiceSeriesMode") !== "branch" &&
+      usedPrefixes.has(invoicePrefix)
+        ? automaticBranchPrefix
+        : invoicePrefix || automaticBranchPrefix,
+    effectiveStartNumber = profile.invoiceStartNumber,
     batch = db.batch();
+  if (usedPrefixes.has(effectivePrefix))
+    throw new ApiError(409, "This invoice prefix is already used. Enter a different prefix.");
   if (existingBranch.exists) {
     const nowDate = new Date(),
       startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
@@ -1736,22 +1810,29 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
       changedSeries =
         String(existingBranch.get("gstRegistrationId") ?? "") !== registrationId ||
         String(existingBranch.get("invoiceSeriesKey") ?? "") !== seriesKey ||
-        String(existingBranch.get("invoicePrefix") ?? "INV") !== effectivePrefix;
+        String(existingBranch.get("invoicePrefix") ?? "INV") !== effectivePrefix ||
+        Number(existingBranch.get("invoiceStartNumber") ?? 1) !== effectiveStartNumber;
     if (changedSeries) {
-      const branchInvoices = await db
+      const companyInvoices = await db
         .collection("invoices")
-        .where("branchId", "==", input.branchId)
+        .where("companyId", "==", input.companyId)
         .get();
+      const relatedBranchIds = new Set([
+        input.branchId,
+        ...branchProfiles.docs
+          .filter((branch) => String(branch.get("invoiceSeriesKey") ?? "") === seriesKey)
+          .map((branch) => branch.id),
+      ]);
       if (
-        branchInvoices.docs.some(
+        companyInvoices.docs.some(
           (invoice) =>
-            invoice.get("companyId") === input.companyId &&
+            relatedBranchIds.has(String(invoice.get("branchId") ?? "")) &&
             String(invoice.get("invoiceNumber") ?? "").includes(`/${financialYear}/`),
         )
       )
         throw new ApiError(
           409,
-          "This branch has invoices in the current financial year. Its GST and invoice series are locked.",
+          "Invoice prefix and starting number cannot change after an invoice is issued in this financial year.",
         );
     }
   }
@@ -1828,6 +1909,19 @@ async function saveBusinessSettings(request: IncomingMessage, user: DecodedIdTok
     existingBranch.exists ? values : { ...values, createdAt: now, createdBy: user.uid },
     { merge: true },
   );
+  for (const sibling of siblingProfiles.filter(
+    (branch) => String(branch.get("invoiceSeriesKey") ?? "") === seriesKey,
+  ))
+    batch.set(
+      sibling.ref,
+      {
+        invoicePrefix: effectivePrefix,
+        invoiceStartNumber: effectiveStartNumber,
+        updatedAt: now,
+        updatedBy: user.uid,
+      },
+      { merge: true },
+    );
   await batch.commit();
   return {
     saved: true,
@@ -3506,6 +3600,16 @@ const server = createServer(async (request, response) => {
         response,
         200,
         await pendingPayments(
+          user,
+          url.searchParams.get("companyId") ?? "",
+          url.searchParams.get("branchId") ?? "",
+        ),
+      );
+    if (request.method === "GET" && url.pathname === "/v1/invoices/workspace")
+      return reply(
+        response,
+        200,
+        await invoiceWorkspace(
           user,
           url.searchParams.get("companyId") ?? "",
           url.searchParams.get("branchId") ?? "",

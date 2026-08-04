@@ -62,6 +62,15 @@ export default function BusinessSettingsPage() {
       (membership?.branchAssignments ?? []).some(({ roles }) =>
         roles.some((role) => role === "branch_manager" || role === "finance_manager"),
       );
+  const today = new Date(),
+    financialYearStart = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear() - 1,
+    financialYearCode = `${String(financialYearStart).slice(-2)}${String(financialYearStart + 1).slice(-2)}`,
+    invoicePrefixPreview =
+      draft.invoicePrefix
+        .replace(/[^A-Za-z0-9]/g, "")
+        .toUpperCase()
+        .slice(0, 4) || "INV",
+    invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`;
   const load = useCallback(async () => {
     if (!user || !activeCompanyId || !activeBranchId || !canView) return;
     setLoading(true);
@@ -444,6 +453,26 @@ export default function BusinessSettingsPage() {
                   : "Shared With Main Branch"}
               </p>
             </div>
+            {field("invoicePrefix", "Invoice Prefix (Maximum 4 Characters)", {
+              required: true,
+              placeholder: "INV",
+            })}
+            <label>
+              Invoice Starting Number
+              <input
+                type="number"
+                min="1"
+                max="999999"
+                value={draft.invoiceStartNumber ?? 1}
+                disabled={!isOwner}
+                onChange={(event) => update("invoiceStartNumber", Number(event.target.value))}
+              />
+              <small>Used when a new financial year starts.</small>
+            </label>
+            <label className="invoice-format-field span-2">
+              Invoice Number Preview
+              <input value={invoiceNumberPreview} readOnly />
+            </label>
             {field("upiId", "UPI ID")}
             {field("bankName", "Bank Name")}
             {field("accountName", "Account Name")}

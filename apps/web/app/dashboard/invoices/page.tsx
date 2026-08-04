@@ -12,7 +12,6 @@ import type {
   PaymentMethod,
   Product,
 } from "@dvcs/types";
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
 import {
   useCallback,
   useEffect,
@@ -22,7 +21,7 @@ import {
   type FormEvent,
 } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { firebaseClient, getFirebaseAppCheckToken } from "@/lib/firebase-client";
+import { getFirebaseAppCheckToken } from "@/lib/firebase-client";
 
 const money = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -215,123 +214,47 @@ export default function InvoicesPage() {
   }
 
   const load = useCallback(async () => {
-    if (!canManageFinance || !activeCompanyId || !activeBranchId) return;
+    if (!user || !canManageFinance || !activeCompanyId || !activeBranchId) return;
     setLoading(true);
     setError(null);
     try {
-      const [
-        invoiceDocs,
-        jobDocs,
-        lineDocs,
-        invoiceLineDocs,
-        paymentDocs,
-        customerDocs,
-        productDocs,
-        inventoryDocs,
-        taxProfileDoc,
-      ] = await Promise.all([
-        getDocs(
-          query(
-            collection(firebaseClient.db, "invoices"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch(
+          `/api/v1/invoices/workspace?companyId=${encodeURIComponent(activeCompanyId)}&branchId=${encodeURIComponent(activeBranchId)}`,
+          {
+            headers: {
+              authorization: `Bearer ${token}`,
+              "x-firebase-appcheck": appCheck,
+            },
+          },
         ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "jobSheets"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "jobLineItems"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "invoiceLines"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "payments"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "customers"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "products"),
-            where("companyId", "==", activeCompanyId),
-          ),
-        ),
-        getDocs(
-          query(
-            collection(firebaseClient.db, "inventoryItems"),
-            where("companyId", "==", activeCompanyId),
-            where("branchId", "==", activeBranchId),
-          ),
-        ),
-        (async () => {
-          const branchProfile = await getDoc(
-            doc(
-              firebaseClient.db,
-              "businessTaxProfiles",
-              activeCompanyId,
-              "branches",
-              activeBranchId,
-            ),
-          );
-          return branchProfile.exists()
-            ? branchProfile
-            : getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId));
-        })(),
-      ]);
-      const nextInvoices = invoiceDocs.docs
-        .map((item) => ({ ...item.data(), id: item.id }) as Invoice)
-        .sort((a, b) => b.invoiceNumber.localeCompare(a.invoiceNumber));
+        result = (await response.json()) as {
+          invoices?: Invoice[];
+          jobs?: JobSheet[];
+          jobLines?: JobLineItem[];
+          invoiceLines?: InvoiceLine[];
+          payments?: Payment[];
+          customers?: Customer[];
+          products?: Product[];
+          inventory?: InventoryItem[];
+          taxProfile?: BusinessTaxProfile | null;
+          error?: string;
+        };
+      if (!response.ok) throw new Error(result.error ?? "Unable to load invoices.");
+      const nextInvoices = (result.invoices ?? []).sort((a, b) =>
+        b.invoiceNumber.localeCompare(a.invoiceNumber),
+      );
       setInvoices(nextInvoices);
-      setJobs(jobDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as JobSheet));
-      setLines(
-        lineDocs.docs
-          .map((item) => ({ ...item.data(), id: item.id }) as JobLineItem)
-          .filter(({ status }) => status === "active"),
-      );
+      setJobs(result.jobs ?? []);
+      setLines((result.jobLines ?? []).filter(({ status }) => status === "active"));
       setInvoiceLines(
-        invoiceLineDocs.docs
-          .map((item) => ({ ...item.data(), id: item.id }) as InvoiceLine)
-          .filter(({ status }) => !status || status === "active"),
+        (result.invoiceLines ?? []).filter(({ status }) => !status || status === "active"),
       );
-      setPayments(paymentDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Payment));
-      setCustomers(customerDocs.docs.map((item) => ({ ...item.data(), id: item.id }) as Customer));
-      setProducts(
-        productDocs.docs
-          .map((item) => ({ ...item.data(), id: item.id }) as Product)
-          .filter(({ status }) => status === "active"),
-      );
-      setInventory(
-        inventoryDocs.docs
-          .map((item) => ({ ...item.data(), id: item.id }) as InventoryItem)
-          .filter(({ status }) => status === "active"),
-      );
-      setTaxProfile(
-        taxProfileDoc.exists()
-          ? ({ ...taxProfileDoc.data(), id: taxProfileDoc.id } as BusinessTaxProfile)
-          : null,
-      );
+      setPayments(result.payments ?? []);
+      setCustomers(result.customers ?? []);
+      setProducts((result.products ?? []).filter(({ status }) => status === "active"));
+      setInventory((result.inventory ?? []).filter(({ status }) => status === "active"));
+      setTaxProfile(result.taxProfile ?? null);
       setSelectedId((current) =>
         current && nextInvoices.some(({ id }) => id === current)
           ? current
@@ -342,7 +265,7 @@ export default function InvoicesPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeBranchId, activeCompanyId, canManageFinance]);
+  }, [activeBranchId, activeCompanyId, canManageFinance, user]);
   useEffect(() => {
     void load();
   }, [load]);
