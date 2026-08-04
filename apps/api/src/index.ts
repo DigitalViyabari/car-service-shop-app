@@ -1418,10 +1418,15 @@ async function changeJobStatus(request: IncomingMessage, user: DecodedIdToken) {
       (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
       [],
     roles = assignments.find((item) => item.branchId === input.branchId)?.roles ?? [],
+    branchIds = (member.get("branchIds") as string[] | undefined) ?? [],
+    branchRoleKeys = (member.get("branchRoleKeys") as string[] | undefined) ?? [],
     manager =
       companyRoles.some((role) => ["company_owner", "company_admin"].includes(role)) ||
-      roles.includes("branch_manager"),
-    technician = roles.includes("technician");
+      roles.includes("branch_manager") ||
+      (branchIds.includes(input.branchId) && branchRoleKeys.includes("branch_manager")),
+    technician =
+      roles.includes("technician") ||
+      (branchIds.includes(input.branchId) && branchRoleKeys.includes("technician"));
   if (!member.exists || member.get("status") !== "active" || (!manager && !technician))
     throw new ApiError(403, "Workshop operation access is required.");
 
@@ -1777,9 +1782,11 @@ async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: s
     assignments =
       (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
       [],
-    technician = assignments.some(
-      (item) => item.branchId === branchId && item.roles.includes("technician"),
-    );
+    branchIds = (member.get("branchIds") as string[] | undefined) ?? [],
+    branchRoleKeys = (member.get("branchRoleKeys") as string[] | undefined) ?? [],
+    technician =
+      assignments.some((item) => item.branchId === branchId && item.roles.includes("technician")) ||
+      (branchIds.includes(branchId) && branchRoleKeys.includes("technician"));
   if (!member.exists || member.get("status") !== "active" || !technician)
     throw new ApiError(403, "Technician access is required.");
   const jobs = await db
@@ -1790,6 +1797,41 @@ async function assignedJobs(user: DecodedIdToken, companyId: string, branchId: s
     jobs: jobs.docs
       .filter((item) => item.get("companyId") === companyId && item.get("branchId") === branchId)
       .map((item) => ({ id: item.id, ...item.data() })),
+  };
+}
+
+async function pendingPayments(user: DecodedIdToken, companyId: string, branchId: string) {
+  await financeManager(user.uid, companyId, branchId);
+  const invoices = await db
+    .collection("invoices")
+    .where("companyId", "==", companyId)
+    .where("branchId", "==", branchId)
+    .get();
+  const pending = invoices.docs.filter(
+    (item) => item.get("status") !== "void" && Number(item.get("balanceAmount") ?? 0) > 0.001,
+  );
+  const customerIds = [
+    ...new Set(pending.map((item) => String(item.get("customerId") ?? "")).filter(Boolean)),
+  ];
+  const customerDocs = await Promise.all(customerIds.map((id) => db.doc(`customers/${id}`).get()));
+  const phones = new Map(
+    customerDocs
+      .filter((item) => item.exists)
+      .map((item) => [item.id, String(item.get("phone") ?? "")]),
+  );
+  return {
+    pending: pending
+      .map((item) => ({
+        id: item.id,
+        invoiceNumber: String(item.get("invoiceNumber") ?? item.id),
+        jobId: String(item.get("jobId") ?? ""),
+        customerName: String(item.get("customerName") ?? "Customer"),
+        phone: phones.get(String(item.get("customerId") ?? "")) ?? "",
+        totalAmount: Number(item.get("totalAmount") ?? 0),
+        paidAmount: Number(item.get("paidAmount") ?? 0),
+        balanceAmount: Number(item.get("balanceAmount") ?? 0),
+      }))
+      .sort((a, b) => b.balanceAmount - a.balanceAmount),
   };
 }
 async function listNotifications(user: DecodedIdToken, companyId: string, branchId: string) {
@@ -2834,6 +2876,16 @@ const server = createServer(async (request, response) => {
         response,
         200,
         await assignedJobs(
+          user,
+          url.searchParams.get("companyId") ?? "",
+          url.searchParams.get("branchId") ?? "",
+        ),
+      );
+    if (request.method === "GET" && url.pathname === "/v1/payments/pending")
+      return reply(
+        response,
+        200,
+        await pendingPayments(
           user,
           url.searchParams.get("companyId") ?? "",
           url.searchParams.get("branchId") ?? "",

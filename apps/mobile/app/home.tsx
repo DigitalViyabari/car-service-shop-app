@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { MobileNav } from "../components/mobile-nav";
 import { firebase } from "../lib/firebase";
+import { apiGet } from "../lib/mobile-api";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { colours } from "../lib/theme";
 import {
@@ -53,28 +54,25 @@ export default function HomeScreen() {
 
   const loadJobs = useCallback(async () => {
     if (!user || !company || !branch) return;
-    const snapshot =
-      workshopJobs || assignedJobs
-        ? await getDocs(
-            technician
-              ? query(
-                  collection(firebase.db, "jobSheets"),
-                  where("companyId", "==", company.id),
-                  where("branchId", "==", branch.id),
-                  where("assignedTechnicianIds", "array-contains", user.uid),
-                )
-              : query(
-                  collection(firebase.db, "jobSheets"),
-                  where("companyId", "==", company.id),
-                  where("branchId", "==", branch.id),
-                ),
+    const loadedJobs = technician
+      ? (
+          await apiGet<{ jobs: JobSheet[] }>(
+            user,
+            `/v1/jobs/assigned?companyId=${encodeURIComponent(company.id)}&branchId=${encodeURIComponent(branch.id)}`,
           )
-        : null;
-    setJobs(
-      (snapshot?.docs ?? [])
-        .map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
-        .filter((job) => job.companyId === company.id && job.branchId === branch.id),
-    );
+        ).jobs
+      : workshopJobs
+        ? (
+            await getDocs(
+              query(
+                collection(firebase.db, "jobSheets"),
+                where("companyId", "==", company.id),
+                where("branchId", "==", branch.id),
+              ),
+            )
+          ).docs.map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
+        : [];
+    setJobs(loadedJobs.filter((job) => job.companyId === company.id && job.branchId === branch.id));
     if (!technician) {
       const q = (name: string) =>
         getDocs(

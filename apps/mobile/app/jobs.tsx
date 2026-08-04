@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { MobileNav } from "../components/mobile-nav";
 import { firebase } from "../lib/firebase";
+import { apiGet } from "../lib/mobile-api";
 import { useMobileAuth } from "../lib/mobile-auth";
 import { colours, statusColours } from "../lib/theme";
 import { canCreateOperations, canViewAssignedJobs, canViewWorkshopJobs } from "../lib/mobile-roles";
@@ -48,23 +49,24 @@ export default function JobsScreen() {
     setLoading(true);
     setError(null);
     try {
-      const snapshot = await getDocs(
-        assignedOnly
-          ? query(
-              collection(firebase.db, "jobSheets"),
-              where("companyId", "==", company.id),
-              where("branchId", "==", branch.id),
-              where("assignedTechnicianIds", "array-contains", user.uid),
+      const loaded = assignedOnly
+        ? (
+            await apiGet<{ jobs: JobSheet[] }>(
+              user,
+              `/v1/jobs/assigned?companyId=${encodeURIComponent(company.id)}&branchId=${encodeURIComponent(branch.id)}`,
             )
-          : query(
-              collection(firebase.db, "jobSheets"),
-              where("companyId", "==", company.id),
-              where("branchId", "==", branch.id),
-            ),
-      );
+          ).jobs
+        : (
+            await getDocs(
+              query(
+                collection(firebase.db, "jobSheets"),
+                where("companyId", "==", company.id),
+                where("branchId", "==", branch.id),
+              ),
+            )
+          ).docs.map((item) => ({ ...item.data(), id: item.id }) as JobSheet);
       setJobs(
-        snapshot.docs
-          .map((item) => ({ ...item.data(), id: item.id }) as JobSheet)
+        loaded
           .filter(
             (job) =>
               job.companyId === company.id &&
@@ -139,7 +141,11 @@ export default function JobsScreen() {
           renderItem={({ item }) => {
             const colour = statusColours[item.status] ?? colours.muted;
             return (
-              <TouchableOpacity style={styles.job} activeOpacity={0.82}>
+              <TouchableOpacity
+                style={styles.job}
+                activeOpacity={0.82}
+                onPress={() => router.push({ pathname: "/job/[id]", params: { id: item.id } })}
+              >
                 <View style={[styles.stage, { backgroundColor: colour }]} />
                 <View style={styles.jobBody}>
                   <View style={styles.jobTop}>

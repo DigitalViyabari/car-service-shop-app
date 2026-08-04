@@ -1,4 +1,6 @@
 import type { InventoryItem, Invoice, JobSheet, Payment, Product } from "@dvcs/types";
+import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { collection, getDocs, query, where } from "firebase/firestore";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -8,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { MobileNav } from "../components/mobile-nav";
@@ -229,6 +232,19 @@ export default function ReportsScreen() {
         <Text style={styles.eyebrow}>BUSINESS INTELLIGENCE</Text>
         <Text style={styles.title}>Reports</Text>
         <Text style={styles.sub}>Workshop and financial performance.</Text>
+        <TouchableOpacity
+          style={styles.pendingButton}
+          onPress={() => router.push("/pending-payments")}
+        >
+          <View style={styles.pendingIcon}>
+            <Ionicons name="call" size={21} color="#FFF" />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.pendingTitle}>Pending Payment Follow-Up</Text>
+            <Text style={styles.pendingHint}>Call or WhatsApp customers directly</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={22} color={colours.muted} />
+        </TouchableOpacity>
         <View style={styles.periodSelect}>
           <SelectField
             label="Report Period"
@@ -413,6 +429,28 @@ const styles = StyleSheet.create({
   eyebrow: { color: colours.red, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   title: { fontSize: 31, fontWeight: "900", color: colours.ink, marginTop: 4 },
   sub: { fontSize: 15, color: colours.muted, fontWeight: "700", marginTop: 4 },
+  pendingButton: {
+    minHeight: 72,
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 17,
+    backgroundColor: colours.card,
+    borderWidth: 1,
+    borderColor: colours.line,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  pendingIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: colours.green,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pendingTitle: { fontSize: 16, fontWeight: "900", color: colours.ink },
+  pendingHint: { fontSize: 13, color: colours.muted, marginTop: 2 },
   periods: { gap: 8, paddingVertical: 18 },
   periodSelect: { marginBottom: 4 },
   period: {
