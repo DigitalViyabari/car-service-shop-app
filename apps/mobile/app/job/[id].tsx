@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { apiGet, apiRequest } from "../../lib/mobile-api";
+import { SelectField } from "../../components/form-controls";
 import { useMobileAuth } from "../../lib/mobile-auth";
 import { canViewAssignedJobs, canViewWorkshopJobs } from "../../lib/mobile-roles";
 import { firebase } from "../../lib/firebase";
@@ -35,6 +36,12 @@ const technicianStages: JobStatus[] = [
   "in_progress",
   "quality_check",
 ];
+type TeamMember = {
+  userId: string;
+  displayName: string;
+  status: string;
+  branchAssignments: Array<{ branchId: string; roles: string[] }>;
+};
 
 export default function JobDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -43,6 +50,8 @@ export default function JobDetailScreen() {
   const assignedAccess = canViewAssignedJobs(membership, branch?.id);
   const technicianOnly = !workshopAccess && assignedAccess;
   const [job, setJob] = useState<JobSheet | null>(null);
+  const [technicians, setTechnicians] = useState<TeamMember[]>([]);
+  const [selectedTechnician, setSelectedTechnician] = useState("");
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -65,6 +74,20 @@ export default function JobDetailScreen() {
         const snapshot = await getDoc(doc(firebase.db, "jobSheets", id));
         if (!snapshot.exists()) throw new Error("Job card not found.");
         setJob({ ...snapshot.data(), id: snapshot.id } as JobSheet);
+        const team = await apiGet<{ members: TeamMember[] }>(
+          user,
+          `/v1/team?companyId=${encodeURIComponent(company.id)}&branchId=${encodeURIComponent(branch.id)}`,
+        );
+        setTechnicians(
+          team.members.filter(
+            (member) =>
+              member.status === "active" &&
+              member.branchAssignments.some(
+                (assignment) =>
+                  assignment.branchId === branch.id && assignment.roles.includes("technician"),
+              ),
+          ),
+        );
       }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to open this job.");
@@ -84,7 +107,7 @@ export default function JobDetailScreen() {
   const canAdvance = Boolean(
     next &&
     (workshopAccess || (technicianOnly && technicianStages.includes(next[0]))) &&
-    !(next?.[0] === "in_progress" && !job?.assignedTechnicianIds?.length),
+    !(next?.[0] === "in_progress" && !job?.assignedTechnicianIds?.length && !selectedTechnician),
   );
 
   async function advance() {
@@ -106,6 +129,8 @@ export default function JobDetailScreen() {
         deliveryNotes: "",
         nextServiceDueAt: null,
         nextServiceDueKm: null,
+        assignedTechnicianId:
+          next[0] === "in_progress" && selectedTechnician ? selectedTechnician : undefined,
       });
       setNote("");
       await load();
@@ -193,14 +218,28 @@ export default function JobDetailScreen() {
                   textAlignVertical="top"
                 />
               ) : null}
+              {next?.[0] === "in_progress" && workshopAccess ? (
+                <SelectField
+                  label="Assign Technician *"
+                  value={selectedTechnician || job.assignedTechnicianIds?.[0] || ""}
+                  onChange={setSelectedTechnician}
+                  options={[
+                    { value: "", label: "Select Technician" },
+                    ...technicians.map((member) => ({
+                      value: member.userId,
+                      label: member.displayName,
+                    })),
+                  ]}
+                />
+              ) : null}
               {next ? (
                 <View style={styles.next}>
                   <Text style={styles.nextLabel}>NEXT STAGE</Text>
                   <Text style={styles.nextTitle}>{next[1]}</Text>
-                  {next[0] === "in_progress" && !job.assignedTechnicianIds?.length ? (
-                    <Text style={styles.warning}>
-                      Assign a technician from the web workspace before starting work.
-                    </Text>
+                  {next[0] === "in_progress" &&
+                  !job.assignedTechnicianIds?.length &&
+                  !selectedTechnician ? (
+                    <Text style={styles.warning}>Select a technician before starting work.</Text>
                   ) : null}
                 </View>
               ) : null}

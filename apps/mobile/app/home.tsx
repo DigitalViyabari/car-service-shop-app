@@ -14,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { MobileNav } from "../components/mobile-nav";
+import { SelectField } from "../components/form-controls";
 import { firebase } from "../lib/firebase";
 import { apiGet } from "../lib/mobile-api";
 import { useMobileAuth } from "../lib/mobile-auth";
@@ -38,7 +39,8 @@ const activeStatuses = [
 ];
 
 export default function HomeScreen() {
-  const { user, profile, membership, company, branch, loading, error } = useMobileAuth();
+  const { user, profile, membership, company, branch, branches, selectBranch, loading, error } =
+    useMobileAuth();
   const [jobs, setJobs] = useState<JobSheet[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]),
     [payments, setPayments] = useState<Payment[]>([]),
@@ -162,6 +164,16 @@ export default function HomeScreen() {
         <Text style={styles.branch}>
           {company?.name} · {branch?.name}
         </Text>
+        {branches.length > 1 && branch ? (
+          <View style={styles.branchPicker}>
+            <SelectField
+              label="Active Branch"
+              value={branch.id}
+              options={branches.map((item) => ({ label: item.name, value: item.id }))}
+              onChange={(branchId) => void selectBranch(branchId)}
+            />
+          </View>
+        ) : null}
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
         <TouchableOpacity style={styles.focusCard} onPress={() => router.push("/jobs")}>
@@ -456,6 +468,7 @@ const styles = StyleSheet.create({
   },
   greeting: { color: colours.ink, fontSize: 31, fontWeight: "900", marginTop: 22 },
   branch: { color: colours.muted, fontSize: 16, fontWeight: "700", marginTop: 5 },
+  branchPicker: { marginTop: 4 },
   error: {
     color: "#A82024",
     backgroundColor: "#FDEBEC",

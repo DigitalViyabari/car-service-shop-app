@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
@@ -40,6 +41,9 @@ export default function PendingPaymentsScreen() {
   const [items, setItems] = useState<Pending[]>([]),
     [loading, setLoading] = useState(true),
     [error, setError] = useState<string | null>(null);
+  const [whatsappSent, setWhatsappSent] = useState<Record<string, number>>({});
+  const [clock, setClock] = useState(Date.now());
+  const whatsappHistoryKey = user ? `dvcs.whatsappFollowUp.${user.uid}` : "";
   const load = useCallback(async () => {
     if (!user || !company || !branch || !allowed) {
       setLoading(false);
@@ -62,6 +66,19 @@ export default function PendingPaymentsScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    if (!whatsappHistoryKey) return;
+    void AsyncStorage.getItem(whatsappHistoryKey).then((stored) => {
+      if (!stored) return;
+      try {
+        setWhatsappSent(JSON.parse(stored) as Record<string, number>);
+      } catch {
+        setWhatsappSent({});
+      }
+    });
+    const timer = setInterval(() => setClock(Date.now()), 60_000);
+    return () => clearInterval(timer);
+  }, [whatsappHistoryKey]);
   async function call(phone: string) {
     if (phone) await Linking.openURL(`tel:${phone.replace(/[^\d+]/g, "")}`);
   }
@@ -69,7 +86,13 @@ export default function PendingPaymentsScreen() {
     const phone = whatsappNumber(item.phone);
     const message = `Hello ${item.customerName}, this is a friendly payment reminder from ${company?.name ?? "our workshop"}. A balance of ${money(item.balanceAmount)} is pending for invoice ${item.invoiceNumber}. Kindly arrange the payment at your convenience. Thank you.`;
     await Linking.openURL(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`);
+    const nextHistory = { ...whatsappSent, [item.id]: Date.now() };
+    setWhatsappSent(nextHistory);
+    if (whatsappHistoryKey)
+      await AsyncStorage.setItem(whatsappHistoryKey, JSON.stringify(nextHistory));
   }
+  const sentWithin24Hours = (invoiceId: string) =>
+    clock - (whatsappSent[invoiceId] ?? 0) < 24 * 60 * 60 * 1000;
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.header}>
@@ -104,10 +127,8 @@ export default function PendingPaymentsScreen() {
               <View style={styles.cardTop}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.name}>{item.customerName}</Text>
-                  <Text style={styles.invoice}>
-                    {item.invoiceNumber}
-                    {item.jobId ? ` · ${item.jobId}` : ""}
-                  </Text>
+                  <Text style={styles.invoice}>Invoice · {item.invoiceNumber}</Text>
+                  {item.jobId ? <Text style={styles.jobCard}>Job Card · {item.jobId}</Text> : null}
                 </View>
                 <Text style={styles.balance}>{money(item.balanceAmount)}</Text>
               </View>
@@ -121,9 +142,14 @@ export default function PendingPaymentsScreen() {
                     <Ionicons name="call" size={21} color="#FFF" />
                     <Text style={styles.actionText}>Call</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.whatsapp} onPress={() => void whatsapp(item)}>
+                  <TouchableOpacity
+                    style={[styles.whatsapp, sentWithin24Hours(item.id) && styles.whatsappRecent]}
+                    onPress={() => void whatsapp(item)}
+                  >
                     <Ionicons name="logo-whatsapp" size={23} color="#FFF" />
-                    <Text style={styles.actionText}>WhatsApp</Text>
+                    <Text style={styles.actionText}>
+                      {sentWithin24Hours(item.id) ? "Sent · Send Again" : "WhatsApp"}
+                    </Text>
                   </TouchableOpacity>
                 </View>
               ) : (
@@ -179,6 +205,7 @@ const styles = StyleSheet.create({
   cardTop: { flexDirection: "row", gap: 10, alignItems: "flex-start" },
   name: { fontSize: 18, fontWeight: "900", color: colours.ink },
   invoice: { fontSize: 13, color: colours.muted, marginTop: 4 },
+  jobCard: { fontSize: 12, color: colours.muted, marginTop: 3 },
   balance: { fontSize: 20, fontWeight: "900", color: colours.red },
   amounts: {
     flexDirection: "row",
@@ -210,6 +237,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 7,
   },
+  whatsappRecent: { backgroundColor: "#799B89" },
   actionText: { fontSize: 15, fontWeight: "900", color: "#FFF" },
   noPhone: {
     padding: 12,
