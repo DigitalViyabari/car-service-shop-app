@@ -18,6 +18,16 @@ type Business = {
     currentPeriodEnd: string | null;
     branchCount: number;
   } | null;
+  branches: Array<{
+    id: string;
+    name: string;
+    status: string;
+    subscription: {
+      plan: "trial" | "monthly" | "yearly";
+      status: string;
+      currentPeriodEnd: string | null;
+    } | null;
+  }>;
   owners: { userId: string; displayName: string; email: string }[];
 };
 type Account = {
@@ -62,6 +72,8 @@ export default function PlatformAdminPage() {
     [subscriptionDraft, setSubscriptionDraft] = useState<{
       companyId: string;
       companyName: string;
+      branchId?: string;
+      branchName?: string;
       plan: "trial" | "monthly" | "yearly";
       trialDays: number;
     } | null>(null),
@@ -181,11 +193,14 @@ export default function PlatformAdminPage() {
         method: "POST",
         body: JSON.stringify({
           companyId: subscriptionDraft.companyId,
+          branchId: subscriptionDraft.branchId,
           plan: subscriptionDraft.plan,
           trialDays: Number(subscriptionDraft.trialDays),
         }),
       });
-      const companyName = subscriptionDraft.companyName;
+      const companyName = subscriptionDraft.branchName
+        ? `${subscriptionDraft.companyName} · ${subscriptionDraft.branchName}`
+        : subscriptionDraft.companyName;
       setSubscriptionDraft(null);
       await refreshOverview();
       setMessage(
@@ -591,8 +606,29 @@ export default function PlatformAdminPage() {
                     });
                   }}
                 >
-                  Manage
+                  Manage All
                 </button>
+                <span className="platform-branch-manage-list">
+                  {(item.branches ?? []).map((branch) => (
+                    <button
+                      type="button"
+                      key={branch.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSubscriptionDraft({
+                          companyId: item.id,
+                          companyName: item.name,
+                          branchId: branch.id,
+                          branchName: branch.name,
+                          plan: branch.subscription?.plan ?? "trial",
+                          trialDays: 30,
+                        });
+                      }}
+                    >
+                      {branch.name} · {branch.subscription?.plan ?? "Not Set"}
+                    </button>
+                  ))}
+                </span>
               </span>
             </div>
           ))}
@@ -698,7 +734,12 @@ export default function PlatformAdminPage() {
             <header className="modal-header">
               <div>
                 <span className="heading-kicker">Manual Subscription</span>
-                <h2>{subscriptionDraft.companyName}</h2>
+                <h2>
+                  {subscriptionDraft.companyName}
+                  {subscriptionDraft.branchName
+                    ? ` · ${subscriptionDraft.branchName}`
+                    : " · All Branches"}
+                </h2>
               </div>
               <button type="button" aria-label="Close" onClick={() => setSubscriptionDraft(null)}>
                 ×

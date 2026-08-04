@@ -219,6 +219,8 @@ export type GstRegistrationType = "regular" | "composition" | "unregistered";
 export interface BusinessTaxProfile extends AuditFields {
   id: string;
   companyId: string;
+  branchId?: string;
+  invoiceSeriesKey?: string;
   legalName: string;
   tradeName: string;
   gstRegistered: boolean;
@@ -379,6 +381,13 @@ export interface Invoice extends AuditFields {
   lastAmendmentReason?: string;
   lastAmendedAt?: string;
   lastAmendedBy?: string;
+  paymentFollowedUpAt?: unknown;
+  paymentFollowedUpBy?: string;
+  taxProfileId?: string;
+  supplierLegalName?: string;
+  supplierTradeName?: string;
+  supplierGstin?: string;
+  supplierAddress?: string;
 }
 
 export interface InvoiceLine extends AuditFields {

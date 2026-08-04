@@ -109,6 +109,16 @@ const notificationSchema = z.object({
   recipientUserId: z.string().min(8).max(128).optional(),
   message: z.string().min(3).max(300),
 });
+const notificationReadSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  notificationId: z.string().min(2).max(128),
+});
+const paymentFollowUpSchema = z.object({
+  companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128),
+  invoiceId: z.string().min(2).max(128),
+});
 const createPlatformAdminSchema = z.object({
   displayName: z.string().min(2).max(100),
   email: z.email(),
@@ -215,6 +225,7 @@ const createCompanySchema = z.object({
 });
 const updateSubscriptionSchema = z.object({
   companyId: z.string().min(2).max(128),
+  branchId: z.string().min(2).max(128).optional(),
   plan: z.enum(["trial", "monthly", "yearly"]),
   trialDays: z.number().int().min(1).max(365).default(30),
 });
@@ -339,8 +350,9 @@ async function platformOverview(user: DecodedIdToken) {
   const administratorProfile = await db.doc(`users/${user.uid}`).get(),
     platformRoles = (administratorProfile.get("platformRoles") as string[] | undefined) ?? [],
     exposeFinancials = platformRoles.includes("platform_super_admin");
-  const [companies, memberships, subscriptions, invoices, users] = await Promise.all([
+  const [companies, branches, memberships, subscriptions, invoices, users] = await Promise.all([
       db.collection("companies").get(),
+      db.collection("branches").get(),
       db.collection("memberships").get(),
       db.collection("branchSubscriptions").get(),
       exposeFinancials ? db.collection("invoices").get() : Promise.resolve(null),
@@ -407,6 +419,30 @@ async function platformOverview(user: DecodedIdToken) {
             })()
           : null,
         owners,
+        branches: branches.docs
+          .filter((branch) => branch.get("companyId") === companyId)
+          .map((branch) => {
+            const subscription = companySubscriptions.find((item) => item.id === branch.id),
+              periodEnd = subscription?.get("currentPeriodEnd")?.toDate?.() as Date | undefined;
+            return {
+              id: branch.id,
+              name: branch.get("name") ?? "Branch",
+              status: branch.get("status") ?? "active",
+              subscription: subscription
+                ? {
+                    plan:
+                      subscription.get("status") === "trialing"
+                        ? "trial"
+                        : (subscription.get("billingCycle") ?? "monthly"),
+                    status:
+                      periodEnd && periodEnd.getTime() < Date.now()
+                        ? "expired"
+                        : subscription.get("status"),
+                    currentPeriodEnd: periodEnd?.toISOString() ?? null,
+                  }
+                : null,
+            };
+          }),
       };
     }),
     accounts = memberships.docs.map((membership) => {
@@ -560,8 +596,14 @@ async function updateCompanySubscription(request: IncomingMessage, user: Decoded
   const input = parsed.data,
     company = await db.doc(`companies/${input.companyId}`).get();
   if (!company.exists) throw new ApiError(404, "Company not found.");
-  const branches = await db.collection("branches").where("companyId", "==", input.companyId).get();
-  if (branches.empty) throw new ApiError(409, "This company has no branch to subscribe.");
+  const companyBranches = await db
+      .collection("branches")
+      .where("companyId", "==", input.companyId)
+      .get(),
+    targetBranches = input.branchId
+      ? companyBranches.docs.filter((branch) => branch.id === input.branchId)
+      : companyBranches.docs;
+  if (!targetBranches.length) throw new ApiError(409, "The selected company branch was not found.");
   const periodStart = new Date(),
     periodEnd = new Date(periodStart);
   if (input.plan === "trial") periodEnd.setDate(periodEnd.getDate() + input.trialDays);
@@ -571,7 +613,7 @@ async function updateCompanySubscription(request: IncomingMessage, user: Decoded
     batch = db.batch(),
     status = input.plan === "trial" ? "trialing" : "active",
     billingCycle = input.plan === "trial" ? "monthly" : input.plan;
-  for (const branch of branches.docs) {
+  for (const branch of targetBranches) {
     batch.set(
       db.doc(`branchSubscriptions/${branch.id}`),
       {
@@ -595,7 +637,7 @@ async function updateCompanySubscription(request: IncomingMessage, user: Decoded
     companyId: input.companyId,
     plan: input.plan,
     status,
-    branchIds: branches.docs.map((branch) => branch.id),
+    branchIds: targetBranches.map((branch) => branch.id),
     currentPeriodStart: Timestamp.fromDate(periodStart),
     currentPeriodEnd: Timestamp.fromDate(periodEnd),
     createdAt: now,
@@ -606,7 +648,7 @@ async function updateCompanySubscription(request: IncomingMessage, user: Decoded
     companyId: input.companyId,
     plan: input.plan,
     status,
-    branchCount: branches.size,
+    branchCount: targetBranches.length,
     currentPeriodEnd: periodEnd.toISOString(),
   };
 }
@@ -767,7 +809,11 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     taxableAmount = calculatedLines.reduce((sum, line) => sum + line.taxableAmount, 0),
     taxAmount = calculatedLines.reduce((sum, line) => sum + line.taxAmount, 0),
     totalAmount = calculatedLines.reduce((sum, line) => sum + line.totalAmount, 0),
-    settings = await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
+    branchSettings = await db.doc(`branchTaxProfiles/${input.companyId}_${input.branchId}`).get(),
+    legacySettings = branchSettings.exists
+      ? null
+      : await db.doc(`businessTaxProfiles/${input.companyId}`).get(),
+    settings = branchSettings.exists ? branchSettings : legacySettings!,
     prefix =
       String((settings.exists ? settings.get("invoicePrefix") : null) ?? "INV")
         .replace(/[^A-Za-z0-9]/g, "")
@@ -780,7 +826,12 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
     nowDate = new Date(),
     startYear = nowDate.getMonth() >= 3 ? nowDate.getFullYear() : nowDate.getFullYear() - 1,
     financialYear = `${String(startYear).slice(-2)}${String(startYear + 1).slice(-2)}`,
-    sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`),
+    seriesKey = String(
+      (settings.exists ? settings.get("invoiceSeriesKey") || settings.get("gstin") : null) ||
+        `${input.companyId}-UNREGISTERED`,
+    ).replace(/[^A-Za-z0-9_-]/g, ""),
+    sequenceRef = db.doc(`invoiceSequences/${input.companyId}_${seriesKey}_${financialYear}`),
+    legacySequenceRef = db.doc(`invoiceSequences/${input.companyId}_${financialYear}`),
     receiptSequenceRef = db.doc(`receiptSequences/${input.companyId}_${financialYear}`),
     paymentRef = input.payment?.status !== "unpaid" ? db.collection("payments").doc() : null,
     requestedPayment =
@@ -796,11 +847,22 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
   const issueResult = await db.runTransaction(async (transaction) => {
     const currentInvoice = await transaction.get(invoiceRef),
       sequence = await transaction.get(sequenceRef),
+      legacySequence = sequence.exists ? null : await transaction.get(legacySequenceRef),
       receiptSequence = paymentRef ? await transaction.get(receiptSequenceRef) : null,
-      serial = sequence.exists ? Number(sequence.get("lastNumber") ?? 0) + 1 : configuredStart;
+      previousSequence = sequence.exists
+        ? sequence
+        : legacySequence?.exists
+          ? legacySequence
+          : null,
+      serial = previousSequence
+        ? Number(previousSequence.get("lastNumber") ?? 0) + 1
+        : configuredStart,
+      effectivePrefix = previousSequence
+        ? String(previousSequence.get("prefix") ?? prefix)
+        : prefix;
     if (currentInvoice.exists) throw new ApiError(409, "An invoice already exists for this job.");
     if (serial > 999999) throw new ApiError(409, "Invoice series limit reached. Contact support.");
-    const number = `${prefix}/${financialYear}/${String(serial).padStart(6, "0")}`;
+    const number = `${effectivePrefix}/${financialYear}/${String(serial).padStart(6, "0")}`;
     if (number.length > 16)
       throw new ApiError(409, "Invoice number exceeds the 16-character GST limit.");
     const stockUpdates: Array<{
@@ -852,8 +914,9 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       sequenceRef,
       {
         companyId: input.companyId,
+        seriesKey,
         financialYear,
-        prefix,
+        prefix: effectivePrefix,
         lastNumber: serial,
         ...(sequence.exists ? {} : { createdAt: now, createdBy: user.uid }),
         updatedAt: now,
@@ -868,6 +931,19 @@ async function issueInvoice(request: IncomingMessage, user: DecodedIdToken) {
       jobId: input.jobId ?? "",
       jobNumber: String(job?.get("jobNumber") ?? ""),
       invoiceNumber: number,
+      taxProfileId: settings.id,
+      supplierLegalName: String(settings.exists ? (settings.get("legalName") ?? "") : ""),
+      supplierTradeName: String(settings.exists ? (settings.get("tradeName") ?? "") : ""),
+      supplierGstin: String(settings.exists ? (settings.get("gstin") ?? "") : ""),
+      supplierAddress: [
+        settings.exists ? settings.get("addressLine1") : "",
+        settings.exists ? settings.get("addressLine2") : "",
+        settings.exists ? settings.get("city") : "",
+        settings.exists ? settings.get("state") : "",
+        settings.exists ? settings.get("postalCode") : "",
+      ]
+        .filter(Boolean)
+        .join(", "),
       customerId: String(job?.get("customerId") ?? input.customerId ?? "walk-in"),
       customerName: String(job?.get("customerName") ?? input.customerName ?? "Walk-In Customer"),
       vehicleId: String(job?.get("vehicleId") ?? ""),
@@ -1919,6 +1995,7 @@ async function listNotifications(user: DecodedIdToken, companyId: string, branch
       .filter(
         (item) =>
           item.get("branchId") === branchId &&
+          !((item.get("readBy") as string[] | undefined) ?? []).includes(user.uid) &&
           (item.get("recipientUserId") === user.uid ||
             (manager && item.get("audience") === "management")),
       )
@@ -1974,6 +2051,67 @@ async function createNotification(request: IncomingMessage, user: DecodedIdToken
     createdBy: user.uid,
   });
   return { created: true };
+}
+async function markNotificationRead(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = notificationReadSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Invalid notification.");
+  const input = parsed.data,
+    member = await db.doc(`memberships/${user.uid}_${input.companyId}`).get(),
+    notificationRef = db.doc(`notifications/${input.notificationId}`),
+    notification = await notificationRef.get();
+  if (!member.exists || member.get("status") !== "active")
+    throw new ApiError(403, "No active company membership.");
+  if (
+    !notification.exists ||
+    notification.get("companyId") !== input.companyId ||
+    notification.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Notification not found.");
+  const companyRoles = (member.get("companyRoles") as string[] | undefined) ?? [],
+    assignments =
+      (member.get("branchAssignments") as { branchId: string; roles: string[] }[] | undefined) ??
+      [],
+    management =
+      companyRoles.some((role) => ["company_owner", "company_admin"].includes(role)) ||
+      assignments.some(
+        (assignment) =>
+          assignment.branchId === input.branchId && assignment.roles.includes("branch_manager"),
+      ),
+    addressedToUser = notification.get("recipientUserId") === user.uid,
+    addressedToManagement = notification.get("audience") === "management" && management;
+  if (!addressedToUser && !addressedToManagement)
+    throw new ApiError(403, "Notification access is required.");
+  await notificationRef.update({
+    readBy: FieldValue.arrayUnion(user.uid),
+    updatedAt: FieldValue.serverTimestamp(),
+    updatedBy: user.uid,
+  });
+  return { read: true };
+}
+
+async function markPaymentFollowUp(request: IncomingMessage, user: DecodedIdToken) {
+  const parsed = paymentFollowUpSchema.safeParse(await body(request));
+  if (!parsed.success) throw new ApiError(400, "Invalid payment follow-up.");
+  const input = parsed.data;
+  await financeManager(user.uid, input.companyId, input.branchId);
+  const invoiceRef = db.doc(`invoices/${input.invoiceId}`),
+    invoice = await invoiceRef.get();
+  if (
+    !invoice.exists ||
+    invoice.get("companyId") !== input.companyId ||
+    invoice.get("branchId") !== input.branchId
+  )
+    throw new ApiError(404, "Invoice not found.");
+  if (Number(invoice.get("balanceAmount") ?? 0) <= 0)
+    throw new ApiError(409, "This invoice is already paid.");
+  const now = FieldValue.serverTimestamp();
+  await invoiceRef.update({
+    paymentFollowedUpAt: now,
+    paymentFollowedUpBy: user.uid,
+    updatedAt: now,
+    updatedBy: user.uid,
+  });
+  return { followedUp: true };
 }
 async function reversePayment(request: IncomingMessage, user: DecodedIdToken) {
   const parsed = reversePaymentSchema.safeParse(await body(request));
@@ -2994,6 +3132,10 @@ const server = createServer(async (request, response) => {
       return reply(response, 200, await notifyEstimateReady(request, user));
     if (request.method === "POST" && url.pathname === "/v1/notifications")
       return reply(response, 200, await createNotification(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/notifications/read")
+      return reply(response, 200, await markNotificationRead(request, user));
+    if (request.method === "POST" && url.pathname === "/v1/invoices/follow-up")
+      return reply(response, 200, await markPaymentFollowUp(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/create")
       return reply(response, 200, await createStaff(request, user));
     if (request.method === "POST" && url.pathname === "/v1/team/assign")

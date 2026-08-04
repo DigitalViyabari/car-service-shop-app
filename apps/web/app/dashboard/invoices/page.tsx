@@ -48,6 +48,11 @@ function paymentDate(value: unknown) {
     return (value as { toDate: () => Date }).toDate();
   return new Date(String(value));
 }
+function followedUpRecently(value: unknown) {
+  if (!value) return false;
+  const date = paymentDate(value);
+  return !Number.isNaN(date.getTime()) && Date.now() - date.getTime() < 24 * 60 * 60 * 1000;
+}
 type InvoiceDateFilter =
   | "all"
   | "today"
@@ -155,6 +160,7 @@ export default function InvoicesPage() {
     [customFrom, setCustomFrom] = useState(""),
     [customTo, setCustomTo] = useState("");
   const [financeView, setFinanceView] = useState<"invoices" | "pending">("invoices");
+  const [, setFollowUpClock] = useState(Date.now());
   const [showEdit, setShowEdit] = useState(false),
     [editDueAt, setEditDueAt] = useState(""),
     [editNotes, setEditNotes] = useState(""),
@@ -182,6 +188,31 @@ export default function InvoicesPage() {
         roles.some((role) => role === "branch_manager" || role === "finance_manager"),
     ),
     canManageFinance = companyFinanceRole || branchFinanceRole;
+
+  async function markFollowUp(invoiceId: string) {
+    if (!user || !activeCompanyId || !activeBranchId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]),
+        response = await fetch("/api/v1/invoices/follow-up", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${token}`,
+            "x-firebase-appcheck": appCheck,
+          },
+          body: JSON.stringify({ companyId: activeCompanyId, branchId: activeBranchId, invoiceId }),
+        }),
+        result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to record follow-up.");
+      await load();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to record follow-up.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const load = useCallback(async () => {
     if (!canManageFinance || !activeCompanyId || !activeBranchId) return;
@@ -254,7 +285,14 @@ export default function InvoicesPage() {
             where("branchId", "==", activeBranchId),
           ),
         ),
-        getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
+        (async () => {
+          const branchProfile = await getDoc(
+            doc(firebaseClient.db, "branchTaxProfiles", `${activeCompanyId}_${activeBranchId}`),
+          );
+          return branchProfile.exists()
+            ? branchProfile
+            : getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId));
+        })(),
       ]);
       const nextInvoices = invoiceDocs.docs
         .map((item) => ({ ...item.data(), id: item.id }) as Invoice)
@@ -302,6 +340,10 @@ export default function InvoicesPage() {
   useEffect(() => {
     void load();
   }, [load]);
+  useEffect(() => {
+    const timer = window.setInterval(() => setFollowUpClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const selected = invoices.find(({ id }) => id === selectedId) ?? null;
   const selectedInvoiceLines = invoiceLines.filter(({ invoiceId }) => invoiceId === selectedId);
@@ -974,14 +1016,19 @@ export default function InvoicesPage() {
             {pendingInvoices.map((invoice) => {
               const customer = customers.find(({ id }) => id === invoice.customerId);
               return (
-                <button
-                  type="button"
+                <div
+                  className="pending-payment-row"
                   key={invoice.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     setSelectedId(invoice.id);
                     setDateFilter("all");
                     setPaymentFilter("all");
                     setFinanceView("invoices");
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") setSelectedId(invoice.id);
                   }}
                 >
                   <span>
@@ -1008,7 +1055,27 @@ export default function InvoicesPage() {
                     <small>Pending</small>
                     <strong>{money.format(invoice.balanceAmount)}</strong>
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    className={`follow-up-toggle ${followedUpRecently(invoice.paymentFollowedUpAt) ? "is-done" : ""}`}
+                    disabled={submitting || followedUpRecently(invoice.paymentFollowedUpAt)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void markFollowUp(invoice.id);
+                    }}
+                    aria-label="Mark payment follow-up completed"
+                    title={
+                      followedUpRecently(invoice.paymentFollowedUpAt)
+                        ? "Contacted within the last 24 hours"
+                        : "Mark customer as contacted"
+                    }
+                  >
+                    <i />
+                    {followedUpRecently(invoice.paymentFollowedUpAt)
+                      ? "Contacted"
+                      : "Mark Contacted"}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -2124,19 +2191,27 @@ export default function InvoicesPage() {
                     />
                   ) : null}
                   <strong>
-                    {taxProfile?.legalName || activeCompany?.name || "Digital Viyabari"}
+                    {selected.supplierLegalName ||
+                      taxProfile?.legalName ||
+                      activeCompany?.name ||
+                      "Digital Viyabari"}
                   </strong>
-                  <span>{taxProfile?.tradeName || activeBranch?.name}</span>
-                  {taxProfile ? (
+                  <span>
+                    {selected.supplierTradeName || taxProfile?.tradeName || activeBranch?.name}
+                  </span>
+                  {selected.supplierAddress || taxProfile ? (
                     <small>
-                      {[taxProfile.addressLine1, taxProfile.addressLine2, taxProfile.city]
-                        .filter(Boolean)
-                        .join(", ")}
-                      {taxProfile.postalCode ? ` - ${taxProfile.postalCode}` : ""}
+                      {selected.supplierAddress ||
+                        [taxProfile?.addressLine1, taxProfile?.addressLine2, taxProfile?.city]
+                          .filter(Boolean)
+                          .join(", ")}
+                      {!selected.supplierAddress && taxProfile?.postalCode
+                        ? ` - ${taxProfile.postalCode}`
+                        : ""}
                     </small>
                   ) : null}
-                  {taxProfile?.gstRegistered && taxProfile.gstin ? (
-                    <small>GSTIN: {taxProfile.gstin}</small>
+                  {selected.supplierGstin || (taxProfile?.gstRegistered && taxProfile.gstin) ? (
+                    <small>GSTIN: {selected.supplierGstin || taxProfile?.gstin}</small>
                   ) : null}
                 </div>
                 <div>

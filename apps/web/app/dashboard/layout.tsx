@@ -122,6 +122,31 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     signOutUser,
   } = useAuth();
 
+  async function openNotification(notification: WorkspaceNotification) {
+    if (!user || !activeCompanyId || !activeBranchId) return;
+    setNotifications((items) => items.filter(({ id }) => id !== notification.id));
+    setShowNotifications(false);
+    router.push(`/dashboard/jobs?jobId=${notification.jobId}`);
+    try {
+      const [token, appCheck] = await Promise.all([user.getIdToken(), getFirebaseAppCheckToken()]);
+      await fetch("/api/v1/notifications/read", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${token}`,
+          "x-firebase-appcheck": appCheck,
+        },
+        body: JSON.stringify({
+          companyId: activeCompanyId,
+          branchId: activeBranchId,
+          notificationId: notification.id,
+        }),
+      });
+    } catch {
+      // The next refresh restores the notification when the read request fails.
+    }
+  }
+
   useEffect(() => {
     if (!loading && !user) router.replace("/");
   }, [loading, router, user]);
@@ -454,14 +479,14 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   </header>
                   {notifications.length ? (
                     notifications.map((notification) => (
-                      <Link
-                        href={`/dashboard/jobs?jobId=${notification.jobId}`}
+                      <button
+                        type="button"
                         key={notification.id}
-                        onClick={() => setShowNotifications(false)}
+                        onClick={() => void openNotification(notification)}
                       >
                         <i className={`notification-type ${notification.type}`} />
                         <span>{notification.message}</span>
-                      </Link>
+                      </button>
                     ))
                   ) : (
                     <p>No new notifications.</p>

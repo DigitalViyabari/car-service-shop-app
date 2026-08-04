@@ -40,7 +40,8 @@ const emptyDraft: Draft = {
 };
 
 export default function BusinessSettingsPage() {
-  const { user, memberships, activeCompany, activeCompanyId } = useAuth();
+  const { user, memberships, activeCompany, activeCompanyId, activeBranchId, activeBranch } =
+    useAuth();
   const [draft, setDraft] = useState<Draft>(emptyDraft),
     [exists, setExists] = useState(false),
     [loading, setLoading] = useState(true),
@@ -66,15 +67,21 @@ export default function BusinessSettingsPage() {
         .slice(0, 4) || "INV",
     invoiceNumberPreview = `${invoicePrefixPreview}/${financialYearCode}/${String(draft.invoiceStartNumber || 1).padStart(6, "0")}`;
   const load = useCallback(async () => {
-    if (!activeCompanyId || !canView) return;
+    if (!activeCompanyId || !activeBranchId || !canView) return;
     setLoading(true);
     setMessage("");
     try {
-      const snapshot = await getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId));
+      const branchSnapshot = await getDoc(
+          doc(firebaseClient.db, "branchTaxProfiles", `${activeCompanyId}_${activeBranchId}`),
+        ),
+        legacySnapshot = branchSnapshot.exists()
+          ? null
+          : await getDoc(doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId)),
+        snapshot = branchSnapshot.exists() ? branchSnapshot : legacySnapshot!;
       if (snapshot.exists()) {
         const data = snapshot.data() as BusinessTaxProfile;
         setDraft({ ...emptyDraft, ...data });
-        setExists(true);
+        setExists(branchSnapshot.exists());
       } else {
         setDraft({
           ...emptyDraft,
@@ -88,7 +95,7 @@ export default function BusinessSettingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeCompany?.name, activeCompanyId, canView]);
+  }, [activeBranchId, activeCompany?.name, activeCompanyId, canView]);
   useEffect(() => {
     void load();
   }, [load]);
@@ -96,7 +103,7 @@ export default function BusinessSettingsPage() {
     setDraft((current) => ({ ...current, [key]: value }));
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (!user || !activeCompanyId || !isOwner) return;
+    if (!user || !activeCompanyId || !activeBranchId || !isOwner) return;
     const gstin = draft.gstin?.trim().toUpperCase() ?? "",
       pan = draft.pan?.trim().toUpperCase() ?? "";
     if (draft.gstRegistered && !/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/.test(gstin)) {
@@ -124,7 +131,7 @@ export default function BusinessSettingsPage() {
     setMessage("");
     try {
       const now = serverTimestamp(),
-        ref = doc(firebaseClient.db, "businessTaxProfiles", activeCompanyId),
+        ref = doc(firebaseClient.db, "branchTaxProfiles", `${activeCompanyId}_${activeBranchId}`),
         values = {
           ...draft,
           gstin,
@@ -132,6 +139,8 @@ export default function BusinessSettingsPage() {
           invoicePrefix,
           invoiceStartNumber: Number(draft.invoiceStartNumber),
           companyId: activeCompanyId,
+          branchId: activeBranchId,
+          invoiceSeriesKey: gstin || `${activeCompanyId}-UNREGISTERED`,
           updatedAt: now,
           updatedBy: user.uid,
         };
@@ -139,7 +148,7 @@ export default function BusinessSettingsPage() {
         merge: true,
       });
       setExists(true);
-      setMessage("Business and GST settings saved.");
+      setMessage(`${activeBranch?.name ?? "Branch"} GST and invoice settings saved.`);
     } catch (reason) {
       setMessage(reason instanceof Error ? reason.message : "Unable to save business settings.");
     } finally {
@@ -187,7 +196,9 @@ export default function BusinessSettingsPage() {
         <div>
           <span className="heading-kicker">Company Settings</span>
           <h1>Business &amp; GST</h1>
-          <p className="muted">Legal, tax and payment information used on invoices and receipts.</p>
+          <p className="muted">
+            {activeBranch?.name ?? "Selected branch"} legal, tax and invoice information.
+          </p>
         </div>
         <span className={`settings-access ${isOwner ? "is-owner" : ""}`}>
           {isOwner ? "Owner Editing" : "Read Only"}
@@ -266,7 +277,7 @@ export default function BusinessSettingsPage() {
             <span>03</span>
             <div>
               <h2>Invoice &amp; Payment Details</h2>
-              <p>Invoice defaults.</p>
+              <p>Branches using the same GSTIN automatically share one invoice series.</p>
             </div>
           </header>
           <div className="form-grid">

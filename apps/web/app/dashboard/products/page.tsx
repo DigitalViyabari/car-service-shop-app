@@ -255,10 +255,10 @@ export default function ProductsPage() {
           .map((item) => ({ ...item.data(), id: item.id }) as InventoryMovement)
           .sort((a, b) => String(b.occurredAt).localeCompare(String(a.occurredAt))),
       );
+      const branchProductIds = new Set(nextInventory.map(({ productId }) => productId)),
+        firstBranchProduct = nextProducts.find(({ id }) => branchProductIds.has(id));
       setSelectedId((current) =>
-        current && nextProducts.some(({ id }) => id === current)
-          ? current
-          : (nextProducts[0]?.id ?? null),
+        current && branchProductIds.has(current) ? current : (firstBranchProduct?.id ?? null),
       );
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to load products.");
@@ -275,6 +275,7 @@ export default function ProductsPage() {
     const term = search.trim().toLowerCase();
     return products.filter((product) => {
       const item = inventory.find(({ productId }) => productId === product.id);
+      if (!item) return false;
       const matches =
         !term ||
         (product.searchText ?? "").includes(term) ||
